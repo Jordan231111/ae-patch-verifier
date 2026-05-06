@@ -1,0 +1,698 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Another Eden Patch Verifier</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --bg: #f5f5f2;
+      --panel: #ffffff;
+      --ink: #191b1f;
+      --muted: #626772;
+      --line: #d8d9d4;
+      --ok: #137a3f;
+      --fail: #b42318;
+      --warn: #a15c00;
+      --info: #2454a6;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      background: var(--bg);
+      color: var(--ink);
+      font: 14px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+
+    main {
+      max-width: 1180px;
+      margin: 0 auto;
+      padding: 28px;
+    }
+
+    h1 {
+      margin: 0 0 8px;
+      font-size: 26px;
+      font-weight: 700;
+      letter-spacing: 0;
+    }
+
+    p {
+      margin: 0;
+      color: var(--muted);
+    }
+
+    #dropZone {
+      display: grid;
+      place-items: center;
+      min-height: 180px;
+      margin: 22px 0;
+      border: 2px dashed #9aa0aa;
+      border-radius: 8px;
+      background: var(--panel);
+      text-align: center;
+      transition: border-color 120ms ease, background 120ms ease;
+    }
+
+    #dropZone.dragover {
+      border-color: var(--info);
+      background: #eef4ff;
+    }
+
+    #dropZone strong {
+      display: block;
+      margin-bottom: 8px;
+      font-size: 18px;
+    }
+
+    button {
+      appearance: none;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      background: #fff;
+      color: var(--ink);
+      padding: 8px 12px;
+      font: inherit;
+      cursor: pointer;
+    }
+
+    button:hover {
+      border-color: #9aa0aa;
+    }
+
+    input[type="file"] {
+      display: none;
+    }
+
+    #status {
+      min-height: 22px;
+      margin: 0 0 14px;
+      font-weight: 600;
+      color: var(--muted);
+    }
+
+    .summary {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      margin: 0 0 16px;
+    }
+
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      min-height: 28px;
+      padding: 4px 10px;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      background: var(--panel);
+      font-weight: 600;
+    }
+
+    .ok { color: var(--ok); }
+    .fail { color: var(--fail); }
+    .warn { color: var(--warn); }
+    .info { color: var(--info); }
+
+    section {
+      margin: 18px 0;
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      overflow: hidden;
+    }
+
+    section h2 {
+      margin: 0;
+      padding: 12px 14px;
+      border-bottom: 1px solid var(--line);
+      font-size: 16px;
+      letter-spacing: 0;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+    }
+
+    th,
+    td {
+      padding: 9px 10px;
+      border-bottom: 1px solid var(--line);
+      text-align: left;
+      vertical-align: top;
+      white-space: nowrap;
+    }
+
+    th {
+      font-size: 12px;
+      text-transform: uppercase;
+      color: var(--muted);
+      background: #fafafa;
+    }
+
+    td.detail {
+      white-space: normal;
+      color: var(--muted);
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 12px;
+      word-break: break-word;
+    }
+
+    tr:last-child td {
+      border-bottom: 0;
+    }
+
+    .result {
+      font-weight: 700;
+    }
+
+    .hidden {
+      display: none;
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Another Eden Patch Verifier</h1>
+    <p>Drop an APK or XAPK. The verifier extracts <code>lib/arm64-v8a/libapp.so</code> and checks patch anchors for unique ON and OFF/UNDO targets. Speedy is skipped because the script intentionally uses raw float search.</p>
+
+    <label id="dropZone" for="fileInput">
+      <span>
+        <strong>Drop APK/XAPK here</strong>
+        <button type="button" id="chooseButton">Choose file</button>
+      </span>
+    </label>
+    <input id="fileInput" type="file" accept=".apk,.xapk,application/zip">
+
+    <div id="status">Waiting for file.</div>
+    <div id="summary" class="summary hidden"></div>
+    <div id="results"></div>
+  </main>
+
+  <script src="./jszip.min.js"></script>
+  <script>
+    const PATCHES = [
+      {
+        name: "Max Battle EXP",
+        patchOffset: 12,
+        searchPattern: "F60301AAA0020291",
+        searchBytes: "F60301AAA0020291",
+        patchedPattern: "F60301AAA0020291",
+        patchedBytes: "F60301AAA0020291",
+        patchBytes: "E1FFAFD2"
+      },
+      {
+        name: "Battle MP cost",
+        patchOffset: 0,
+        searchPattern: "0820403968010034F30300AA000040F9F40301AA080040F9083140F900013FD6",
+        searchBytes: "0820403968010034F30300AA000040F9F40301AA080040F9083140F900013FD6",
+        patchedPattern: "E8031F2A68010034F30300AA000040F9F40301AA080040F9083140F900013FD6",
+        patchedBytes: "E8031F2A68010034F30300AA000040F9F40301AA080040F9083140F900013FD6",
+        patchBytes: "E8031F2A"
+      },
+      {
+        name: "Battle MP spend delta",
+        patchOffset: 8,
+        searchPattern: "E00317CB",
+        searchBytes: "E00317CB",
+        searchChecks: [
+          { offset: 8, bytes: "E103002A" },
+          { offset: 12, bytes: "E00318AA" },
+          { offset: 0x5C, bytes: "C102184BE00319AA" }
+        ],
+        patchedPattern: "E00317CB",
+        patchedBytes: "E00317CB",
+        patchedChecks: [
+          { offset: 8, bytes: "E1031F2A" },
+          { offset: 12, bytes: "E00318AA" },
+          { offset: 0x5C, bytes: "C102184BE00319AA" }
+        ],
+        patchBytes: "E1031F2A"
+      },
+      {
+        name: "getPCMP",
+        patchOffset: 0,
+        searchPattern: "FD7BBEA9F30B00F9FD030091080840F9F30300AA00C10291",
+        searchBytes: "FD7BBEA9F30B00F9FD030091080840F9F30300AA00C10291",
+        patchedPattern: "E0FF9F52C0035FD6FD030091080840F9F30300AA00C10291",
+        patchedBytes: "E0FF9F52C0035FD6FD030091080840F9F30300AA00C10291",
+        patchBytes: "E0FF9F52C0035FD6"
+      },
+      {
+        name: "getPCMPMax",
+        patchOffset: 0,
+        searchPattern: "FD7BBFA9FD03009100A840F901088052",
+        searchBytes: "FD7BBFA9FD03009100A840F901088052",
+        patchedPattern: "E0FF9F52C0035FD600A840F901088052",
+        patchedBytes: "E0FF9F52C0035FD600A840F901088052",
+        patchBytes: "E0FF9F52C0035FD6"
+      },
+      {
+        name: "All Damage",
+        patchOffset: 56,
+        searchPattern: "C80240F9A18A4A29080D40F9E3A30091E00316AA00013FD6C80240F9A5435FB8E403002A091540F9E80313AAE00316AAE10315AAE20314AAE30319AA20013FD6680240F90903001209010139F31B40F9",
+        searchBytes: "C80240F9A18A4A29080D40F9E3A30091E00316AA00013FD6C80240F9A5435FB8E403002A091540F9E80313AAE00316AAE10315AAE20314AAE30319AA20013FD6680240F90903001209010139F31B40F9",
+        patchedPattern: "C80240F9A18A4A29080D40F9E3A30091E00316AA00013FD6C80240F9A5435FB8E403002A091540F9E80313AAE00316AAE10315AAE20314AA23B36DD320013FD6680240F90903001209010139F31B40F9",
+        patchedBytes: "C80240F9A18A4A29080D40F9E3A30091E00316AA00013FD6C80240F9A5435FB8E403002A091540F9E80313AAE00316AAE10315AAE20314AA23B36DD320013FD6680240F90903001209010139F31B40F9",
+        patchBytes: "23B36DD3"
+      },
+      {
+        name: "Dungeon Skip",
+        patchOffset: 0,
+        searchPattern: "FF4301D1FD7B02A9F51B00F9F44F04A9FD83009155D03BD5A81640F9A8831FF8080040F9E80400B4F30300AA",
+        searchBytes: "FF4301D1FD7B02A9F51B00F9F44F04A9FD83009155D03BD5A81640F9A8831FF8080040F9E80400B4F30300AA",
+        patchedPattern: "20008052C0035FD61F2003D5F44F04A9FD83009155D03BD5A81640F9A8831FF8080040F9E80400B4F30300AA",
+        patchedBytes: "20008052C0035FD61F2003D5F44F04A9FD83009155D03BD5A81640F9A8831FF8080040F9E80400B4F30300AA",
+        patchBytes: "20008052C0035FD61F2003D5"
+      }
+    ];
+
+    const TEAM_GOD = {
+      branchAfter: "F80300AAE00313AA083140F900013FD6000040F9E10317CB",
+      cavePrefix: "66C866C866C866C866C866C866C866C804220422042204220422042204220422EBBAEBBAEBBAEBBAEBBAEBBAEBBAEBBA",
+      caveSuffix: "FF8306D1E80303AAAC508952FD7BBAA9FD030091",
+      caveTemplate: "F80300AA680240F9E00313AA08CD40F900013FD61F04007100010054680240F9E00313AA083140F900013FD6000040F9E10317CB"
+    };
+
+    const ITEM = {
+      prefix: "F603002AA0420091",
+      afterOffsetFromPrefix: 20,
+      after: "E00314AAE303132A",
+      patchOffset: 16
+    };
+
+    const statusEl = document.getElementById("status");
+    const resultsEl = document.getElementById("results");
+    const summaryEl = document.getElementById("summary");
+    const fileInput = document.getElementById("fileInput");
+    const dropZone = document.getElementById("dropZone");
+    const chooseButton = document.getElementById("chooseButton");
+
+    chooseButton.addEventListener("click", () => fileInput.click());
+    fileInput.addEventListener("change", () => {
+      if (fileInput.files.length) handleFile(fileInput.files[0]);
+    });
+
+    for (const eventName of ["dragenter", "dragover"]) {
+      dropZone.addEventListener(eventName, event => {
+        event.preventDefault();
+        dropZone.classList.add("dragover");
+      });
+    }
+
+    for (const eventName of ["dragleave", "drop"]) {
+      dropZone.addEventListener(eventName, event => {
+        event.preventDefault();
+        dropZone.classList.remove("dragover");
+      });
+    }
+
+    dropZone.addEventListener("drop", event => {
+      const file = event.dataTransfer.files[0];
+      if (file) handleFile(file);
+    });
+
+    function setStatus(text, className = "") {
+      statusEl.textContent = text;
+      statusEl.className = className;
+    }
+
+    function hexToBytes(hex) {
+      const clean = hex.replace(/\s+/g, "");
+      const bytes = new Uint8Array(clean.length / 2);
+      for (let i = 0; i < clean.length; i += 2) {
+        bytes[i / 2] = parseInt(clean.slice(i, i + 2), 16);
+      }
+      return bytes;
+    }
+
+    function bytesEqual(data, offset, bytes) {
+      if (offset < 0 || offset + bytes.length > data.length) return false;
+      for (let i = 0; i < bytes.length; i++) {
+        if (data[offset + i] !== bytes[i]) return false;
+      }
+      return true;
+    }
+
+    function findAll(data, pattern, ranges) {
+      const hits = [];
+      for (const range of ranges) {
+        let offset = range.start;
+        while (offset < range.end) {
+          offset = data.indexOf(pattern[0], offset);
+          if (offset === -1 || offset >= range.end) break;
+          if (offset + pattern.length <= range.end && bytesEqual(data, offset, pattern)) {
+            hits.push(offset);
+          }
+          offset++;
+        }
+      }
+      return hits;
+    }
+
+    function writeBytes(data, offset, bytes) {
+      data.set(bytes, offset);
+    }
+
+    function readU16(data, offset) {
+      return data[offset] | (data[offset + 1] << 8);
+    }
+
+    function readU32(data, offset) {
+      return (data[offset] | (data[offset + 1] << 8) | (data[offset + 2] << 16) | (data[offset + 3] << 24)) >>> 0;
+    }
+
+    function readU64Number(data, offset) {
+      const lo = readU32(data, offset);
+      const hi = readU32(data, offset + 4);
+      return hi * 0x100000000 + lo;
+    }
+
+    function dwordToBytes(value) {
+      return new Uint8Array([
+        value & 0xFF,
+        (value >>> 8) & 0xFF,
+        (value >>> 16) & 0xFF,
+        (value >>> 24) & 0xFF
+      ]);
+    }
+
+    function branchTarget(data, offset, linkExpected) {
+      const instruction = readU32(data, offset);
+      const opcode = (instruction & 0xFC000000) >>> 0;
+      const expected = linkExpected ? 0x94000000 : 0x14000000;
+      if (opcode !== expected) return null;
+
+      let imm26 = instruction & 0x03FFFFFF;
+      if (imm26 >= 0x02000000) imm26 -= 0x04000000;
+      return offset + (imm26 * 4);
+    }
+
+    function encodeBranch(opcode, source, target) {
+      const delta = target - source;
+      if (delta % 4 !== 0) throw new Error("unaligned branch target");
+      let imm26 = delta / 4;
+      if (imm26 < -0x2000000 || imm26 > 0x1FFFFFF) throw new Error("branch target out of range");
+      if (imm26 < 0) imm26 += 0x4000000;
+      return (opcode | (imm26 & 0x03FFFFFF)) >>> 0;
+    }
+
+    function concatBytes(...chunks) {
+      const size = chunks.reduce((sum, chunk) => sum + chunk.length, 0);
+      const out = new Uint8Array(size);
+      let offset = 0;
+      for (const chunk of chunks) {
+        out.set(chunk, offset);
+        offset += chunk.length;
+      }
+      return out;
+    }
+
+    function toHex(value) {
+      if (value === null || value === undefined) return "";
+      return "0x" + value.toString(16).toUpperCase();
+    }
+
+    function parseExecutableRanges(data) {
+      if (data[0] !== 0x7F || data[1] !== 0x45 || data[2] !== 0x4C || data[3] !== 0x46) {
+        return [{ start: 0, end: data.length, delta: 0 }];
+      }
+      if (data[4] !== 2 || data[5] !== 1) {
+        return [{ start: 0, end: data.length, delta: 0 }];
+      }
+
+      const phoff = readU64Number(data, 32);
+      const phentsize = readU16(data, 54);
+      const phnum = readU16(data, 56);
+      const ranges = [];
+      for (let i = 0; i < phnum; i++) {
+        const off = phoff + (i * phentsize);
+        const type = readU32(data, off);
+        const flags = readU32(data, off + 4);
+        if (type !== 1 || (flags & 1) === 0) continue;
+
+        const fileOffset = readU64Number(data, off + 8);
+        const vaddr = readU64Number(data, off + 16);
+        const fileSize = readU64Number(data, off + 32);
+        ranges.push({
+          start: fileOffset,
+          end: Math.min(fileOffset + fileSize, data.length),
+          delta: vaddr - fileOffset
+        });
+      }
+
+      return ranges.length ? ranges : [{ start: 0, end: data.length, delta: 0 }];
+    }
+
+    function rvaForOffset(offset, ranges) {
+      const range = ranges.find(item => offset >= item.start && offset < item.end);
+      return range ? offset + range.delta : offset;
+    }
+
+    function resultStatus(count) {
+      if (count === 1) return ["PASS", "ok"];
+      if (count === 0) return ["NOT FOUND", "fail"];
+      return ["MULTIPLE", "fail"];
+    }
+
+    function uniquePatchAnchors(data, ranges, def, kind) {
+      const pattern = hexToBytes(kind === "on" ? def.searchPattern : def.patchedPattern);
+      const bytes = hexToBytes(kind === "on" ? def.searchBytes : def.patchedBytes);
+      const checks = (kind === "on" ? def.searchChecks : def.patchedChecks) || [];
+      const seen = new Set();
+      const hits = [];
+
+      for (const hit of findAll(data, pattern, ranges)) {
+        if (!bytesEqual(data, hit, bytes)) continue;
+
+        let ok = true;
+        for (const check of checks) {
+          if (!bytesEqual(data, hit + check.offset, hexToBytes(check.bytes))) {
+            ok = false;
+            break;
+          }
+        }
+        if (!ok) continue;
+
+        const patchAddress = hit + def.patchOffset;
+        if (!seen.has(patchAddress)) {
+          seen.add(patchAddress);
+          hits.push(patchAddress);
+        }
+      }
+
+      return hits;
+    }
+
+    function verifyItem(data, ranges) {
+      const prefix = hexToBytes(ITEM.prefix);
+      const after = hexToBytes(ITEM.after);
+      const hits = [];
+      const seen = new Set();
+      for (const hit of findAll(data, prefix, ranges)) {
+        if (!bytesEqual(data, hit + ITEM.afterOffsetFromPrefix, after)) continue;
+        const patchAddress = hit + ITEM.patchOffset;
+        if (!seen.has(patchAddress)) {
+          seen.add(patchAddress);
+          hits.push(patchAddress);
+        }
+      }
+      return makeRow("Item Multiplier", "ON/OFF anchor", hits, ranges);
+    }
+
+    function makeRow(feature, check, hits, ranges, detail = "") {
+      const [status, klass] = resultStatus(hits.length);
+      const addresses = hits.map(hit => toHex(rvaForOffset(hit, ranges))).join(", ");
+      return { feature, check, status, klass, count: hits.length, detail: detail || addresses };
+    }
+
+    function verifyPatch(data, ranges, def) {
+      const rows = [];
+      const onHits = uniquePatchAnchors(data, ranges, def, "on");
+      rows.push(makeRow(def.name, "ON anchor", onHits, ranges));
+
+      const simulated = data.slice();
+      if (onHits.length === 1) {
+        writeBytes(simulated, onHits[0], hexToBytes(def.patchBytes));
+      }
+      const offHits = uniquePatchAnchors(simulated, ranges, def, "off");
+      rows.push(makeRow(def.name, "OFF/UNDO anchor after ON simulation", offHits, ranges));
+      return rows;
+    }
+
+    function buildCavePatch(data, branchAddress, caveAddress) {
+      const template = hexToBytes(TEAM_GOD.caveTemplate);
+      const hpTarget = branchTarget(data, branchAddress + 0x1C, true);
+      if (hpTarget === null) return null;
+
+      const hpCall = dwordToBytes(encodeBranch(0x94000000, caveAddress + template.length, hpTarget));
+      const ret = dwordToBytes(encodeBranch(0x14000000, caveAddress + template.length + 4, branchAddress + 0x20));
+      const padding = new Uint8Array(80 - template.length - hpCall.length - ret.length);
+      return concatBytes(template, hpCall, ret, padding);
+    }
+
+    function verifyTeamGod(data, ranges) {
+      const branchAfter = hexToBytes(TEAM_GOD.branchAfter);
+      const cavePrefix = hexToBytes(TEAM_GOD.cavePrefix);
+      const caveSuffix = hexToBytes(TEAM_GOD.caveSuffix);
+      const rows = [];
+
+      const branchHits = findAll(data, branchAfter, ranges).map(hit => hit - 4);
+      rows.push(makeRow("Team God Mode", "branch anchor", branchHits, ranges));
+
+      const caveHits = [];
+      for (const suffixHit of findAll(data, caveSuffix, ranges)) {
+        const caveAddress = suffixHit - 80;
+        if (bytesEqual(data, caveAddress - cavePrefix.length, cavePrefix)) {
+          caveHits.push(caveAddress);
+        }
+      }
+      rows.push(makeRow("Team God Mode", "code-cave anchor", caveHits, ranges));
+
+      if (branchHits.length === 1 && caveHits.length === 1) {
+        const cavePatch = buildCavePatch(data, branchHits[0], caveHits[0]);
+        rows.push({
+          feature: "Team God Mode",
+          check: "original HP setter BL decode",
+          status: cavePatch ? "PASS" : "NOT FOUND",
+          klass: cavePatch ? "ok" : "fail",
+          count: cavePatch ? 1 : 0,
+          detail: cavePatch ? "cave branch/call bytes can be generated" : "branch+0x1C is not a BL"
+        });
+
+        if (cavePatch) {
+          const simulated = data.slice();
+          writeBytes(simulated, caveHits[0], cavePatch);
+          writeBytes(simulated, branchHits[0], dwordToBytes(encodeBranch(0x14000000, branchHits[0], caveHits[0])));
+
+          const offBranchOk = bytesEqual(simulated, branchHits[0], dwordToBytes(encodeBranch(0x14000000, branchHits[0], caveHits[0])));
+          const offCaveOk = bytesEqual(simulated, caveHits[0], cavePatch);
+          rows.push({
+            feature: "Team God Mode",
+            check: "OFF/UNDO state after ON simulation",
+            status: offBranchOk && offCaveOk ? "PASS" : "FAIL",
+            klass: offBranchOk && offCaveOk ? "ok" : "fail",
+            count: offBranchOk && offCaveOk ? 1 : 0,
+            detail: "branch=" + toHex(rvaForOffset(branchHits[0], ranges)) + ", cave=" + toHex(rvaForOffset(caveHits[0], ranges))
+          });
+        }
+      }
+
+      return rows;
+    }
+
+    async function extractLibs(file) {
+      const root = await JSZip.loadAsync(await file.arrayBuffer());
+      const libs = [];
+
+      async function collectFromZip(zip, label) {
+        const direct = zip.file("lib/arm64-v8a/libapp.so");
+        if (direct) {
+          libs.push({ label: label + " :: lib/arm64-v8a/libapp.so", data: new Uint8Array(await direct.async("arraybuffer")) });
+        }
+      }
+
+      await collectFromZip(root, file.name);
+
+      const nestedApks = Object.values(root.files).filter(entry => !entry.dir && entry.name.toLowerCase().endsWith(".apk"));
+      for (const entry of nestedApks) {
+        const apkZip = await JSZip.loadAsync(await entry.async("arraybuffer"));
+        await collectFromZip(apkZip, file.name + " :: " + entry.name);
+      }
+
+      return libs;
+    }
+
+    function verifyLib(lib) {
+      const ranges = parseExecutableRanges(lib.data);
+      const rows = [];
+      rows.push(verifyItem(lib.data, ranges));
+      for (const patchDef of PATCHES) {
+        rows.push(...verifyPatch(lib.data, ranges, patchDef));
+      }
+      rows.push(...verifyTeamGod(lib.data, ranges));
+      rows.push({
+        feature: "Speedy",
+        check: "raw float search",
+        status: "SKIPPED",
+        klass: "warn",
+        count: 0,
+        detail: "Skipped by design; current Lua uses original raw float search."
+      });
+      return rows;
+    }
+
+    function render(libs) {
+      resultsEl.innerHTML = "";
+      let pass = 0;
+      let fail = 0;
+      let warn = 0;
+
+      for (const lib of libs) {
+        const rows = verifyLib(lib);
+        for (const row of rows) {
+          if (row.klass === "ok") pass++;
+          else if (row.klass === "warn") warn++;
+          else fail++;
+        }
+
+        const section = document.createElement("section");
+        const h2 = document.createElement("h2");
+        h2.textContent = lib.label + " (" + (lib.data.length / 1024 / 1024).toFixed(1) + " MB)";
+        section.appendChild(h2);
+
+        const table = document.createElement("table");
+        table.innerHTML = "<thead><tr><th>Result</th><th>Feature</th><th>Check</th><th>Count</th><th>Detail</th></tr></thead>";
+        const tbody = document.createElement("tbody");
+        for (const row of rows) {
+          const tr = document.createElement("tr");
+          tr.innerHTML =
+            `<td class="result ${row.klass}">${row.status}</td>` +
+            `<td>${row.feature}</td>` +
+            `<td>${row.check}</td>` +
+            `<td>${row.count}</td>` +
+            `<td class="detail">${row.detail || ""}</td>`;
+          tbody.appendChild(tr);
+        }
+        table.appendChild(tbody);
+        section.appendChild(table);
+        resultsEl.appendChild(section);
+      }
+
+      summaryEl.classList.remove("hidden");
+      summaryEl.innerHTML =
+        `<span class="pill ok">PASS ${pass}</span>` +
+        `<span class="pill fail">FAIL ${fail}</span>` +
+        `<span class="pill warn">SKIPPED/WARN ${warn}</span>`;
+      setStatus(fail === 0 ? "Verification complete: no failed non-speed checks." : "Verification complete: review failed checks.", fail === 0 ? "ok" : "fail");
+    }
+
+    async function handleFile(file) {
+      resultsEl.innerHTML = "";
+      summaryEl.classList.add("hidden");
+      setStatus("Reading " + file.name + "...", "info");
+
+      try {
+        const libs = await extractLibs(file);
+        if (!libs.length) {
+          setStatus("No lib/arm64-v8a/libapp.so found in " + file.name + ".", "fail");
+          return;
+        }
+        setStatus("Verifying " + libs.length + " libapp.so file(s)...", "info");
+        await new Promise(resolve => setTimeout(resolve, 30));
+        render(libs);
+      } catch (error) {
+        console.error(error);
+        setStatus("Failed: " + error.message, "fail");
+      }
+    }
+  </script>
+</body>
+</html>
