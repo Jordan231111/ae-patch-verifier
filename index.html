@@ -278,32 +278,6 @@
         patchedBytes: "20008052C0035FD61F2003D5F44F04A9FD83009155D03BD5A81640F9A8831FF8080040F9E80400B4F30300AA",
         originalBytes: "FF4301D1FD7B02A9F51B00F9",
         patchBytes: "20008052C0035FD61F2003D5"
-      },
-      {
-        name: "Ad Bypass: isRewardedVideoAvailable return = 1",
-        patchOffset: 0x50,
-        searchPattern: "811BFF9021783A91",
-        searchBytes: "811BFF9021783A91",
-        searchChecks: [
-          { offset: 0x50, bytes: "60020012" }
-        ],
-        patchedPattern: "811BFF9021783A91",
-        patchedBytes: "811BFF9021783A91",
-        patchedChecks: [
-          { offset: 0x50, bytes: "20008052" }
-        ],
-        originalBytes: "60020012",
-        patchBytes: "20008052"
-      },
-      {
-        name: "Ad Bypass: SDK showRewardedVideo call suppressed",
-        patchOffset: 0x1C,
-        searchPattern: "E6000094F303002AC0000036A81240F9E10314AA00410091893DC497",
-        searchBytes: "E6000094F303002AC0000036A81240F9E10314AA00410091893DC497",
-        patchedPattern: "E6000094F303002AC0000036A81240F9E10314AA00410091893DC497",
-        patchedBytes: "E6000094F303002AC0000036A81240F9E10314AA00410091893DC497",
-        originalBytes: "3D000094",
-        patchBytes: "1F2003D5"
       }
     ];
 
@@ -325,21 +299,36 @@
     };
 
     const AD_BYPASS = {
+      availabilityPatchName: "Ad Bypass: isRewardedVideoAvailable return = 1",
       sdkShowPatchName: "Ad Bypass: SDK showRewardedVideo call suppressed",
       statePatchName: "Ad Bypass: post-show state-store -> lifecycle trampoline",
       cavePatchName: "Ad Bypass: lifecycle code cave",
+      availabilityOriginalBytes: "60020012",
+      availabilityPatchBytes: "20008052",
+      availabilityReturnOriginal: "60020012F44F45A9FD7B44A9FF830191C0035FD6",
+      availabilityReturnPatched: "20008052F44F45A9FD7B44A9FF830191C0035FD6",
+      availabilityWrapperPrologue: "FF8301D1FD7B04A9F44F05A9FD03019154D03BD5",
+      sdkShowOriginalTail: "3D00009460020012F44F42A9F50B40F9FD7BC3A8C0035FD6",
+      sdkShowPatchedTail: "1F2003D560020012F44F42A9F50B40F9FD7BC3A8C0035FD6",
+      sdkShowOriginalBytes: "3D000094",
+      sdkShowPatchBytes: "1F2003D5",
+      sdkAvailabilityBlBackOffset: 0x1C,
       stateSearchPattern: "2800805268C60F3902000014E8031F2A",
       stateSearchBytes: "2800805268C60F3902000014E8031F2A",
       statePatchOffset: 0x10,
       stateOriginalBytes: "68C20F39",
       caveSize: 80,
       cavePrefix: "66C866C866C866C866C866C866C866C804220422042204220422042204220422EBBAEBBAEBBAEBBAEBBAEBBAEBBAEBBA",
-      caveSuffix: "FD7BA3A9693B00D0FD030091",
+      caveSuffixHead: "FD7BA3A9",
+      caveSuffixTail: "FD030091E827066D",
       sdkShowWrapperPrologue: "FF8301D1FD7B04A9",
-      openedBridgePrologue: "FD7BBFA9FD03009180C3FEB000081591",
-      rewardBridgePrologue: "FD7BBEA9F30B00F9FD03009120C7FE9000881E91",
-      closedBridgePrologue: "FD7BBFA9FD03009100C9FE9000D01991",
-      availabilityBridgePrologue: "FD7BBEA9F30B00F9FD03009160CBFEB0008C3891",
+      openedBridgeTail: "080040F9010140F9FD7BC1A820001FD6",
+      closedBridgeTail: "080040F9010540F9FD7BC1A820001FD6",
+      rewardBridgeTail: "080040F9021540F9F30B40F9FD7BC2A840001FD6",
+      availabilityBridgeTail: "080040F9020940F9E103132AF30B40F9FD7BC2A840001FD6",
+      openedToAvailabilityDelta: 0x58,
+      closedToAvailabilityDelta: 0x2C,
+      rewardFromAvailabilityDelta: 0x98,
       frameSetup: "FD7BBFA9FD030091",
       nullPlacementArg: "E2031FAA",
       availableTrueArg: "22008052",
@@ -635,17 +624,24 @@
       return hits;
     }
 
+    function isAdrpX9(data, offset) {
+      return ((readU32(data, offset) & 0x9F00001F) >>> 0) === 0x90000009;
+    }
+
     function uniqueAdCaveAnchors(data, ranges, caveBytes) {
-      const suffix = hexToBytes(AD_BYPASS.caveSuffix);
       const prefix = hexToBytes(AD_BYPASS.cavePrefix);
+      const suffixHead = hexToBytes(AD_BYPASS.caveSuffixHead);
+      const suffixTail = hexToBytes(AD_BYPASS.caveSuffixTail);
       const expected = caveBytes instanceof Uint8Array ? caveBytes : hexToBytes(caveBytes);
       const seen = new Set();
       const hits = [];
 
-      for (const suffixHit of findAll(data, suffix, ranges)) {
-        const caveAddress = suffixHit - AD_BYPASS.caveSize;
-        if (!bytesEqual(data, caveAddress - prefix.length, prefix)) continue;
+      for (const prefixHit of findAll(data, prefix, ranges)) {
+        const caveAddress = prefixHit + prefix.length;
         if (!bytesEqual(data, caveAddress, expected)) continue;
+        if (!bytesEqual(data, caveAddress + AD_BYPASS.caveSize, suffixHead)) continue;
+        if (!isAdrpX9(data, caveAddress + AD_BYPASS.caveSize + 4)) continue;
+        if (!bytesEqual(data, caveAddress + AD_BYPASS.caveSize + 8, suffixTail)) continue;
         if (!seen.has(caveAddress)) {
           seen.add(caveAddress);
           hits.push(caveAddress);
@@ -655,13 +651,94 @@
       return hits;
     }
 
+    function uniqueSdkShowAnchors(data, ranges, expectedBytes) {
+      const expected = expectedBytes
+        ? (expectedBytes instanceof Uint8Array ? expectedBytes : hexToBytes(expectedBytes))
+        : null;
+      const patterns = [
+        hexToBytes(AD_BYPASS.sdkShowOriginalTail),
+        hexToBytes(AD_BYPASS.sdkShowPatchedTail)
+      ];
+      const seen = new Set();
+      const hits = [];
+
+      for (const pattern of patterns) {
+        for (const hit of findAll(data, pattern, ranges)) {
+          if (!bytesEqual(data, hit, pattern)) continue;
+          if (expected && !bytesEqual(data, hit, expected)) continue;
+          if (!seen.has(hit)) {
+            seen.add(hit);
+            hits.push(hit);
+          }
+        }
+      }
+
+      return hits;
+    }
+
+    function uniqueAvailabilityReturnAnchors(data, ranges, sdkShowHits, expectedBytes) {
+      const expected = expectedBytes
+        ? (expectedBytes instanceof Uint8Array ? expectedBytes : hexToBytes(expectedBytes))
+        : null;
+      const wrapperPrologue = hexToBytes(AD_BYPASS.availabilityWrapperPrologue);
+      const tails = [
+        hexToBytes(AD_BYPASS.availabilityReturnOriginal),
+        hexToBytes(AD_BYPASS.availabilityReturnPatched)
+      ];
+      const seen = new Set();
+      const hits = [];
+
+      for (const sdkShowAddress of sdkShowHits) {
+        const wrapperAddress = branchTarget(data, sdkShowAddress - AD_BYPASS.sdkAvailabilityBlBackOffset, true);
+        if (wrapperAddress === null || !bytesEqual(data, wrapperAddress, wrapperPrologue)) continue;
+
+        for (let offset = 0; offset <= 0x120; offset += 4) {
+          const address = wrapperAddress + offset;
+          if (expected && !bytesEqual(data, address, expected)) continue;
+          if (!tails.some(tail => bytesEqual(data, address, tail))) continue;
+          if (!seen.has(address)) {
+            seen.add(address);
+            hits.push(address);
+          }
+        }
+      }
+
+      return hits;
+    }
+
     function bridgeHits(data, ranges) {
-      return {
-        opened: findAll(data, hexToBytes(AD_BYPASS.openedBridgePrologue), ranges),
-        rewarded: findAll(data, hexToBytes(AD_BYPASS.rewardBridgePrologue), ranges),
-        closed: findAll(data, hexToBytes(AD_BYPASS.closedBridgePrologue), ranges),
-        availability: findAll(data, hexToBytes(AD_BYPASS.availabilityBridgePrologue), ranges)
-      };
+      const openedTail = hexToBytes(AD_BYPASS.openedBridgeTail);
+      const closedTail = hexToBytes(AD_BYPASS.closedBridgeTail);
+      const rewardTail = hexToBytes(AD_BYPASS.rewardBridgeTail);
+      const availabilityTail = hexToBytes(AD_BYPASS.availabilityBridgeTail);
+      const opened = findAll(data, openedTail, ranges).map(hit => hit - 0x1C);
+      const closed = findAll(data, closedTail, ranges).map(hit => hit - 0x1C);
+      const rewarded = findAll(data, rewardTail, ranges).map(hit => hit - 0x28);
+      const availability = findAll(data, availabilityTail, ranges).map(hit => hit - 0x28);
+      const rewardedSet = new Set(rewarded);
+      const selected = [];
+
+      for (const availabilityAddress of availability) {
+        const openedAddress = availabilityAddress - AD_BYPASS.openedToAvailabilityDelta;
+        const closedAddress = availabilityAddress - AD_BYPASS.closedToAvailabilityDelta;
+        const rewardAddress = availabilityAddress + AD_BYPASS.rewardFromAvailabilityDelta;
+        const ok =
+          rewardedSet.has(rewardAddress) &&
+          bytesEqual(data, openedAddress + 0x1C, openedTail) &&
+          bytesEqual(data, closedAddress + 0x1C, closedTail) &&
+          bytesEqual(data, availabilityAddress + 0x28, availabilityTail) &&
+          bytesEqual(data, rewardAddress + 0x28, rewardTail);
+        if (ok) {
+          selected.push({
+            opened: openedAddress,
+            rewarded: rewardAddress,
+            closed: closedAddress,
+            availability: availabilityAddress
+          });
+        }
+      }
+
+      return { opened, rewarded, closed, availability, selected };
     }
 
     function buildAdLifecyclePatch(caveAddress, stateAddress, bridges) {
@@ -702,49 +779,45 @@
 
     function verifyAdBypassControlFlow(data, ranges) {
       const rows = [];
-      const sdkShowDef = PATCHES.find(patch => patch.name === AD_BYPASS.sdkShowPatchName);
-      if (!sdkShowDef) return rows;
-
-      const sdkShowHits = uniquePatchAnchors(data, ranges, sdkShowDef, "on");
+      const sdkShowHits = uniqueSdkShowAnchors(data, ranges, AD_BYPASS.sdkShowOriginalBytes);
+      const availabilityHits = uniqueAvailabilityReturnAnchors(data, ranges, sdkShowHits, AD_BYPASS.availabilityOriginalBytes);
       const stateHits = uniqueAdStateAnchors(data, ranges, AD_BYPASS.stateOriginalBytes);
       const emptyCave = new Uint8Array(AD_BYPASS.caveSize);
       const caveHits = uniqueAdCaveAnchors(data, ranges, emptyCave);
 
+      rows.push(makeRow(AD_BYPASS.availabilityPatchName, "ON anchor + original write bytes", availabilityHits, ranges));
+      rows.push(makeRow(AD_BYPASS.sdkShowPatchName, "ON anchor + original write bytes", sdkShowHits, ranges));
       rows.push(makeRow(AD_BYPASS.statePatchName, "ON anchor + original write bytes", stateHits, ranges));
       rows.push(makeRow(AD_BYPASS.cavePatchName, "ON anchor + original write bytes", caveHits, ranges));
 
       const bridges = bridgeHits(data, ranges);
-      const bridgesAreUnique = Object.values(bridges).every(hits => hits.length === 1);
+      const bridgesAreUnique = bridges.selected.length === 1;
       rows.push({
         feature: "Ad Bypass control-flow",
-        check: "rewarded-video bridge prologues are unique",
+        check: "rewarded-video bridge tail cluster is unique",
         status: bridgesAreUnique ? "PASS" : "FAIL",
         klass: bridgesAreUnique ? "ok" : "fail",
         count: bridgesAreUnique ? 1 : 0,
-        detail: "opened=" + bridges.opened.length + ", rewarded=" + bridges.rewarded.length + ", closed=" + bridges.closed.length + ", availability=" + bridges.availability.length
+        detail: "selected=" + bridges.selected.length + ", opened tails=" + bridges.opened.length + ", rewarded tails=" + bridges.rewarded.length + ", closed tails=" + bridges.closed.length + ", availability tails=" + bridges.availability.length
       });
 
-      if (sdkShowHits.length !== 1 || stateHits.length !== 1 || caveHits.length !== 1 || !bridgesAreUnique) {
+      if (availabilityHits.length !== 1 || sdkShowHits.length !== 1 || stateHits.length !== 1 || caveHits.length !== 1 || !bridgesAreUnique) {
         rows.push({
           feature: "Ad Bypass control-flow",
-          check: "SDK show suppressor, post-show state trampoline, and lifecycle cave anchors",
+          check: "availability, SDK show, state trampoline, and lifecycle cave anchors",
           status: "FAIL",
           klass: "fail",
           count: 0,
-          detail: "SDK show anchors=" + sdkShowHits.length + ", state anchors=" + stateHits.length + ", cave anchors=" + caveHits.length
+          detail: "availability anchors=" + availabilityHits.length + ", SDK show anchors=" + sdkShowHits.length + ", state anchors=" + stateHits.length + ", cave anchors=" + caveHits.length
         });
         return rows;
       }
 
+      const availabilityAddress = availabilityHits[0];
       const sdkShowAddress = sdkShowHits[0];
       const stateAddress = stateHits[0];
       const caveAddress = caveHits[0];
-      const bridgeTargets = {
-        opened: bridges.opened[0],
-        rewarded: bridges.rewarded[0],
-        closed: bridges.closed[0],
-        availability: bridges.availability[0]
-      };
+      const bridgeTargets = bridges.selected[0];
       const originalTarget = branchTarget(data, sdkShowAddress, true);
       const originalTargetOk = originalTarget !== null && bytesEqual(data, originalTarget, hexToBytes(AD_BYPASS.sdkShowWrapperPrologue));
       rows.push({
@@ -756,6 +829,23 @@
         detail: originalTargetOk
           ? "target=" + toHex(rvaForOffset(originalTarget, ranges))
           : "original SDK show BL target is missing or does not match wrapper prologue"
+      });
+
+      const availabilityWrapper = branchTarget(data, sdkShowAddress - AD_BYPASS.sdkAvailabilityBlBackOffset, true);
+      const availabilityWrapperOk =
+        availabilityWrapper !== null &&
+        bytesEqual(data, availabilityWrapper, hexToBytes(AD_BYPASS.availabilityWrapperPrologue)) &&
+        availabilityAddress >= availabilityWrapper &&
+        availabilityAddress <= availabilityWrapper + 0x120;
+      rows.push({
+        feature: "Ad Bypass control-flow",
+        check: "isRewardedVideoAvailable wrapper is decoded from caller",
+        status: availabilityWrapperOk ? "PASS" : "FAIL",
+        klass: availabilityWrapperOk ? "ok" : "fail",
+        count: availabilityWrapperOk ? 1 : 0,
+        detail: availabilityWrapperOk
+          ? "wrapper=" + toHex(rvaForOffset(availabilityWrapper, ranges)) + ", return mask=" + toHex(rvaForOffset(availabilityAddress, ranges))
+          : "availability BL target or local return mask did not validate"
       });
 
       const stateBranchPatch = dwordToBytes(encodeBranch(0x14000000, stateAddress, caveAddress));
@@ -772,12 +862,28 @@
       const simulated = data.slice();
       writeBytes(simulated, caveAddress, cavePatch.bytes);
       writeBytes(simulated, stateAddress, stateBranchPatch);
-      writeBytes(simulated, sdkShowAddress, hexToBytes(sdkShowDef.patchBytes));
+      writeBytes(simulated, sdkShowAddress, hexToBytes(AD_BYPASS.sdkShowPatchBytes));
+      writeBytes(simulated, availabilityAddress, hexToBytes(AD_BYPASS.availabilityPatchBytes));
 
+      const patchedSdkShowHits = uniqueSdkShowAnchors(simulated, ranges, AD_BYPASS.sdkShowPatchBytes);
+      rows.push(makeRow(AD_BYPASS.availabilityPatchName, "OFF/UNDO anchor + patched write bytes after ON simulation", uniqueAvailabilityReturnAnchors(simulated, ranges, patchedSdkShowHits, AD_BYPASS.availabilityPatchBytes), ranges));
+      rows.push(makeRow(AD_BYPASS.sdkShowPatchName, "OFF/UNDO anchor + patched write bytes after ON simulation", patchedSdkShowHits, ranges));
       rows.push(makeRow(AD_BYPASS.statePatchName, "OFF/UNDO anchor + generated branch after ON simulation", uniqueAdStateAnchors(simulated, ranges, stateBranchPatch), ranges));
       rows.push(makeRow(AD_BYPASS.cavePatchName, "OFF/UNDO anchor + generated cave bytes after ON simulation", uniqueAdCaveAnchors(simulated, ranges, cavePatch.bytes), ranges));
 
-      const sdkSuppressedOk = bytesEqual(simulated, sdkShowAddress, hexToBytes(AD_BYPASS.nop));
+      const availabilityForcedOk = bytesEqual(simulated, availabilityAddress, hexToBytes(AD_BYPASS.availabilityPatchBytes));
+      rows.push({
+        feature: "Ad Bypass control-flow",
+        check: "patched isRewardedVideoAvailable returns true",
+        status: availabilityForcedOk ? "PASS" : "FAIL",
+        klass: availabilityForcedOk ? "ok" : "fail",
+        count: availabilityForcedOk ? 1 : 0,
+        detail: availabilityForcedOk
+          ? "MOV W0,#1 at " + toHex(rvaForOffset(availabilityAddress, ranges))
+          : "availability return mask was not replaced"
+      });
+
+      const sdkSuppressedOk = bytesEqual(simulated, sdkShowAddress, hexToBytes(AD_BYPASS.sdkShowPatchBytes));
       rows.push({
         feature: "Ad Bypass control-flow",
         check: "patched SDK showRewardedVideo call is suppressed",
