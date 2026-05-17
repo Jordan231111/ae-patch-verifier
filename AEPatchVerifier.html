@@ -181,7 +181,7 @@
 <body>
   <main>
     <h1>Verify AE ModMenu</h1>
-    <p>Drop an APK or XAPK. The verifier extracts <code>lib/arm64-v8a/libapp.so</code> and checks patch anchors for unique ON and OFF/UNDO targets. Speedy is skipped because the script intentionally uses raw float search.</p>
+    <p>Drop an APK, XAPK, or raw <code>libapp.so</code>. The verifier extracts <code>lib/arm64-v8a/libapp.so</code> and checks every mod-menu byte patch, code cave, and native hook signature for unique resolution. Speedy is the only feature allowed to resolve more than one raw float constant.</p>
 
     <label id="dropZone" for="fileInput">
       <span>
@@ -189,7 +189,7 @@
         <button type="button" id="chooseButton">Choose file</button>
       </span>
     </label>
-    <input id="fileInput" type="file" accept=".apk,.xapk,application/zip">
+    <input id="fileInput" type="file" accept=".apk,.xapk,.so,application/zip">
 
     <div id="status">Waiting for file.</div>
     <div id="summary" class="summary hidden"></div>
@@ -199,16 +199,6 @@
   <script src="./jszip.min.js"></script>
   <script>
     const PATCHES = [
-      {
-        name: "Max Battle EXP",
-        patchOffset: 12,
-        searchPattern: "F60301AAA0020291",
-        searchBytes: "F60301AAA0020291",
-        patchedPattern: "F60301AAA0020291",
-        patchedBytes: "F60301AAA0020291",
-        originalBytes: "0100168B",
-        patchBytes: "E1FFAFD2"
-      },
       {
         name: "Battle MP cost",
         patchOffset: 0,
@@ -290,14 +280,6 @@
       caveTemplate: "F80300AA680240F9E00313AA08CD40F900013FD61F04007100010054680240F9E00313AA083140F900013FD6000040F9E10317CB"
     };
 
-    const ITEM = {
-      prefix: "F603002AA0420091",
-      afterOffsetFromPrefix: 20,
-      after: "E00314AAE303132A",
-      patchOffset: 16,
-      originalBytes: "0200160B"
-    };
-
     const AD_BYPASS = {
       availabilityPatchName: "Ad Bypass: isRewardedVideoAvailable return = 1",
       sdkShowPatchName: "Ad Bypass: SDK showRewardedVideo call suppressed",
@@ -334,6 +316,88 @@
       availableTrueArg: "22008052",
       caveRestoreFrame: "FD7BC1A8",
       nop: "1F2003D5"
+    };
+
+    const HOOK_SIGNATURES = [
+      {
+        feature: "PCD Paw Stamps (safe)",
+        check: "Lua registration resolves getGlobalFlag",
+        luaName: "getGlobalFlag"
+      },
+      {
+        feature: "PCD Paw Stamps (safe)",
+        check: "Lua registration resolves setGlobalFlag",
+        luaName: "setGlobalFlag"
+      },
+      {
+        feature: "Sparkles/chests (safe only if non-key item)",
+        check: "shared final item-writer hook signature",
+        pattern: "FD7BBEA9F44F01A9FD030091F303032AF40300AA????????",
+        detail: "Also backs Dungeon/Battle Rush, Gifts/Star Library, Scratchbook item rewards, Ad treasure rewards, Ticket issue, Shop/exchange, and Subscription gains."
+      },
+      {
+        feature: "Mob drops (safe)",
+        check: "battle reward-writer hook signature",
+        pattern: "FF4307D1FD7B18A9FC6719A9F85F1AA9F6571BA9F44F1CA9FD03069158D03BD5F403032A"
+      },
+      {
+        feature: "Quest non-item grant count",
+        check: "quest reward grant hook signature",
+        pattern: "FF0304D1FD7B0CA9F76B00F9F6570EA9F44F0FA9FD03039157D03BD5F40300AA"
+      },
+      {
+        feature: "Final item setter increases",
+        check: "domain item setAmount hook signature",
+        pattern: "FF4302D1FD7B05A9F73300F9F65707A9F44F08A9FD43019156D03BD517409952"
+      },
+      {
+        feature: "Battle EXP max grant",
+        check: "add PC EXP hook signature",
+        pattern: "FD7BBDA9F65701A9F44F02A9FD030091151C40F9F40300AA"
+      },
+      {
+        feature: "Cat Scratchbook stamps",
+        check: "stamp total structural hook signature",
+        id: "catScratchStampTotal",
+        pattern: "FF8301D1FD7B03A9F65704A9F44F05A9FDC3009155D03BD5F30300AAE0030091A81640F9F403012AF6030091A8831FF8FF0300F9FF7F01A9FF1300F9????????E0030091E103142A????????740202919F0216EBC0000054E0030091????????E103002AE00314AA????????E00340F92800805268C20439"
+      },
+      {
+        feature: "Cat Scratchbook stamps",
+        check: "stamp count derived from stampTotal - 0xD4",
+        deriveFrom: "catScratchStampTotal",
+        deriveDelta: -0xD4,
+        verifyPattern: "FF8301D1FD7B03A9F65704A9F44F05A9FDC3009155D03BD5F30300AAE0030091A81640F9F403012AF6030091A8831FF8FF0300F9FF7F01A9FF1300F9????????E0030091E103142A????????746201919F0216EBC0000054E0030091????????E103002AE00314AA????????E00340F92800805268C20439",
+        detail: "The count setter is the adjacent CatDiaryStatus field setter before stampTotal; this avoids broad matching every unrelated 0x58 field setter."
+      },
+      {
+        feature: "Reserved/gimmick/mystery/helix",
+        check: "Lua registration resolves changeReservedItemAmount",
+        luaName: "changeReservedItemAmount"
+      },
+      {
+        feature: "Reserved/gimmick/mystery/helix",
+        check: "Lua registration resolves changeGimmickItemAmount",
+        luaName: "changeGimmickItemAmount"
+      },
+      {
+        feature: "Reserved/gimmick/mystery/helix",
+        check: "Lua registration resolves setMysteryItemAmount",
+        luaName: "setMysteryItemAmount",
+        optional: true
+      },
+      {
+        feature: "Reserved/gimmick/mystery/helix",
+        check: "Lua registration resolves helixChangeItemAmount",
+        luaName: "helixChangeItemAmount",
+        optional: true
+      }
+    ];
+
+    const SPEEDY = {
+      originalFloat: "00247449",
+      patchedFloat: "0024F446",
+      allowedMin: 1,
+      allowedMax: 3
     };
 
     const statusEl = document.getElementById("status");
@@ -381,10 +445,35 @@
       return bytes;
     }
 
+    function parseBytePattern(pattern) {
+      const clean = pattern.replace(/\s+/g, "");
+      const bytes = new Uint8Array(clean.length / 2);
+      const mask = new Uint8Array(clean.length / 2);
+      for (let i = 0; i < clean.length; i += 2) {
+        const token = clean.slice(i, i + 2);
+        if (token === "??") {
+          bytes[i / 2] = 0;
+          mask[i / 2] = 0;
+        } else {
+          bytes[i / 2] = parseInt(token, 16);
+          mask[i / 2] = 0xFF;
+        }
+      }
+      return { bytes, mask };
+    }
+
     function bytesEqual(data, offset, bytes) {
       if (offset < 0 || offset + bytes.length > data.length) return false;
       for (let i = 0; i < bytes.length; i++) {
         if (data[offset + i] !== bytes[i]) return false;
+      }
+      return true;
+    }
+
+    function bytesMatchPattern(data, offset, parsed) {
+      if (offset < 0 || offset + parsed.bytes.length > data.length) return false;
+      for (let i = 0; i < parsed.bytes.length; i++) {
+        if (parsed.mask[i] && data[offset + i] !== parsed.bytes[i]) return false;
       }
       return true;
     }
@@ -400,6 +489,21 @@
             hits.push(offset);
           }
           offset++;
+        }
+      }
+      return hits;
+    }
+
+    function findPatternAll(data, pattern, ranges) {
+      if (!pattern.includes("??")) return findAll(data, hexToBytes(pattern), ranges);
+
+      const parsed = parseBytePattern(pattern);
+      const hits = [];
+      for (const range of ranges) {
+        if (range.end - range.start < parsed.bytes.length) continue;
+        for (let offset = range.start; offset + parsed.bytes.length <= range.end; offset++) {
+          if (parsed.mask[0] && data[offset] !== parsed.bytes[0]) continue;
+          if (bytesMatchPattern(data, offset, parsed)) hits.push(offset);
         }
       }
       return hits;
@@ -488,6 +592,10 @@
     }
 
     function parseExecutableRanges(data) {
+      return parseLoadRanges(data, true);
+    }
+
+    function parseLoadRanges(data, executableOnly = false) {
       if (data[0] !== 0x7F || data[1] !== 0x45 || data[2] !== 0x4C || data[3] !== 0x46) {
         return [{ start: 0, end: data.length, delta: 0 }];
       }
@@ -503,7 +611,8 @@
         const off = phoff + (i * phentsize);
         const type = readU32(data, off);
         const flags = readU32(data, off + 4);
-        if (type !== 1 || (flags & 1) === 0) continue;
+        if (type !== 1) continue;
+        if (executableOnly && (flags & 1) === 0) continue;
 
         const fileOffset = readU64Number(data, off + 8);
         const vaddr = readU64Number(data, off + 16);
@@ -521,6 +630,34 @@
     function rvaForOffset(offset, ranges) {
       const range = ranges.find(item => offset >= item.start && offset < item.end);
       return range ? offset + range.delta : offset;
+    }
+
+    function offsetForRva(rva, ranges) {
+      for (const range of ranges) {
+        const startRva = range.start + range.delta;
+        const endRva = range.end + range.delta;
+        if (rva >= startRva && rva < endRva) {
+          return rva - range.delta;
+        }
+      }
+      return null;
+    }
+
+    function u64ToBytes(value) {
+      const out = new Uint8Array(8);
+      let remaining = BigInt(value);
+      for (let i = 0; i < 8; i++) {
+        out[i] = Number(remaining & 0xFFn);
+        remaining >>= 8n;
+      }
+      return out;
+    }
+
+    function asciiBytes(text) {
+      const out = new Uint8Array(text.length + 1);
+      for (let i = 0; i < text.length; i++) out[i] = text.charCodeAt(i) & 0xFF;
+      out[text.length] = 0;
+      return out;
     }
 
     function resultStatus(count) {
@@ -561,24 +698,6 @@
       return hits;
     }
 
-    function verifyItem(data, ranges) {
-      const prefix = hexToBytes(ITEM.prefix);
-      const after = hexToBytes(ITEM.after);
-      const originalBytes = hexToBytes(ITEM.originalBytes);
-      const hits = [];
-      const seen = new Set();
-      for (const hit of findAll(data, prefix, ranges)) {
-        if (!bytesEqual(data, hit + ITEM.afterOffsetFromPrefix, after)) continue;
-        const patchAddress = hit + ITEM.patchOffset;
-        if (!bytesEqual(data, patchAddress, originalBytes)) continue;
-        if (!seen.has(patchAddress)) {
-          seen.add(patchAddress);
-          hits.push(patchAddress);
-        }
-      }
-      return makeRow("Item Multiplier", "ON anchor + original write bytes", hits, ranges);
-    }
-
     function makeRow(feature, check, hits, ranges, detail = "") {
       const [status, klass] = resultStatus(hits.length);
       const addresses = hits.map(hit => toHex(rvaForOffset(hit, ranges))).join(", ");
@@ -597,6 +716,98 @@
       const offHits = uniquePatchAnchors(simulated, ranges, def, "off");
       rows.push(makeRow(def.name, "OFF/UNDO anchor + patched write bytes after ON simulation", offHits, ranges));
       return rows;
+    }
+
+    function findHookSignatureHits(data, ranges, def) {
+      const seen = new Set();
+      const hits = [];
+      if (!def.pattern) return hits;
+      for (const hit of findPatternAll(data, def.pattern, ranges)) {
+        if (seen.has(hit)) continue;
+        seen.add(hit);
+        hits.push(hit);
+      }
+      hits.sort((a, b) => a - b);
+      return hits;
+    }
+
+    function verifyDerivedHook(data, execRanges, def, resolvedHooks) {
+      const baseHits = resolvedHooks.get(def.deriveFrom) || [];
+      const hits = [];
+      let detail = def.detail || "";
+      if (baseHits.length === 1) {
+        const candidate = baseHits[0] + def.deriveDelta;
+        const inExec = execRanges.some(range => candidate >= range.start && candidate < range.end);
+        const verified = inExec && bytesMatchPattern(data, candidate, parseBytePattern(def.verifyPattern));
+        if (verified) hits.push(candidate);
+        detail += (detail ? " " : "") +
+          "base=" + toHex(rvaForOffset(baseHits[0], execRanges)) +
+          ", candidate=" + toHex(rvaForOffset(candidate, execRanges)) +
+          ", verified=" + (verified ? "yes" : "no");
+      } else {
+        detail += (detail ? " " : "") + "baseHits=" + baseHits.length;
+      }
+      return makeRow(def.feature, def.check, hits, execRanges, detail);
+    }
+
+    function verifyLuaRegistration(data, execRanges, loadRanges, def) {
+      const stringHits = findAll(data, asciiBytes(def.luaName), loadRanges);
+      if (stringHits.length === 0 && def.optional) {
+        return {
+          feature: def.feature,
+          check: def.check,
+          status: "N/A",
+          klass: "ok",
+          count: 0,
+          detail: "Lua API name is absent in this game version."
+        };
+      }
+
+      const seen = new Set();
+      const hits = [];
+      for (const stringOffset of stringHits) {
+        const stringRva = rvaForOffset(stringOffset, loadRanges);
+        const refs = findAll(data, u64ToBytes(stringRva), loadRanges);
+        for (const ref of refs) {
+          if (ref + 32 > data.length) continue;
+          const fnRva = readU64Number(data, ref + 24);
+          const fnOffset = offsetForRva(fnRva, loadRanges);
+          if (fnOffset === null) continue;
+          const inExec = execRanges.some(range => fnOffset >= range.start && fnOffset < range.end);
+          if (!inExec || seen.has(fnOffset)) continue;
+          seen.add(fnOffset);
+          hits.push(fnOffset);
+        }
+      }
+
+      return makeRow(def.feature, def.check, hits, execRanges,
+        "stringRefs=" + stringHits.length + (hits.length ? " " : ""));
+    }
+
+    function verifyHookSignature(data, execRanges, loadRanges, def, resolvedHooks) {
+      if (def.deriveFrom) return verifyDerivedHook(data, execRanges, def, resolvedHooks);
+      if (def.luaName) return verifyLuaRegistration(data, execRanges, loadRanges, def);
+      const hits = findHookSignatureHits(data, execRanges, def);
+      const extra = def.detail ? def.detail + " " : "";
+      const row = makeRow(def.feature, def.check, hits, execRanges, extra);
+      row.hitOffsets = hits;
+      return row;
+    }
+
+    function verifySpeedy(data, ranges) {
+      const originalHits = findAll(data, hexToBytes(SPEEDY.originalFloat), ranges);
+      const patchedHits = findAll(data, hexToBytes(SPEEDY.patchedFloat), ranges);
+      const ok = originalHits.length >= SPEEDY.allowedMin && originalHits.length <= SPEEDY.allowedMax;
+      return {
+        feature: "Speedy mode",
+        check: "raw 1000000.0f speed constants, 1-3 hits allowed",
+        status: ok ? "PASS" : (originalHits.length === 0 ? "NOT FOUND" : "MULTIPLE"),
+        klass: ok ? "ok" : "fail",
+        count: originalHits.length,
+        detail: "1000000.0f=" + originalHits.map(hit => toHex(rvaForOffset(hit, ranges))).join(", ") +
+          "; existing 31250.0f literals=" + patchedHits.length +
+          " (runtime only restores Speedy if this process turned it on)"
+      };
     }
 
     function uniqueAdStateAnchors(data, ranges, stateBytes) {
@@ -1057,6 +1268,10 @@
     }
 
     async function extractLibs(file) {
+      if (file.name.toLowerCase().endsWith(".so")) {
+        return [{ label: file.name, data: new Uint8Array(await file.arrayBuffer()) }];
+      }
+
       const root = await JSZip.loadAsync(await file.arrayBuffer());
       const libs = [];
 
@@ -1080,21 +1295,20 @@
 
     function verifyLib(lib) {
       const ranges = parseExecutableRanges(lib.data);
+      const loadRanges = parseLoadRanges(lib.data, false);
       const rows = [];
-      rows.push(verifyItem(lib.data, ranges));
+      const resolvedHooks = new Map();
+      for (const hookDef of HOOK_SIGNATURES) {
+        const row = verifyHookSignature(lib.data, ranges, loadRanges, hookDef, resolvedHooks);
+        rows.push(row);
+        if (hookDef.id && row.hitOffsets) resolvedHooks.set(hookDef.id, row.hitOffsets);
+      }
       for (const patchDef of PATCHES) {
         rows.push(...verifyPatch(lib.data, ranges, patchDef));
       }
       rows.push(...verifyAdBypassControlFlow(lib.data, ranges));
       rows.push(...verifyTeamGod(lib.data, ranges));
-      rows.push({
-        feature: "Speedy",
-        check: "raw float search",
-        status: "SKIPPED",
-        klass: "warn",
-        count: 0,
-        detail: "Skipped by design; current Lua uses original raw float search."
-      });
+      rows.push(verifySpeedy(lib.data, ranges));
       return rows;
     }
 
@@ -1140,7 +1354,7 @@
         `<span class="pill ok">PASS ${pass}</span>` +
         `<span class="pill fail">FAIL ${fail}</span>` +
         `<span class="pill warn">SKIPPED/WARN ${warn}</span>`;
-      setStatus(fail === 0 ? "Verification complete: no failed non-speed checks." : "Verification complete: review failed checks.", fail === 0 ? "ok" : "fail");
+      setStatus(fail === 0 ? "Verification complete: every mod-menu target resolved." : "Verification complete: review failed checks.", fail === 0 ? "ok" : "fail");
     }
 
     async function handleFile(file) {
