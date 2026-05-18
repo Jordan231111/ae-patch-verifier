@@ -457,7 +457,13 @@
         check: "Lua registration resolves fireAchievementTrigger",
         luaName: "fireAchievementTrigger",
         optional: true,
-        detail: "Trace-only hook used to confirm the PCD achievement helper runs after stamp collection."
+        detail: "Lua path trace; PCD can also use the native dispatcher below."
+      },
+      {
+        feature: "PCD Paw Stamps (safe)",
+        check: "Achievement FireTriggerEvent dispatcher resolves",
+        achievementDispatch: true,
+        detail: "Semantic resolver: FireTriggerEvent type name plus TB-GameEvent prefix."
       },
       {
         feature: "Sparkles/chests (safe only if non-key item)",
@@ -907,6 +913,103 @@
       return out;
     }
 
+    function inRanges(offset, ranges, size = 1) {
+      return ranges.some(range => offset >= range.start && offset + size <= range.end);
+    }
+
+    function signExtend(value, bits) {
+      const sign = 2 ** (bits - 1);
+      return (value ^ sign) - sign;
+    }
+
+    function decodeAdrTarget(data, offset, pcRva) {
+      const instruction = readU32(data, offset);
+      if (((instruction & 0x9F000000) >>> 0) !== 0x10000000) return null;
+      const immlo = (instruction >>> 29) & 0x3;
+      const immhi = (instruction >>> 5) & 0x7FFFF;
+      return pcRva + signExtend((immhi * 4) + immlo, 21);
+    }
+
+    function decodeAdrpPage(data, offset, pcRva) {
+      const instruction = readU32(data, offset);
+      if (((instruction & 0x9F000000) >>> 0) !== 0x90000000) return null;
+      const immlo = (instruction >>> 29) & 0x3;
+      const immhi = (instruction >>> 5) & 0x7FFFF;
+      const basePage = Math.floor(pcRva / 0x1000) * 0x1000;
+      return {
+        page: basePage + (signExtend((immhi * 4) + immlo, 21) * 0x1000),
+        reg: instruction & 0x1F
+      };
+    }
+
+    function decodeAddImmediateTarget(data, offset, baseReg, base) {
+      const instruction = readU32(data, offset);
+      if (((instruction & 0x7F000000) >>> 0) !== 0x11000000) return null;
+      const rn = (instruction >>> 5) & 0x1F;
+      if (rn !== baseReg) return null;
+      let imm = (instruction >>> 10) & 0xFFF;
+      if (instruction & (1 << 22)) imm *= 0x1000;
+      return base + imm;
+    }
+
+    function pcRelativeSequenceReferencesRva(data, execRanges, offset, targetRva) {
+      if (!inRanges(offset, execRanges, 4)) return false;
+      const pcRva = rvaForOffset(offset, execRanges);
+      const adrTarget = decodeAdrTarget(data, offset, pcRva);
+      if (adrTarget === targetRva) return true;
+
+      const adrp = decodeAdrpPage(data, offset, pcRva);
+      if (!adrp) return false;
+      for (let next = offset + 4; next <= offset + 32; next += 4) {
+        if (!inRanges(next, execRanges, 4)) break;
+        const addTarget = decodeAddImmediateTarget(data, next, adrp.reg, adrp.page);
+        if (addTarget === targetRva) return true;
+      }
+      return false;
+    }
+
+    function findPcRelativeRefs(data, execRanges, targetRva) {
+      const refs = [];
+      for (const range of execRanges) {
+        let offset = (range.start + 3) & ~3;
+        while (offset + 4 <= range.end) {
+          if (pcRelativeSequenceReferencesRva(data, execRanges, offset, targetRva)) refs.push(offset);
+          offset += 4;
+        }
+      }
+      return refs;
+    }
+
+    function findFunctionStartBeforeRef(data, execRanges, ref) {
+      const min = Math.max(0, ref - 0x240);
+      let stpFallback = null;
+      for (let offset = ref & ~3; offset >= min; offset -= 4) {
+        if (!inRanges(offset, execRanges, 4)) break;
+        const instruction = readU32(data, offset);
+        if (((instruction & 0xFFC003FF) >>> 0) === 0xD10003FF) return offset;
+        const isStp =
+          ((instruction & 0xFFC07FFF) >>> 0) === 0xA9007BFD ||
+          ((instruction & 0xFFC07FFF) >>> 0) === 0xA9807BFD;
+        if (stpFallback === null && isStp) {
+          const previous = offset - 4;
+          if (previous >= 0 && inRanges(previous, execRanges, 4)) {
+            const previousInstruction = readU32(data, previous);
+            if (((previousInstruction & 0xFFC003FF) >>> 0) === 0xD10003FF) return previous;
+          }
+          stpFallback = offset;
+        }
+      }
+      return stpFallback;
+    }
+
+    function functionReferencesRva(data, execRanges, functionStart, maxBytes, targetRva) {
+      for (let offset = functionStart; offset + 4 <= functionStart + maxBytes; offset += 4) {
+        if (!inRanges(offset, execRanges, 4)) break;
+        if (pcRelativeSequenceReferencesRva(data, execRanges, offset, targetRva)) return true;
+      }
+      return false;
+    }
+
     function resultStatus(count) {
       if (count === 1) return ["PASS", "ok"];
       if (count === 0) return ["NOT FOUND", "fail"];
@@ -1076,9 +1179,42 @@
         (details.length ? " " + details.join("; ") : ""));
     }
 
+    function verifyAchievementDispatcher(data, execRanges, loadRanges, def) {
+      const typeName = "N6toybox17DomainAchievement16FireTriggerEventE";
+      const prefix = "TB-GameEvent-";
+      const typeHits = findAll(data, asciiBytes(typeName), loadRanges);
+      const prefixHits = findAll(data, asciiBytes(prefix), loadRanges);
+      const candidates = [];
+      let typeRefs = 0;
+
+      for (const typeHit of typeHits) {
+        const typeRva = rvaForOffset(typeHit, loadRanges);
+        const refs = findPcRelativeRefs(data, execRanges, typeRva);
+        typeRefs += refs.length;
+        for (const ref of refs) {
+          const functionStart = findFunctionStartBeforeRef(data, execRanges, ref);
+          if (functionStart === null) continue;
+          const hasPrefix = prefixHits.some(prefixHit => {
+            const prefixRva = rvaForOffset(prefixHit, loadRanges);
+            return functionReferencesRva(data, execRanges, functionStart, 0x180, prefixRva);
+          });
+          if (hasPrefix && !candidates.includes(functionStart)) candidates.push(functionStart);
+        }
+      }
+
+      const extra = def.detail ? def.detail + " " : "";
+      return makeRow(def.feature, def.check, candidates, execRanges,
+        extra +
+        "typeStringHits=" + typeHits.length +
+        " prefixStringHits=" + prefixHits.length +
+        " typeRefs=" + typeRefs +
+        (candidates.length ? " dispatcher=" + candidates.map(hit => toHex(rvaForOffset(hit, execRanges))).join(", ") : ""));
+    }
+
     function verifyHookSignature(data, execRanges, loadRanges, def, resolvedHooks) {
       if (def.deriveFrom) return verifyDerivedHook(data, execRanges, def, resolvedHooks);
       if (def.luaName) return verifyLuaRegistration(data, execRanges, loadRanges, def);
+      if (def.achievementDispatch) return verifyAchievementDispatcher(data, execRanges, loadRanges, def);
       const hits = findHookSignatureHits(data, execRanges, def);
       const extra = def.detail ? def.detail + " " : "";
       const row = makeRow(def.feature, def.check, hits, execRanges, extra);
