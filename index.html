@@ -453,6 +453,13 @@
         luaName: "setGlobalFlag"
       },
       {
+        feature: "PCD Paw Stamps (safe)",
+        check: "Lua registration resolves fireAchievementTrigger",
+        luaName: "fireAchievementTrigger",
+        optional: true,
+        detail: "Trace-only hook used to confirm the PCD achievement helper runs after stamp collection."
+      },
+      {
         feature: "Sparkles/chests (safe only if non-key item)",
         check: "shared final item-writer hook signature",
         pattern: "FD7BBEA9F44F01A9FD030091F303032AF40300AA????????",
@@ -1006,29 +1013,67 @@
       const seen = new Set();
       const hits = [];
       const details = [];
+      let directRefs = 0;
+      let indirectRefs = 0;
+      let loaderRefs = 0;
       for (const stringOffset of stringHits) {
         const stringRva = rvaForOffset(stringOffset, loadRanges);
         const refs = findAll(data, u64ToBytes(stringRva), loadRanges);
         for (const ref of refs) {
-          if (ref + 32 > data.length) continue;
-          const relocatedNameSlot = readU64Number(data, ref + 8);
-          const tableRva = relocatedNameSlot >= 8 ? relocatedNameSlot - 8 : rvaForOffset(ref, loadRanges);
-          const fnRva = readU64Number(data, ref + 24);
-          const fnOffset = offsetForRva(fnRva, loadRanges);
-          if (fnOffset === null) continue;
-          const inExec = execRanges.some(range => fnOffset >= range.start && fnOffset < range.end);
-          if (!inExec || seen.has(fnOffset)) continue;
+          if (ref + 16 > data.length) continue;
+          const rowRva = rvaForOffset(ref, loadRanges);
+          const adjacentRva = readU64Number(data, ref + 8);
+          const adjacentOffset = offsetForRva(adjacentRva, loadRanges);
+          const directInExec = adjacentRva !== 0 && adjacentOffset !== null &&
+            execRanges.some(range => adjacentOffset >= range.start && adjacentOffset < range.end);
+
+          let fnOffset = null;
+          let kind = "";
+          if (directInExec) {
+            fnOffset = adjacentOffset;
+            kind = "direct";
+            directRefs++;
+          } else if (adjacentOffset !== null && adjacentOffset + 8 <= data.length) {
+            const indirectRva = readU64Number(data, adjacentOffset);
+            const indirectOffset = offsetForRva(indirectRva, loadRanges);
+            const indirectInExec = indirectRva !== 0 && indirectOffset !== null &&
+              execRanges.some(range => indirectOffset >= range.start && indirectOffset < range.end);
+            if (indirectInExec) {
+              fnOffset = indirectOffset;
+              kind = "indirect";
+              indirectRefs++;
+            }
+          }
+
+          if (fnOffset === null && ref + 32 <= data.length) {
+            const loaderFnRva = readU64Number(data, ref + 24);
+            const loaderFnOffset = offsetForRva(loaderFnRva, loadRanges);
+            const loaderInExec = loaderFnRva !== 0 && loaderFnOffset !== null &&
+              execRanges.some(range => loaderFnOffset >= range.start && loaderFnOffset < range.end);
+            if (loaderInExec) {
+              fnOffset = loaderFnOffset;
+              kind = "loader";
+              loaderRefs++;
+            }
+          }
+
+          if (fnOffset === null || seen.has(fnOffset)) continue;
           seen.add(fnOffset);
           hits.push(fnOffset);
           details.push(
-            "table=" + toHex(tableRva) +
+            kind + " row=" + toHex(rowRva) +
             " -> fn=" + toHex(rvaForOffset(fnOffset, execRanges))
           );
         }
       }
 
+      const extra = def.detail ? def.detail + " " : "";
       return makeRow(def.feature, def.check, hits, execRanges,
-        "stringRefs=" + stringHits.length + (details.length ? " " + details.join("; ") : ""));
+        extra + "stringRefs=" + stringHits.length +
+        " directRefs=" + directRefs +
+        " indirectRefs=" + indirectRefs +
+        " loaderRefs=" + loaderRefs +
+        (details.length ? " " + details.join("; ") : ""));
     }
 
     function verifyHookSignature(data, execRanges, loadRanges, def, resolvedHooks) {
