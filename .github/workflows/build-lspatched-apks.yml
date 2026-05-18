@@ -20,7 +20,7 @@ on:
           - release
           - debug
       moduleSha:
-        description: Exact ae-pcd-stamp-tracer commit SHA to embed
+        description: Server-resolved module commit to embed
         required: true
       nonce:
         description: Request nonce from Vercel
@@ -51,13 +51,46 @@ jobs:
         run: |
           sdkmanager "platforms;android-35" "build-tools;35.0.0" "cmake;3.22.1" "ndk;25.2.9519653"
 
+      - name: Prepare module source
+        env:
+          MODULE_SHA: ${{ inputs.moduleSha }}
+          MODULE_REPO: ${{ secrets.AE_MODULE_REPO }}
+          GH_TOKEN: ${{ secrets.AE_MODULE_REPO_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          test -n "$MODULE_REPO"
+          test -n "$GH_TOKEN"
+
+          WORK="$RUNNER_TEMP/ae-lspatch"
+          mkdir -p "$WORK"/{tools,xapk,lspatch-out,signed-base,resign-in,signed-splits,bundle}
+
+          gh repo clone "$MODULE_REPO" "$WORK/module"
+          git -C "$WORK/module" checkout --detach "$MODULE_SHA"
+          MODULE_SHA_SHORT="$(git -C "$WORK/module" rev-parse --short=7 HEAD)"
+          chmod +x "$WORK/module/gradlew"
+
+          CACHE_KEY="$(find "$WORK/module" -maxdepth 3 -type f \( -name "*.gradle" -o -name "*.gradle.kts" -o -name "gradle-wrapper.properties" -o -name "libs.versions.toml" \) -print0 | sort -z | xargs -0 sha256sum | sha256sum | cut -d ' ' -f 1)"
+          echo "CACHE_KEY=$CACHE_KEY" >> "$GITHUB_ENV"
+          echo "WORK=$WORK" >> "$GITHUB_ENV"
+          echo "MODULE_SHA_SHORT=$MODULE_SHA_SHORT" >> "$GITHUB_ENV"
+
+      - name: Cache module Gradle files
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+            ${{ env.WORK }}/module/app/.cxx
+          key: ae-module-gradle-${{ runner.os }}-${{ inputs.variant }}-${{ env.CACHE_KEY }}
+          restore-keys: |
+            ae-module-gradle-${{ runner.os }}-${{ inputs.variant }}-
+            ae-module-gradle-${{ runner.os }}-
+
       - name: Build APKS
         env:
           REGION: ${{ inputs.region }}
           VARIANT: ${{ inputs.variant }}
-          MODULE_SHA: ${{ inputs.moduleSha }}
-          MODULE_REPO: ${{ secrets.AE_MODULE_REPO }}
-          GH_TOKEN: ${{ secrets.AE_MODULE_REPO_TOKEN }}
           NONCE: ${{ inputs.nonce }}
         run: |
           set -euo pipefail
@@ -77,16 +110,8 @@ jobs:
 
           KEYSTORE="builder/signing/Ashfur.jks"
           test -f "$KEYSTORE"
-          test -n "$MODULE_REPO"
-          test -n "$GH_TOKEN"
-
-          WORK="$RUNNER_TEMP/ae-lspatch"
-          mkdir -p "$WORK"/{tools,xapk,lspatch-out,signed-base,resign-in,signed-splits,bundle}
-
-          gh repo clone "$MODULE_REPO" "$WORK/module"
-          git -C "$WORK/module" checkout --detach "$MODULE_SHA"
+          test -n "$WORK"
           MODULE_SHA_SHORT="$(git -C "$WORK/module" rev-parse --short=7 HEAD)"
-          chmod +x "$WORK/module/gradlew"
           case "$VARIANT" in
             debug)
               (cd "$WORK/module" && ./gradlew :app:assembleDebug --stacktrace)
@@ -169,7 +194,6 @@ jobs:
           (cd "$WORK/bundle" && zip -q -r -0 -Z store "$OUT" ./*.apk ./manifest.json)
           echo "OUT=$OUT" >> "$GITHUB_ENV"
           echo "PACKAGE_NAME=$PACKAGE_NAME" >> "$GITHUB_ENV"
-          echo "MODULE_SHA=$MODULE_SHA" >> "$GITHUB_ENV"
           echo "MODULE_SHA_SHORT=$MODULE_SHA_SHORT" >> "$GITHUB_ENV"
 
       - name: Publish short-lived release

@@ -238,7 +238,7 @@ async function buildApksViaGithub({ region, moduleVariant }, res) {
     inputs: {
       region,
       variant: moduleVariant,
-      moduleSha: moduleCommit.sha,
+      moduleSha: moduleCommit.shortSha,
       nonce
     }
   });
