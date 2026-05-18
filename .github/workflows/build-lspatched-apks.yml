@@ -39,7 +39,15 @@ jobs:
         uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: "21"
+          java-version: "17"
+          cache: gradle
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android build tools
+        run: |
+          sdkmanager "platforms;android-35" "build-tools;35.0.0" "cmake;3.22.1" "ndk;25.2.9519653"
 
       - name: Build APKS
         env:
@@ -62,13 +70,30 @@ jobs:
               ;;
           esac
 
-          MODULE_APK="builder/modules/com.jordan.aepcdtrace-${VARIANT}.apk"
           KEYSTORE="builder/signing/Ashfur.jks"
-          test -f "$MODULE_APK"
           test -f "$KEYSTORE"
 
           WORK="$RUNNER_TEMP/ae-lspatch"
+          MODULE_REPO="https://github.com/[removed-private-value].git"
+          MODULE_REF="main"
           mkdir -p "$WORK"/{tools,xapk,lspatch-out,signed-base,resign-in,signed-splits,bundle}
+
+          git clone --depth 1 --branch "$MODULE_REF" "$MODULE_REPO" "$WORK/module"
+          chmod +x "$WORK/module/gradlew"
+          case "$VARIANT" in
+            debug)
+              (cd "$WORK/module" && ./gradlew :app:assembleDebug --stacktrace)
+              MODULE_APK="$WORK/module/app/build/outputs/apk/debug/app-debug.apk"
+              ;;
+            release|*)
+              (cd "$WORK/module" && ./gradlew :app:assembleRelease --stacktrace)
+              MODULE_APK="$WORK/module/app/build/outputs/apk/release/app-release.apk"
+              ;;
+          esac
+          test -f "$MODULE_APK"
+          echo "Using module APK: $MODULE_APK"
+          unzip -p "$MODULE_APK" META-INF/version-control-info.textproto || true
+          sha256sum "$MODULE_APK"
 
           curl -L --fail --retry 3 -A "Mozilla/5.0 AE Patch Builder" -o "$WORK/source.xapk" "$DOWNLOAD_URL"
           unzip -q -o "$WORK/source.xapk" -d "$WORK/xapk"
