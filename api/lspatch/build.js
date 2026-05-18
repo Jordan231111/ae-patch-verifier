@@ -22,14 +22,14 @@ function config() {
   return {
     builderMode: process.env.LSPATCH_BUILDER_MODE || "local",
     githubToken: process.env.GITHUB_TOKEN || process.env.GH_TOKEN || "",
-    githubOwner: process.env.GITHUB_REPO_OWNER || "Jordan231111",
-    githubRepo: process.env.GITHUB_REPO_NAME || "ae-patch-verifier",
+    githubOwner: process.env.GITHUB_REPO_OWNER || "",
+    githubRepo: process.env.GITHUB_REPO_NAME || "",
     githubRef: process.env.GITHUB_REF_NAME || "main",
     githubWorkflow: process.env.GITHUB_WORKFLOW_FILE || "build-lspatched-apks.yml",
     githubPollMs: Number(process.env.GITHUB_BUILDER_POLL_MS || 5000),
     githubTimeoutMs: Number(process.env.GITHUB_BUILDER_TIMEOUT_MS || 270000),
-    moduleOwner: process.env.AE_MODULE_REPO_OWNER || "Jordan231111",
-    moduleRepo: process.env.AE_MODULE_REPO_NAME || "ae-pcd-stamp-tracer",
+    moduleOwner: process.env.AE_MODULE_REPO_OWNER || "",
+    moduleRepo: process.env.AE_MODULE_REPO_NAME || "",
     moduleRef: process.env.AE_MODULE_REF || "main",
     lspatchJar: process.env.LSPATCH_JAR || "[removed-private-value]/Tools/RE/lspatch/lspatch-v0.8.jar",
     signerJar: process.env.UBER_APK_SIGNER_JAR || "[removed-private-value]/Downloads/uber-apk-signer.jar",
@@ -37,10 +37,8 @@ function config() {
     ksAlias: process.env.ASHFUR_ALIAS || "Ashfur",
     ksPass: process.env.ASHFUR_STORE_PASS || "[removed-private-value]",
     keyPass: process.env.ASHFUR_KEY_PASS || "[removed-private-value]",
-    moduleRelease: process.env.AE_MODULE_RELEASE_APK ||
-      "[removed-private-value]/Downloads/PersonalAppReverse/ae-pcd-stamp-tracer/app/build/outputs/apk/release/app-release.apk",
-    moduleDebug: process.env.AE_MODULE_DEBUG_APK ||
-      "[removed-private-value]/Downloads/PersonalAppReverse/ae-pcd-stamp-tracer/app/build/outputs/apk/debug/app-debug.apk"
+    moduleRelease: process.env.AE_MODULE_RELEASE_APK || "",
+    moduleDebug: process.env.AE_MODULE_DEBUG_APK || ""
   };
 }
 
@@ -227,6 +225,9 @@ async function waitForGithubRun(cfg, nonce) {
 async function buildApksViaGithub({ region, moduleVariant }, res) {
   const game = GAMES[region] || GAMES.global;
   const cfg = config();
+  if (!cfg.githubOwner || !cfg.githubRepo) {
+    throw new Error("GitHub builder repository is not configured");
+  }
   const nonce = `${Date.now()}-${crypto.randomBytes(4).toString("hex")}`;
   const ownerRepo = `/repos/${cfg.githubOwner}/${cfg.githubRepo}`;
   const workflowPath = `${ownerRepo}/actions/workflows/${encodeURIComponent(cfg.githubWorkflow)}/dispatches`;
@@ -253,9 +254,7 @@ async function buildApksViaGithub({ region, moduleVariant }, res) {
   res.setHeader("content-type", "application/vnd.android.apks");
   res.setHeader("content-disposition", `attachment; filename="${filename}"`);
   res.setHeader("x-builder", "github-actions");
-  res.setHeader("x-module-sha", moduleCommit.sha);
   res.setHeader("x-module-short-sha", moduleCommit.shortSha);
-  res.setHeader("x-module-commit-url", moduleCommit.htmlUrl);
   res.setHeader("x-github-release", release.html_url || "");
   res.setHeader("x-github-tag", githubReleaseTag(release) || "");
   try {
@@ -306,19 +305,22 @@ function githubReleaseTag(release) {
 }
 
 async function resolveModuleCommit(cfg) {
-  const commit = await githubJson(cfg, "GET",
-    `/repos/${cfg.moduleOwner}/${cfg.moduleRepo}/commits/${encodeURIComponent(cfg.moduleRef)}`);
+  if (!cfg.moduleOwner || !cfg.moduleRepo) {
+    throw new Error("Module commit source is not configured");
+  }
+  let commit;
+  try {
+    commit = await githubJson(cfg, "GET",
+      `/repos/${cfg.moduleOwner}/${cfg.moduleRepo}/commits/${encodeURIComponent(cfg.moduleRef)}`);
+  } catch (_) {
+    throw new Error("Could not resolve latest module commit");
+  }
   if (!commit || typeof commit.sha !== "string" || commit.sha.length < 7) {
-    throw new Error(`Could not resolve module commit ${cfg.moduleOwner}/${cfg.moduleRepo}@${cfg.moduleRef}`);
+    throw new Error("Could not resolve latest module commit");
   }
   return {
-    owner: cfg.moduleOwner,
-    repo: cfg.moduleRepo,
-    ref: cfg.moduleRef,
     sha: commit.sha,
-    shortSha: commit.sha.slice(0, 7),
-    message: commit.commit && commit.commit.message ? String(commit.commit.message).split("\n")[0] : "",
-    htmlUrl: commit.html_url || `https://github.com/${cfg.moduleOwner}/${cfg.moduleRepo}/commit/${commit.sha}`
+    shortSha: commit.sha.slice(0, 7)
   };
 }
 

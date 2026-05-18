@@ -338,8 +338,8 @@
         </div>
         <div class="builder-row">
           <div class="builder-label">Latest Module Commit</div>
-          <a id="moduleCommit" class="commit-chip" href="https://github.com/[removed-private-value]/commits/main" target="_blank" rel="noopener">loading</a>
-          <div id="moduleCommitMeta" class="commit-meta">ae-pcd-stamp-tracer@main</div>
+          <span id="moduleCommit" class="commit-chip">loading</span>
+          <div id="moduleCommitMeta" class="commit-meta">Server-resolved latest module source</div>
         </div>
         <button id="builderButton" class="primary" type="submit">Build .apks</button>
         <div id="builderStatus">Builds latest module from GitHub main with LSPatch 0.8, latest APKPure XAPK, and the Ashfur signer.</div>
@@ -674,15 +674,12 @@
         if (!body || !body.shortSha) throw new Error("missing SHA");
         latestModuleCommit = body;
         moduleCommit.textContent = body.shortSha;
-        moduleCommit.href = body.htmlUrl || `https://github.com/${body.owner}/${body.repo}/commit/${body.sha}`;
-        moduleCommit.title = body.sha;
         moduleCommit.className = "commit-chip ok";
-        moduleCommitMeta.textContent = `${body.owner}/${body.repo}@${body.ref}`;
+        moduleCommitMeta.textContent = "Server-resolved latest module source";
         return body;
       } catch (error) {
         latestModuleCommit = null;
         moduleCommit.textContent = "unavailable";
-        moduleCommit.removeAttribute("title");
         moduleCommit.className = "commit-chip fail";
         moduleCommitMeta.textContent = "Could not load latest module commit";
         return null;

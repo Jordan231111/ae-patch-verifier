@@ -57,6 +57,8 @@ jobs:
           REGION: ${{ inputs.region }}
           VARIANT: ${{ inputs.variant }}
           MODULE_SHA: ${{ inputs.moduleSha }}
+          MODULE_REPO: ${{ secrets.AE_MODULE_REPO }}
+          GH_TOKEN: ${{ secrets.AE_MODULE_REPO_TOKEN }}
           NONCE: ${{ inputs.nonce }}
         run: |
           set -euo pipefail
@@ -76,12 +78,13 @@ jobs:
 
           KEYSTORE="builder/signing/Ashfur.jks"
           test -f "$KEYSTORE"
+          test -n "$MODULE_REPO"
+          test -n "$GH_TOKEN"
 
           WORK="$RUNNER_TEMP/ae-lspatch"
-          MODULE_REPO="https://github.com/[removed-private-value].git"
           mkdir -p "$WORK"/{tools,xapk,lspatch-out,signed-base,resign-in,signed-splits,bundle}
 
-          git clone "$MODULE_REPO" "$WORK/module"
+          gh repo clone "$MODULE_REPO" "$WORK/module"
           git -C "$WORK/module" checkout --detach "$MODULE_SHA"
           MODULE_SHA_SHORT="$(git -C "$WORK/module" rev-parse --short=7 HEAD)"
           chmod +x "$WORK/module/gradlew"
@@ -97,7 +100,7 @@ jobs:
           esac
           test -f "$MODULE_APK"
           echo "Using module APK: $MODULE_APK"
-          echo "Using module commit: $MODULE_SHA_SHORT ($MODULE_SHA)"
+          echo "Using module commit: $MODULE_SHA_SHORT"
           unzip -p "$MODULE_APK" META-INF/version-control-info.textproto || true
           sha256sum "$MODULE_APK"
 
@@ -182,4 +185,4 @@ jobs:
           gh release create "$TAG" "$OUT#$(basename "$OUT")" \
             --repo "$GITHUB_REPOSITORY" \
             --title "LSPatched APKS ${REGION} ${VARIANT} ${NONCE}" \
-            --notes "Temporary personal LSPatch build for ${PACKAGE_NAME}. Module commit: ${MODULE_SHA_SHORT} (${MODULE_SHA}). Safe to delete after download."
+            --notes "Temporary personal LSPatch build for ${PACKAGE_NAME}. Module commit: ${MODULE_SHA_SHORT}. Safe to delete after download."

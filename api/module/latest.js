@@ -3,8 +3,8 @@ const https = require("https");
 function config() {
   return {
     githubToken: process.env.GITHUB_TOKEN || process.env.GH_TOKEN || "",
-    owner: process.env.AE_MODULE_REPO_OWNER || "Jordan231111",
-    repo: process.env.AE_MODULE_REPO_NAME || "ae-pcd-stamp-tracer",
+    owner: process.env.AE_MODULE_REPO_OWNER || "",
+    repo: process.env.AE_MODULE_REPO_NAME || "",
     ref: process.env.AE_MODULE_REF || "main"
   };
 }
@@ -54,32 +54,25 @@ module.exports = async function handler(req, res) {
 
   const cfg = config();
   try {
+    if (!cfg.owner || !cfg.repo) {
+      throw new Error("Module commit source is not configured");
+    }
     const commit = await githubJson(cfg,
       `/repos/${cfg.owner}/${cfg.repo}/commits/${encodeURIComponent(cfg.ref)}`);
     if (!commit || typeof commit.sha !== "string" || commit.sha.length < 7) {
-      throw new Error(`Could not resolve ${cfg.owner}/${cfg.repo}@${cfg.ref}`);
+      throw new Error("Could not resolve latest module commit");
     }
-    const firstLine = commit.commit && commit.commit.message
-      ? String(commit.commit.message).split("\n")[0]
-      : "";
 
     res.statusCode = 200;
     res.setHeader("content-type", "application/json");
     res.setHeader("cache-control", "no-store");
     res.end(JSON.stringify({
-      owner: cfg.owner,
-      repo: cfg.repo,
-      ref: cfg.ref,
-      sha: commit.sha,
-      shortSha: commit.sha.slice(0, 7),
-      message: firstLine,
-      date: commit.commit && commit.commit.committer ? commit.commit.committer.date : "",
-      htmlUrl: commit.html_url || `https://github.com/${cfg.owner}/${cfg.repo}/commit/${commit.sha}`
+      shortSha: commit.sha.slice(0, 7)
     }));
   } catch (error) {
     res.statusCode = 500;
     res.setHeader("content-type", "application/json");
     res.setHeader("cache-control", "no-store");
-    res.end(JSON.stringify({ message: error.message }));
+    res.end(JSON.stringify({ message: "Could not resolve latest module commit" }));
   }
 };
