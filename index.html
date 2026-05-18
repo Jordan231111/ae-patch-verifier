@@ -390,6 +390,45 @@
         check: "Lua registration resolves helixChangeItemAmount",
         luaName: "helixChangeItemAmount",
         optional: true
+      },
+      {
+        feature: "Mass Purchase loop (primary signal)",
+        check: "Domain::TokenShopCommodity::setTotalAmount hook signature",
+        id: "domainTokenShopSetTotal",
+        pattern: "FF8301D1FD7B04A9F44F05A9FD03019154D03BD5881640F9A8831FF882040034F303012A",
+        detail: "Provides the +1 delta buy signal that advances the mass-purchase loop. Encodes commodity total field offset 0x58 as an immediate."
+      },
+      {
+        feature: "Mass Purchase restore path",
+        check: "Domain::TokenShopCommodity::resetTotalAmount hook signature",
+        pattern: "FF0302D1FD7B06A9F44F07A9FD83019154D03BD5F30300AA41028052881640F9"
+      },
+      {
+        feature: "Mass Purchase commit observer",
+        check: "UserDataFBS::pushBackTokenShopCommodity hook signature",
+        id: "userDataPushBackTokenShop",
+        pattern: "FF8301D1FD7B03A9F65704A9F44F05A9FDC3009155D03BD5F40301AAF30300AAA81640F9A8831FF8292040A9E9A300A9880000B40121009120008052????????08718252",
+        detail: "Auto-encodes UserDataFBS vector offset 0x1388 (MOV w8) and map offset 0x13B8 (MOV w22) plus commodity ID slot +0x30 (ADD x0, x8) as immediates."
+      },
+      {
+        feature: "Mass Purchase shop flow trace",
+        check: "tokenShopPurchase hook signature",
+        pattern: "FF0304D1FD7B0BA9FA670CA9F85F0DA9F6570EA9F44F0FA9FDC30291????????F40300AA081740F9A8831FF8A86300D1130440F9601642F9????????601642F9"
+      },
+      {
+        feature: "Mass Purchase shop flow trace",
+        check: "appraisalExchangeShopPurchase hook signature",
+        pattern: "FF0304D1FD7B0BA9FA670CA9F85F0DA9F6570EA9F44F0FA9FDC30291????????F30300AAE81640F9A8831FF8A86300D1180440F9001B42F9????????001B42F9"
+      },
+      {
+        feature: "Mass Purchase shop flow trace",
+        check: "tokenShopTradeComplete hook signature (trace-only after loop fix)",
+        pattern: "FF8304D1FD7B0CA9FC6F0DA9FA670EA9F85F0FA9F65710A9F44F11A9FD030391????????F30300AAC81640F9A8831FF8001442F9????????177C4092FF0A00F1"
+      },
+      {
+        feature: "Mass Purchase owned-count patch",
+        check: "owned-count LDR/LDR/BLR instruction triple inside tokenShopPurchase",
+        pattern: "080040F9080940F900013FD6E80240F9A1FE161BE203002A082940F9E00317AA00013FD6"
       }
     ];
 
