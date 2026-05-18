@@ -249,11 +249,52 @@ async function buildApksViaGithub({ region, moduleVariant }, res) {
   res.setHeader("content-disposition", `attachment; filename="${filename}"`);
   res.setHeader("x-builder", "github-actions");
   res.setHeader("x-github-release", release.html_url || "");
-  await streamUrl(asset.url, {
-    "accept": "application/octet-stream",
-    "authorization": `Bearer ${cfg.githubToken}`,
-    "user-agent": "AE Patch Builder"
-  }, res);
+  res.setHeader("x-github-tag", githubReleaseTag(release) || "");
+  try {
+    await streamUrl(asset.url, {
+      "accept": "application/octet-stream",
+      "authorization": `Bearer ${cfg.githubToken}`,
+      "user-agent": "AE Patch Builder"
+    }, res);
+  } finally {
+    await cleanupGithubRelease(cfg, release).catch(error => {
+      console.warn("GitHub cleanup failed:", error.message);
+    });
+  }
+}
+
+async function cleanupGithubRelease(cfg, release) {
+  if (!release || !release.id) return;
+  const ownerRepo = `/repos/${cfg.githubOwner}/${cfg.githubRepo}`;
+  await githubJson(cfg, "DELETE", `${ownerRepo}/releases/${release.id}`);
+  const tagName = githubReleaseTag(release);
+  if (tagName) {
+    await sleep(15000);
+    await deleteGithubTagWithRetry(cfg, ownerRepo, tagName);
+  }
+}
+
+async function deleteGithubTagWithRetry(cfg, ownerRepo, tagName) {
+  const refPath = `${ownerRepo}/git/refs/tags/${encodeURIComponent(tagName)}`;
+  let lastError = null;
+  for (let attempt = 0; attempt < 8; attempt += 1) {
+    try {
+      await githubJson(cfg, "DELETE", refPath);
+      return;
+    } catch (error) {
+      lastError = error;
+      await sleep(1000);
+    }
+  }
+  if (lastError) throw lastError;
+}
+
+function githubReleaseTag(release) {
+  if (!release) return "";
+  if (release.tag_name) return release.tag_name;
+  if (release.tagName) return release.tagName;
+  const match = /\/tag\/([^/?#]+)/.exec(release.html_url || release.url || "");
+  return match ? decodeURIComponent(match[1]) : "";
 }
 
 function splitInputs(extractedDir) {
