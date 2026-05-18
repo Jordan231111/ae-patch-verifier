@@ -28,6 +28,9 @@ function config() {
     githubWorkflow: process.env.GITHUB_WORKFLOW_FILE || "build-lspatched-apks.yml",
     githubPollMs: Number(process.env.GITHUB_BUILDER_POLL_MS || 5000),
     githubTimeoutMs: Number(process.env.GITHUB_BUILDER_TIMEOUT_MS || 270000),
+    moduleOwner: process.env.AE_MODULE_REPO_OWNER || "Jordan231111",
+    moduleRepo: process.env.AE_MODULE_REPO_NAME || "ae-pcd-stamp-tracer",
+    moduleRef: process.env.AE_MODULE_REF || "main",
     lspatchJar: process.env.LSPATCH_JAR || "[removed-private-value]/Tools/RE/lspatch/lspatch-v0.8.jar",
     signerJar: process.env.UBER_APK_SIGNER_JAR || "[removed-private-value]/Downloads/uber-apk-signer.jar",
     keystore: process.env.ASHFUR_KEYSTORE || "[removed-private-value]/Downloads/Ashfur.jks",
@@ -227,12 +230,14 @@ async function buildApksViaGithub({ region, moduleVariant }, res) {
   const nonce = `${Date.now()}-${crypto.randomBytes(4).toString("hex")}`;
   const ownerRepo = `/repos/${cfg.githubOwner}/${cfg.githubRepo}`;
   const workflowPath = `${ownerRepo}/actions/workflows/${encodeURIComponent(cfg.githubWorkflow)}/dispatches`;
+  const moduleCommit = await resolveModuleCommit(cfg);
 
   await githubJson(cfg, "POST", workflowPath, {
     ref: cfg.githubRef,
     inputs: {
       region,
       variant: moduleVariant,
+      moduleSha: moduleCommit.sha,
       nonce
     }
   });
@@ -243,11 +248,14 @@ async function buildApksViaGithub({ region, moduleVariant }, res) {
   const asset = assets.find(item => item.name && item.name.endsWith(".apks"));
   if (!asset) throw new Error(`GitHub builder finished but no .apks release asset was found for ${nonce}`);
 
-  const filename = `${game.defaultName}_LSPatched_Ashfur_${moduleVariant}.apks`;
+  const filename = `${game.defaultName}_LSPatched_Ashfur_${moduleVariant}_${moduleCommit.shortSha}.apks`;
   res.statusCode = 200;
   res.setHeader("content-type", "application/vnd.android.apks");
   res.setHeader("content-disposition", `attachment; filename="${filename}"`);
   res.setHeader("x-builder", "github-actions");
+  res.setHeader("x-module-sha", moduleCommit.sha);
+  res.setHeader("x-module-short-sha", moduleCommit.shortSha);
+  res.setHeader("x-module-commit-url", moduleCommit.htmlUrl);
   res.setHeader("x-github-release", release.html_url || "");
   res.setHeader("x-github-tag", githubReleaseTag(release) || "");
   try {
@@ -295,6 +303,23 @@ function githubReleaseTag(release) {
   if (release.tagName) return release.tagName;
   const match = /\/tag\/([^/?#]+)/.exec(release.html_url || release.url || "");
   return match ? decodeURIComponent(match[1]) : "";
+}
+
+async function resolveModuleCommit(cfg) {
+  const commit = await githubJson(cfg, "GET",
+    `/repos/${cfg.moduleOwner}/${cfg.moduleRepo}/commits/${encodeURIComponent(cfg.moduleRef)}`);
+  if (!commit || typeof commit.sha !== "string" || commit.sha.length < 7) {
+    throw new Error(`Could not resolve module commit ${cfg.moduleOwner}/${cfg.moduleRepo}@${cfg.moduleRef}`);
+  }
+  return {
+    owner: cfg.moduleOwner,
+    repo: cfg.moduleRepo,
+    ref: cfg.moduleRef,
+    sha: commit.sha,
+    shortSha: commit.sha.slice(0, 7),
+    message: commit.commit && commit.commit.message ? String(commit.commit.message).split("\n")[0] : "",
+    htmlUrl: commit.html_url || `https://github.com/${cfg.moduleOwner}/${cfg.moduleRepo}/commit/${commit.sha}`
+  };
 }
 
 function splitInputs(extractedDir) {

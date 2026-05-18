@@ -179,6 +179,34 @@
       color: var(--muted);
     }
 
+    .commit-chip {
+      display: inline-flex;
+      align-items: center;
+      min-height: 34px;
+      width: fit-content;
+      max-width: 100%;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      background: #fafafa;
+      color: var(--ink);
+      padding: 6px 9px;
+      font: 700 13px/1.2 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      text-decoration: none;
+    }
+
+    .commit-chip:hover {
+      border-color: #9aa0aa;
+    }
+
+    .commit-meta {
+      min-height: 16px;
+      color: var(--muted);
+      font-size: 12px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
     @media (max-width: 860px) {
       .toolbar {
         grid-template-columns: 1fr;
@@ -307,6 +335,11 @@
             <option value="release" selected>Release</option>
             <option value="debug">Debug logs</option>
           </select>
+        </div>
+        <div class="builder-row">
+          <div class="builder-label">Latest Module Commit</div>
+          <a id="moduleCommit" class="commit-chip" href="https://github.com/[removed-private-value]/commits/main" target="_blank" rel="noopener">loading</a>
+          <div id="moduleCommitMeta" class="commit-meta">ae-pcd-stamp-tracer@main</div>
         </div>
         <button id="builderButton" class="primary" type="submit">Build .apks</button>
         <div id="builderStatus">Builds latest module from GitHub main with LSPatch 0.8, latest APKPure XAPK, and the Ashfur signer.</div>
@@ -584,6 +617,9 @@
     const builderForm = document.getElementById("builderForm");
     const builderButton = document.getElementById("builderButton");
     const builderStatus = document.getElementById("builderStatus");
+    const moduleCommit = document.getElementById("moduleCommit");
+    const moduleCommitMeta = document.getElementById("moduleCommitMeta");
+    let latestModuleCommit = null;
 
     chooseButton.addEventListener("click", () => fileInput.click());
     fileInput.addEventListener("change", () => {
@@ -614,6 +650,12 @@
       buildLspatchBundle();
     });
 
+    refreshModuleCommit();
+    window.setInterval(refreshModuleCommit, 60000);
+    document.addEventListener("visibilitychange", () => {
+      if (!document.hidden) refreshModuleCommit();
+    });
+
     function setStatus(text, className = "") {
       statusEl.textContent = text;
       statusEl.className = className;
@@ -622,6 +664,29 @@
     function setBuilderStatus(text, className = "") {
       builderStatus.textContent = text;
       builderStatus.className = className;
+    }
+
+    async function refreshModuleCommit() {
+      try {
+        const response = await fetch("/api/module/latest", { cache: "no-store" });
+        if (!response.ok) throw new Error("HTTP " + response.status);
+        const body = await response.json();
+        if (!body || !body.shortSha) throw new Error("missing SHA");
+        latestModuleCommit = body;
+        moduleCommit.textContent = body.shortSha;
+        moduleCommit.href = body.htmlUrl || `https://github.com/${body.owner}/${body.repo}/commit/${body.sha}`;
+        moduleCommit.title = body.sha;
+        moduleCommit.className = "commit-chip ok";
+        moduleCommitMeta.textContent = `${body.owner}/${body.repo}@${body.ref}`;
+        return body;
+      } catch (error) {
+        latestModuleCommit = null;
+        moduleCommit.textContent = "unavailable";
+        moduleCommit.removeAttribute("title");
+        moduleCommit.className = "commit-chip fail";
+        moduleCommitMeta.textContent = "Could not load latest module commit";
+        return null;
+      }
     }
 
     function selectedRadio(name) {
@@ -642,7 +707,11 @@
       };
 
       builderButton.disabled = true;
-      setBuilderStatus("Starting server build...", "info");
+      const visibleCommit = await refreshModuleCommit();
+      setBuilderStatus(
+        visibleCommit ? `Starting server build with module ${visibleCommit.shortSha}...` : "Starting server build...",
+        "info"
+      );
 
       try {
         const response = await fetch("/api/lspatch/build", {
@@ -671,6 +740,8 @@
         }
 
         const blob = await response.blob();
+        const moduleShortSha = response.headers.get("x-module-short-sha") ||
+          (latestModuleCommit && latestModuleCommit.shortSha) || "";
         const name = filenameFromDisposition(response.headers.get("content-disposition")) ||
           `AnotherEden_${payload.region}_LSPatched_Ashfur.apks`;
         const url = URL.createObjectURL(blob);
@@ -681,7 +752,7 @@
         link.click();
         link.remove();
         URL.revokeObjectURL(url);
-        setBuilderStatus("Download started: " + name, "ok");
+        setBuilderStatus("Download started: " + name + (moduleShortSha ? ` (module ${moduleShortSha})` : ""), "ok");
       } catch (error) {
         setBuilderStatus(error.message, "fail");
       } finally {

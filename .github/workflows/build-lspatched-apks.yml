@@ -19,6 +19,9 @@ on:
         options:
           - release
           - debug
+      moduleSha:
+        description: Exact ae-pcd-stamp-tracer commit SHA to embed
+        required: true
       nonce:
         description: Request nonce from Vercel
         required: true
@@ -53,6 +56,7 @@ jobs:
         env:
           REGION: ${{ inputs.region }}
           VARIANT: ${{ inputs.variant }}
+          MODULE_SHA: ${{ inputs.moduleSha }}
           NONCE: ${{ inputs.nonce }}
         run: |
           set -euo pipefail
@@ -75,10 +79,11 @@ jobs:
 
           WORK="$RUNNER_TEMP/ae-lspatch"
           MODULE_REPO="https://github.com/[removed-private-value].git"
-          MODULE_REF="main"
           mkdir -p "$WORK"/{tools,xapk,lspatch-out,signed-base,resign-in,signed-splits,bundle}
 
-          git clone --depth 1 --branch "$MODULE_REF" "$MODULE_REPO" "$WORK/module"
+          git clone "$MODULE_REPO" "$WORK/module"
+          git -C "$WORK/module" checkout --detach "$MODULE_SHA"
+          MODULE_SHA_SHORT="$(git -C "$WORK/module" rev-parse --short=7 HEAD)"
           chmod +x "$WORK/module/gradlew"
           case "$VARIANT" in
             debug)
@@ -92,6 +97,7 @@ jobs:
           esac
           test -f "$MODULE_APK"
           echo "Using module APK: $MODULE_APK"
+          echo "Using module commit: $MODULE_SHA_SHORT ($MODULE_SHA)"
           unzip -p "$MODULE_APK" META-INF/version-control-info.textproto || true
           sha256sum "$MODULE_APK"
 
@@ -157,10 +163,12 @@ jobs:
             cp "$WORK/xapk/manifest.json" "$WORK/bundle/manifest.json"
           fi
 
-          OUT="$PWD/${DEFAULT_NAME}_LSPatched_Ashfur_${VARIANT}_${NONCE}.apks"
+          OUT="$PWD/${DEFAULT_NAME}_LSPatched_Ashfur_${VARIANT}_${MODULE_SHA_SHORT}_${NONCE}.apks"
           (cd "$WORK/bundle" && zip -q -r -0 -Z store "$OUT" ./*.apk ./manifest.json)
           echo "OUT=$OUT" >> "$GITHUB_ENV"
           echo "PACKAGE_NAME=$PACKAGE_NAME" >> "$GITHUB_ENV"
+          echo "MODULE_SHA=$MODULE_SHA" >> "$GITHUB_ENV"
+          echo "MODULE_SHA_SHORT=$MODULE_SHA_SHORT" >> "$GITHUB_ENV"
 
       - name: Publish short-lived release
         env:
@@ -174,4 +182,4 @@ jobs:
           gh release create "$TAG" "$OUT#$(basename "$OUT")" \
             --repo "$GITHUB_REPOSITORY" \
             --title "LSPatched APKS ${REGION} ${VARIANT} ${NONCE}" \
-            --notes "Temporary personal LSPatch build for ${PACKAGE_NAME}. Safe to delete after download."
+            --notes "Temporary personal LSPatch build for ${PACKAGE_NAME}. Module commit: ${MODULE_SHA_SHORT} (${MODULE_SHA}). Safe to delete after download."
