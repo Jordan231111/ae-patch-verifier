@@ -255,8 +255,6 @@ async function buildApksViaGithub({ region, moduleVariant }, res) {
   res.setHeader("content-disposition", `attachment; filename="${filename}"`);
   res.setHeader("x-builder", "github-actions");
   res.setHeader("x-module-short-sha", moduleCommit.shortSha);
-  res.setHeader("x-github-release", release.html_url || "");
-  res.setHeader("x-github-tag", githubReleaseTag(release) || "");
   try {
     await streamUrl(asset.url, {
       "accept": "application/octet-stream",
