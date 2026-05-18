@@ -457,13 +457,13 @@
         check: "Lua registration resolves fireAchievementTrigger",
         luaName: "fireAchievementTrigger",
         optional: true,
-        detail: "Lua path trace; PCD can also use the native dispatcher below."
+        detail: "Optional trace helper. PCD milestone triggers are driven by the patched Custom_fireAchievementGenrikyou Lua helper."
       },
       {
         feature: "PCD Paw Stamps (safe)",
-        check: "Achievement FireTriggerEvent dispatcher resolves",
+        check: "Achievement FireTriggerEvent dispatcher fallback resolves",
         achievementDispatch: true,
-        detail: "Semantic resolver: FireTriggerEvent type name plus TB-GameEvent prefix."
+        detail: "Trace-only fallback resolver. PCD multiplier correctness no longer depends on dispatcher replay."
       },
       {
         feature: "Sparkles/chests (safe only if non-key item)",
