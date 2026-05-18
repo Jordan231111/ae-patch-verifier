@@ -1,0 +1,9 @@
+{
+  "name": "ae-patch-verifier",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "serve": "vercel dev",
+    "check": "node --check api/lspatch/build.js"
+  }
+}

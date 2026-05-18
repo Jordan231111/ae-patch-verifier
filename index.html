@@ -90,6 +90,101 @@
       display: none;
     }
 
+    .toolbar {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 360px;
+      gap: 16px;
+      align-items: stretch;
+      margin: 22px 0;
+    }
+
+    .toolbar #dropZone {
+      margin: 0;
+    }
+
+    .builder {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 14px;
+      display: grid;
+      gap: 12px;
+    }
+
+    .builder h2 {
+      margin: 0;
+      font-size: 16px;
+      letter-spacing: 0;
+    }
+
+    .builder-row {
+      display: grid;
+      gap: 6px;
+    }
+
+    .builder-label {
+      font-size: 12px;
+      font-weight: 700;
+      color: var(--muted);
+      text-transform: uppercase;
+    }
+
+    .segmented {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 6px;
+    }
+
+    .segmented input {
+      position: absolute;
+      opacity: 0;
+      pointer-events: none;
+    }
+
+    .segmented span,
+    select {
+      display: block;
+      width: 100%;
+      min-height: 36px;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      background: #fff;
+      color: var(--ink);
+      padding: 8px 10px;
+      font: inherit;
+    }
+
+    .segmented input:checked + span {
+      border-color: var(--info);
+      background: #eef4ff;
+      color: var(--info);
+      font-weight: 700;
+    }
+
+    .primary {
+      border-color: var(--info);
+      background: var(--info);
+      color: #fff;
+      font-weight: 700;
+    }
+
+    .primary:disabled {
+      opacity: 0.6;
+      cursor: progress;
+    }
+
+    #builderStatus {
+      min-height: 20px;
+      font-size: 12px;
+      color: var(--muted);
+    }
+
+    @media (max-width: 860px) {
+      .toolbar {
+        grid-template-columns: 1fr;
+      }
+    }
+
     #status {
       min-height: 22px;
       margin: 0 0 14px;
@@ -183,12 +278,40 @@
     <h1>Verify AE ModMenu</h1>
     <p>Drop an APK, XAPK, or raw <code>libapp.so</code>. The verifier extracts <code>lib/arm64-v8a/libapp.so</code> and checks every mod-menu byte patch, code cave, and native hook signature for unique resolution. Speedy is the only feature allowed to resolve more than one raw float constant.</p>
 
-    <label id="dropZone" for="fileInput">
-      <span>
-        <strong>Drop APK/XAPK here</strong>
-        <button type="button" id="chooseButton">Choose file</button>
-      </span>
-    </label>
+    <div class="toolbar">
+      <label id="dropZone" for="fileInput">
+        <span>
+          <strong>Drop APK/XAPK here</strong>
+          <button type="button" id="chooseButton">Choose file</button>
+        </span>
+      </label>
+
+      <form id="builderForm" class="builder">
+        <h2>LSPatch Builder</h2>
+        <div class="builder-row">
+          <div class="builder-label">Game</div>
+          <div class="segmented">
+            <label>
+              <input type="radio" name="region" value="global" checked>
+              <span>Global</span>
+            </label>
+            <label>
+              <input type="radio" name="region" value="japan">
+              <span>Japan</span>
+            </label>
+          </div>
+        </div>
+        <div class="builder-row">
+          <label class="builder-label" for="moduleVariant">Module</label>
+          <select id="moduleVariant" name="moduleVariant">
+            <option value="release" selected>Release</option>
+            <option value="debug">Debug logs</option>
+          </select>
+        </div>
+        <button id="builderButton" class="primary" type="submit">Build .apks</button>
+        <div id="builderStatus">Uses the server Ashfur signer and latest APKPure XAPK.</div>
+      </form>
+    </div>
     <input id="fileInput" type="file" accept=".apk,.xapk,.so,application/zip">
 
     <div id="status">Waiting for file.</div>
@@ -445,6 +568,9 @@
     const fileInput = document.getElementById("fileInput");
     const dropZone = document.getElementById("dropZone");
     const chooseButton = document.getElementById("chooseButton");
+    const builderForm = document.getElementById("builderForm");
+    const builderButton = document.getElementById("builderButton");
+    const builderStatus = document.getElementById("builderStatus");
 
     chooseButton.addEventListener("click", () => fileInput.click());
     fileInput.addEventListener("change", () => {
@@ -470,9 +596,84 @@
       if (file) handleFile(file);
     });
 
+    builderForm.addEventListener("submit", event => {
+      event.preventDefault();
+      buildLspatchBundle();
+    });
+
     function setStatus(text, className = "") {
       statusEl.textContent = text;
       statusEl.className = className;
+    }
+
+    function setBuilderStatus(text, className = "") {
+      builderStatus.textContent = text;
+      builderStatus.className = className;
+    }
+
+    function selectedRadio(name) {
+      const checked = document.querySelector(`input[name="${name}"]:checked`);
+      return checked ? checked.value : "";
+    }
+
+    function filenameFromDisposition(value) {
+      if (!value) return "";
+      const match = /filename\*?=(?:UTF-8''|")?([^";]+)/i.exec(value);
+      return match ? decodeURIComponent(match[1].replace(/"/g, "")) : "";
+    }
+
+    async function buildLspatchBundle() {
+      const payload = {
+        region: selectedRadio("region"),
+        moduleVariant: document.getElementById("moduleVariant").value
+      };
+
+      builderButton.disabled = true;
+      setBuilderStatus("Starting server build...", "info");
+
+      try {
+        const response = await fetch("/api/lspatch/build", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload)
+        });
+
+        if (response.status === 404) {
+          throw new Error("Builder API is not deployed on this host.");
+        }
+        if (!response.ok) {
+          let message = "Build failed with HTTP " + response.status;
+          try {
+            const error = await response.json();
+            if (error && error.message) message = error.message;
+          } catch (_) {}
+          throw new Error(message);
+        }
+
+        const type = response.headers.get("content-type") || "";
+        if (type.includes("application/json")) {
+          const body = await response.json();
+          setBuilderStatus(body.message || "Build queued.", "info");
+          return;
+        }
+
+        const blob = await response.blob();
+        const name = filenameFromDisposition(response.headers.get("content-disposition")) ||
+          `AnotherEden_${payload.region}_LSPatched_Ashfur.apks`;
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement("a");
+        link.href = url;
+        link.download = name;
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        URL.revokeObjectURL(url);
+        setBuilderStatus("Download started: " + name, "ok");
+      } catch (error) {
+        setBuilderStatus(error.message, "fail");
+      } finally {
+        builderButton.disabled = false;
+      }
     }
 
     function hexToBytes(hex) {
@@ -804,11 +1005,14 @@
 
       const seen = new Set();
       const hits = [];
+      const details = [];
       for (const stringOffset of stringHits) {
         const stringRva = rvaForOffset(stringOffset, loadRanges);
         const refs = findAll(data, u64ToBytes(stringRva), loadRanges);
         for (const ref of refs) {
           if (ref + 32 > data.length) continue;
+          const relocatedNameSlot = readU64Number(data, ref + 8);
+          const tableRva = relocatedNameSlot >= 8 ? relocatedNameSlot - 8 : rvaForOffset(ref, loadRanges);
           const fnRva = readU64Number(data, ref + 24);
           const fnOffset = offsetForRva(fnRva, loadRanges);
           if (fnOffset === null) continue;
@@ -816,11 +1020,15 @@
           if (!inExec || seen.has(fnOffset)) continue;
           seen.add(fnOffset);
           hits.push(fnOffset);
+          details.push(
+            "table=" + toHex(tableRva) +
+            " -> fn=" + toHex(rvaForOffset(fnOffset, execRanges))
+          );
         }
       }
 
       return makeRow(def.feature, def.check, hits, execRanges,
-        "stringRefs=" + stringHits.length + (hits.length ? " " : ""));
+        "stringRefs=" + stringHits.length + (details.length ? " " + details.join("; ") : ""));
     }
 
     function verifyHookSignature(data, execRanges, loadRanges, def, resolvedHooks) {
