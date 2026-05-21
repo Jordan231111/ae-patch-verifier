@@ -31,6 +31,7 @@ function config() {
     moduleOwner: process.env.AE_MODULE_REPO_OWNER || "",
     moduleRepo: process.env.AE_MODULE_REPO_NAME || "",
     moduleRef: process.env.AE_MODULE_REF || "main",
+    houdiniModuleRef: process.env.AE_MODULE_HOUDINI_REF || "houdini-x64-rewrite",
     lspatchJar: process.env.LSPATCH_JAR || "[removed-private-value]/Tools/RE/lspatch/lspatch-v0.8.jar",
     signerJar: process.env.UBER_APK_SIGNER_JAR || "[removed-private-value]/Downloads/uber-apk-signer.jar",
     keystore: process.env.ASHFUR_KEYSTORE || "[removed-private-value]/Downloads/Ashfur.jks",
@@ -38,8 +39,33 @@ function config() {
     ksPass: process.env.ASHFUR_STORE_PASS || "[removed-private-value]",
     keyPass: process.env.ASHFUR_KEY_PASS || "[removed-private-value]",
     moduleRelease: process.env.AE_MODULE_RELEASE_APK || "",
-    moduleDebug: process.env.AE_MODULE_DEBUG_APK || ""
+    moduleDebug: process.env.AE_MODULE_DEBUG_APK || "",
+    houdiniModuleRelease: process.env.AE_MODULE_HOUDINI_RELEASE_APK || process.env.AE_HOUDINI_MODULE_RELEASE_APK || "",
+    houdiniModuleDebug: process.env.AE_MODULE_HOUDINI_DEBUG_APK || process.env.AE_HOUDINI_MODULE_DEBUG_APK || ""
   };
+}
+
+function normalizeModuleSource(value) {
+  return value === "houdini-x64-rewrite" ? "houdini-x64-rewrite" : "main";
+}
+
+function moduleSourceRef(cfg, moduleSource) {
+  return moduleSource === "houdini-x64-rewrite" ? cfg.houdiniModuleRef : cfg.moduleRef;
+}
+
+function moduleSourceLabel(moduleSource) {
+  return moduleSource === "houdini-x64-rewrite" ? "Houdini x64 rewrite" : "Main";
+}
+
+function moduleApkPath(cfg, moduleSource, moduleVariant) {
+  if (moduleSource === "houdini-x64-rewrite") {
+    return moduleVariant === "debug" ? cfg.houdiniModuleDebug : cfg.houdiniModuleRelease;
+  }
+  return moduleVariant === "debug" ? cfg.moduleDebug : cfg.moduleRelease;
+}
+
+function moduleFilenamePart(moduleSource) {
+  return moduleSource === "houdini-x64-rewrite" ? "_houdini-x64-rewrite" : "";
 }
 
 function requireFile(file, label) {
@@ -222,7 +248,7 @@ async function waitForGithubRun(cfg, nonce) {
   throw new Error(`Timed out waiting for GitHub builder run ${nonce}`);
 }
 
-async function buildApksViaGithub({ region, moduleVariant }, res) {
+async function buildApksViaGithub({ region, moduleVariant, moduleSource }, res) {
   const game = GAMES[region] || GAMES.global;
   const cfg = config();
   if (!cfg.githubOwner || !cfg.githubRepo) {
@@ -231,7 +257,7 @@ async function buildApksViaGithub({ region, moduleVariant }, res) {
   const nonce = `${Date.now()}-${crypto.randomBytes(4).toString("hex")}`;
   const ownerRepo = `/repos/${cfg.githubOwner}/${cfg.githubRepo}`;
   const workflowPath = `${ownerRepo}/actions/workflows/${encodeURIComponent(cfg.githubWorkflow)}/dispatches`;
-  const moduleCommit = await resolveModuleCommit(cfg);
+  const moduleCommit = await resolveModuleCommit(cfg, moduleSource);
 
   await githubJson(cfg, "POST", workflowPath, {
     ref: cfg.githubRef,
@@ -249,12 +275,14 @@ async function buildApksViaGithub({ region, moduleVariant }, res) {
   const asset = assets.find(item => item.name && item.name.endsWith(".apks"));
   if (!asset) throw new Error(`GitHub builder finished but no .apks release asset was found for ${nonce}`);
 
-  const filename = `${game.defaultName}_LSPatched_Ashfur_${moduleVariant}_${moduleCommit.shortSha}.apks`;
+  const filename = `${game.defaultName}_LSPatched_Ashfur${moduleFilenamePart(moduleSource)}_${moduleVariant}_${moduleCommit.shortSha}.apks`;
   res.statusCode = 200;
   res.setHeader("content-type", "application/vnd.android.apks");
   res.setHeader("content-disposition", `attachment; filename="${filename}"`);
   res.setHeader("x-builder", "github-actions");
   res.setHeader("x-module-short-sha", moduleCommit.shortSha);
+  res.setHeader("x-module-source", moduleSource);
+  res.setHeader("x-module-ref", moduleCommit.ref);
   try {
     await streamUrl(asset.url, {
       "accept": "application/octet-stream",
@@ -302,23 +330,25 @@ function githubReleaseTag(release) {
   return match ? decodeURIComponent(match[1]) : "";
 }
 
-async function resolveModuleCommit(cfg) {
+async function resolveModuleCommit(cfg, moduleSource) {
   if (!cfg.moduleOwner || !cfg.moduleRepo) {
     throw new Error("Module commit source is not configured");
   }
+  const ref = moduleSourceRef(cfg, moduleSource);
   let commit;
   try {
     commit = await githubJson(cfg, "GET",
-      `/repos/${cfg.moduleOwner}/${cfg.moduleRepo}/commits/${encodeURIComponent(cfg.moduleRef)}`);
+      `/repos/${cfg.moduleOwner}/${cfg.moduleRepo}/commits/${encodeURIComponent(ref)}`);
   } catch (_) {
-    throw new Error("Could not resolve latest module commit");
+    throw new Error(`Could not resolve latest ${moduleSourceLabel(moduleSource)} module commit`);
   }
   if (!commit || typeof commit.sha !== "string" || commit.sha.length < 7) {
-    throw new Error("Could not resolve latest module commit");
+    throw new Error(`Could not resolve latest ${moduleSourceLabel(moduleSource)} module commit`);
   }
   return {
     sha: commit.sha,
-    shortSha: commit.sha.slice(0, 7)
+    shortSha: commit.sha.slice(0, 7),
+    ref
   };
 }
 
@@ -333,15 +363,15 @@ function splitInputs(extractedDir) {
   };
 }
 
-async function buildApks({ region, moduleVariant }) {
+async function buildApks({ region, moduleVariant, moduleSource }) {
   const game = GAMES[region] || GAMES.global;
   const cfg = config();
-  const moduleApk = moduleVariant === "debug" ? cfg.moduleDebug : cfg.moduleRelease;
+  const moduleApk = moduleApkPath(cfg, moduleSource, moduleVariant);
 
   requireFile(cfg.lspatchJar, "LSPatch jar");
   requireFile(cfg.signerJar, "uber-apk-signer jar");
   requireFile(cfg.keystore, "Ashfur keystore");
-  requireFile(moduleApk, "Module APK");
+  requireFile(moduleApk, `${moduleSourceLabel(moduleSource)} module APK`);
 
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "ae-lspatch-"));
   const xapk = path.join(root, "source.xapk");
@@ -351,7 +381,7 @@ async function buildApks({ region, moduleVariant }) {
   const resignIn = path.join(root, "resign-in");
   const signedSplits = path.join(root, "signed-splits");
   const bundle = path.join(root, "bundle");
-  const outFile = path.join(root, `${game.defaultName}_LSPatched_Ashfur_${moduleVariant}.apks`);
+  const outFile = path.join(root, `${game.defaultName}_LSPatched_Ashfur${moduleFilenamePart(moduleSource)}_${moduleVariant}.apks`);
 
   for (const dir of [extracted, lspatchOut, signedBase, resignIn, signedSplits, bundle]) {
     fs.mkdirSync(dir, { recursive: true });
@@ -432,17 +462,20 @@ module.exports = async function handler(req, res) {
     const body = typeof req.body === "object" && req.body !== null ? req.body : JSON.parse(req.body || "{}");
     const region = body.region === "japan" ? "japan" : "global";
     const moduleVariant = body.moduleVariant === "debug" ? "debug" : "release";
+    const moduleSource = normalizeModuleSource(body.moduleSource);
     if (config().builderMode === "github") {
-      await buildApksViaGithub({ region, moduleVariant }, res);
+      await buildApksViaGithub({ region, moduleVariant, moduleSource }, res);
       return;
     }
-    const result = await buildApks({ region, moduleVariant });
+    const result = await buildApks({ region, moduleVariant, moduleSource });
 
     res.statusCode = 200;
     res.setHeader("content-type", "application/vnd.android.apks");
     res.setHeader("content-disposition", `attachment; filename="${result.filename}"`);
     res.setHeader("x-apkpure-filename", encodeURIComponent(result.downloaded.filename || ""));
     res.setHeader("x-apkpure-size", String(result.downloaded.bytes || ""));
+    res.setHeader("x-module-source", moduleSource);
+    res.setHeader("x-module-ref", moduleSourceRef(config(), moduleSource));
     const stream = fs.createReadStream(result.file);
     stream.pipe(res);
     const cleanup = () => fs.rm(result.tempRoot, { recursive: true, force: true }, () => {});

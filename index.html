@@ -337,12 +337,19 @@
           </select>
         </div>
         <div class="builder-row">
+          <label class="builder-label" for="moduleSource">Source</label>
+          <select id="moduleSource" name="moduleSource">
+            <option value="main" selected>Main</option>
+            <option value="houdini-x64-rewrite">Houdini x64 rewrite</option>
+          </select>
+        </div>
+        <div class="builder-row">
           <div class="builder-label">Latest Module Commit</div>
           <span id="moduleCommit" class="commit-chip">loading</span>
           <div id="moduleCommitMeta" class="commit-meta">Server-resolved latest module source</div>
         </div>
         <button id="builderButton" class="primary" type="submit">Build .apks</button>
-        <div id="builderStatus">Builds the server-resolved latest module with LSPatch 0.8, latest APKPure XAPK, and the Ashfur signer.</div>
+        <div id="builderStatus">Builds the selected server-resolved module with LSPatch 0.8, latest APKPure XAPK, and the Ashfur signer.</div>
       </form>
     </div>
     <input id="fileInput" type="file" accept=".apk,.xapk,.so,application/zip">
@@ -617,6 +624,7 @@
     const builderForm = document.getElementById("builderForm");
     const builderButton = document.getElementById("builderButton");
     const builderStatus = document.getElementById("builderStatus");
+    const moduleSource = document.getElementById("moduleSource");
     const moduleCommit = document.getElementById("moduleCommit");
     const moduleCommitMeta = document.getElementById("moduleCommitMeta");
     let latestModuleCommit = null;
@@ -649,6 +657,7 @@
       event.preventDefault();
       buildLspatchBundle();
     });
+    moduleSource.addEventListener("change", refreshModuleCommit);
 
     refreshModuleCommit();
     window.setInterval(refreshModuleCommit, 60000);
@@ -667,23 +676,28 @@
     }
 
     async function refreshModuleCommit() {
+      const source = moduleSource.value;
       try {
-        const response = await fetch("/api/module/latest", { cache: "no-store" });
+        const response = await fetch(`/api/module/latest?moduleSource=${encodeURIComponent(source)}`, { cache: "no-store" });
         if (!response.ok) throw new Error("HTTP " + response.status);
         const body = await response.json();
         if (!body || !body.shortSha) throw new Error("missing SHA");
         latestModuleCommit = body;
         moduleCommit.textContent = body.shortSha;
         moduleCommit.className = "commit-chip ok";
-        moduleCommitMeta.textContent = "Server-resolved latest module source";
+        moduleCommitMeta.textContent = `Server-resolved ${sourceLabel(source)} source`;
         return body;
       } catch (error) {
         latestModuleCommit = null;
         moduleCommit.textContent = "unavailable";
         moduleCommit.className = "commit-chip fail";
-        moduleCommitMeta.textContent = "Could not load latest module commit";
+        moduleCommitMeta.textContent = `Could not load latest ${sourceLabel(source)} commit`;
         return null;
       }
+    }
+
+    function sourceLabel(source) {
+      return source === "houdini-x64-rewrite" ? "Houdini x64 rewrite" : "Main";
     }
 
     function selectedRadio(name) {
@@ -700,13 +714,14 @@
     async function buildLspatchBundle() {
       const payload = {
         region: selectedRadio("region"),
-        moduleVariant: document.getElementById("moduleVariant").value
+        moduleVariant: document.getElementById("moduleVariant").value,
+        moduleSource: moduleSource.value
       };
 
       builderButton.disabled = true;
       const visibleCommit = await refreshModuleCommit();
       setBuilderStatus(
-        visibleCommit ? `Starting server build with module ${visibleCommit.shortSha}...` : "Starting server build...",
+        visibleCommit ? `Starting server build with ${sourceLabel(payload.moduleSource)} module ${visibleCommit.shortSha}...` : "Starting server build...",
         "info"
       );
 
@@ -739,6 +754,7 @@
         const blob = await response.blob();
         const moduleShortSha = response.headers.get("x-module-short-sha") ||
           (latestModuleCommit && latestModuleCommit.shortSha) || "";
+        const moduleSourceLabel = sourceLabel(response.headers.get("x-module-source") || payload.moduleSource);
         const name = filenameFromDisposition(response.headers.get("content-disposition")) ||
           `AnotherEden_${payload.region}_LSPatched_Ashfur.apks`;
         const url = URL.createObjectURL(blob);
@@ -749,7 +765,7 @@
         link.click();
         link.remove();
         URL.revokeObjectURL(url);
-        setBuilderStatus("Download started: " + name + (moduleShortSha ? ` (module ${moduleShortSha})` : ""), "ok");
+        setBuilderStatus("Download started: " + name + (moduleShortSha ? ` (${moduleSourceLabel} module ${moduleShortSha})` : ""), "ok");
       } catch (error) {
         setBuilderStatus(error.message, "fail");
       } finally {
