@@ -375,20 +375,8 @@
       {
         name: "Battle MP spend delta",
         patchOffset: 8,
-        searchPattern: "E00317CB",
-        searchBytes: "E00317CB",
-        searchChecks: [
-          { offset: 8, bytes: "E103002A" },
-          { offset: 12, bytes: "E00318AA" },
-          { offset: 0x5C, bytes: "C102184BE00319AA" }
-        ],
-        patchedPattern: "E00317CB",
-        patchedBytes: "E00317CB",
-        patchedChecks: [
-          { offset: 8, bytes: "E1031F2A" },
-          { offset: 12, bytes: "E00318AA" },
-          { offset: 0x5C, bytes: "C102184BE00319AA" }
-        ],
+        searchPattern: "E00317CB????????E103002AE00318AA????????680240F9E00313AA083140F900013FD6000040F9080040F9081D40F900013FD6F803002A????????????????195C40A9B95F3EA9970000B4E122009120008052????????990000B4C102184BE00319AA",
+        patchedPattern: "E00317CB????????E1031F2AE00318AA????????680240F9E00313AA083140F900013FD6000040F9080040F9081D40F900013FD6F803002A????????????????195C40A9B95F3EA9970000B4E122009120008052????????990000B4C102184BE00319AA",
         originalBytes: "E103002A",
         patchBytes: "E1031F2A"
       },
@@ -479,6 +467,15 @@
       availableTrueArg: "22008052",
       caveRestoreFrame: "FD7BC1A8",
       nop: "1F2003D5"
+    };
+
+    const ENCOUNTER_JUDGE = {
+      originalFull: "FF0302D1FD7B05A9F65706A9F44F07A9FD43019155D03BD5A81640F9A8831FF8007040BD0820201EA9040054F30300AA",
+      freezeFull: "00008052C0035FD6F65706A9F44F07A9FD43019155D03BD5A81640F9A8831FF8007040BD0820201EA9040054F30300AA",
+      forceFull: "20008052C0035FD6F65706A9F44F07A9FD43019155D03BD5A81640F9A8831FF8007040BD0820201EA9040054F30300AA",
+      originalHead: "FF0302D1FD7B05A9",
+      returnFalse: "00008052C0035FD6",
+      returnTrue: "20008052C0035FD6"
     };
 
     const HOOK_SIGNATURES = [
@@ -1101,15 +1098,15 @@
     }
 
     function uniquePatchAnchors(data, ranges, def, kind) {
-      const pattern = hexToBytes(kind === "on" ? def.searchPattern : def.patchedPattern);
-      const bytes = hexToBytes(kind === "on" ? def.searchBytes : def.patchedBytes);
+      const pattern = kind === "on" ? def.searchPattern : def.patchedPattern;
+      const parsed = parseBytePattern(pattern);
       const checks = (kind === "on" ? def.searchChecks : def.patchedChecks) || [];
       const stateBytes = hexToBytes(kind === "on" ? def.originalBytes : def.patchBytes);
       const seen = new Set();
       const hits = [];
 
-      for (const hit of findAll(data, pattern, ranges)) {
-        if (!bytesEqual(data, hit, bytes)) continue;
+      for (const hit of findPatternAll(data, pattern, ranges)) {
+        if (!bytesMatchPattern(data, hit, parsed)) continue;
 
         let ok = true;
         for (const check of checks) {
@@ -1132,10 +1129,19 @@
       return hits;
     }
 
+    function formatHitAddress(hit, ranges) {
+      return "file=" + toHex(hit) + ", rva=" + toHex(rvaForOffset(hit, ranges));
+    }
+
+    function formatHitAddresses(hits, ranges) {
+      return hits.map(hit => formatHitAddress(hit, ranges)).join("; ");
+    }
+
     function makeRow(feature, check, hits, ranges, detail = "") {
       const [status, klass] = resultStatus(hits.length);
-      const addresses = hits.map(hit => toHex(rvaForOffset(hit, ranges))).join(", ");
-      return { feature, check, status, klass, count: hits.length, detail: detail || addresses };
+      const addresses = formatHitAddresses(hits, ranges);
+      const fullDetail = detail && addresses ? detail + " hits: " + addresses : (detail || addresses);
+      return { feature, check, status, klass, count: hits.length, detail: fullDetail };
     }
 
     function verifyPatch(data, ranges, def) {
@@ -1149,6 +1155,109 @@
       }
       const offHits = uniquePatchAnchors(simulated, ranges, def, "off");
       rows.push(makeRow(def.name, "OFF/UNDO anchor + patched write bytes after ON simulation", offHits, ranges));
+      return rows;
+    }
+
+    function encounterModeHits(data, ranges) {
+      const modes = [
+        { mode: "original", pattern: ENCOUNTER_JUDGE.originalFull },
+        { mode: "freeze", pattern: ENCOUNTER_JUDGE.freezeFull },
+        { mode: "force", pattern: ENCOUNTER_JUDGE.forceFull }
+      ];
+      const byOffset = new Map();
+
+      for (const def of modes) {
+        for (const hit of findAll(data, hexToBytes(def.pattern), ranges)) {
+          if (!byOffset.has(hit)) byOffset.set(hit, []);
+          byOffset.get(hit).push(def.mode);
+        }
+      }
+
+      return Array.from(byOffset.entries())
+        .map(([offset, modesAtOffset]) => ({ offset, modes: modesAtOffset }))
+        .sort((a, b) => a.offset - b.offset);
+    }
+
+    function makeEncounterRow(feature, check, hits, ranges, expectedMode) {
+      const ok = hits.length === 1 && hits[0].modes.length === 1 && hits[0].modes[0] === expectedMode;
+      let status = ok ? "PASS" : "FAIL";
+      if (!ok && hits.length === 0) status = "NOT FOUND";
+      if (!ok && hits.length > 1) status = "MULTIPLE";
+      return {
+        feature,
+        check,
+        status,
+        klass: ok ? "ok" : "fail",
+        count: hits.length,
+        detail: hits.map(hit => formatHitAddress(hit.offset, ranges) + ", mode=" + hit.modes.join("/")).join("; ")
+      };
+    }
+
+    function simulateEncounterPatch(data, ranges, mode) {
+      const hits = encounterModeHits(data, ranges);
+      const simulated = data.slice();
+      if (hits.length !== 1 || hits[0].modes.length !== 1 || hits[0].modes[0] !== "original") {
+        return simulated;
+      }
+      const patchBytes = mode === "force" ? ENCOUNTER_JUDGE.returnTrue : ENCOUNTER_JUDGE.returnFalse;
+      writeBytes(simulated, hits[0].offset, hexToBytes(patchBytes));
+      return simulated;
+    }
+
+    function restoreEncounterPatch(data, ranges, expectedMode) {
+      const hits = encounterModeHits(data, ranges);
+      const simulated = data.slice();
+      if (hits.length !== 1 || hits[0].modes.length !== 1 || hits[0].modes[0] !== expectedMode) {
+        return simulated;
+      }
+      writeBytes(simulated, hits[0].offset, hexToBytes(ENCOUNTER_JUDGE.originalHead));
+      return simulated;
+    }
+
+    function verifyEncounterJudge(data, ranges) {
+      const rows = [];
+      rows.push(makeEncounterRow(
+        "Enemy encounters",
+        "judgeEncount resolver OFF anchor + original bytes",
+        encounterModeHits(data, ranges),
+        ranges,
+        "original"
+      ));
+
+      const freezeOn = simulateEncounterPatch(data, ranges, "freeze");
+      const freezeHits = encounterModeHits(freezeOn, ranges);
+      rows.push(makeEncounterRow(
+        "Encounter freeze",
+        "ON anchor + return false bytes after ON simulation",
+        freezeHits,
+        ranges,
+        "freeze"
+      ));
+      rows.push(makeEncounterRow(
+        "Encounter freeze",
+        "OFF/UNDO anchor + original restore bytes after OFF simulation",
+        encounterModeHits(restoreEncounterPatch(freezeOn, ranges, "freeze"), ranges),
+        ranges,
+        "original"
+      ));
+
+      const forceOn = simulateEncounterPatch(data, ranges, "force");
+      const forceHits = encounterModeHits(forceOn, ranges);
+      rows.push(makeEncounterRow(
+        "Encounter force",
+        "ON anchor + return true bytes after ON simulation",
+        forceHits,
+        ranges,
+        "force"
+      ));
+      rows.push(makeEncounterRow(
+        "Encounter force",
+        "OFF/UNDO anchor + original restore bytes after OFF simulation",
+        encounterModeHits(restoreEncounterPatch(forceOn, ranges, "force"), ranges),
+        ranges,
+        "original"
+      ));
+
       return rows;
     }
 
@@ -1820,6 +1929,7 @@
       }
       rows.push(...verifyAdBypassControlFlow(lib.data, ranges));
       rows.push(...verifyTeamGod(lib.data, ranges));
+      rows.push(...verifyEncounterJudge(lib.data, ranges));
       rows.push(verifySpeedy(lib.data, ranges));
       return rows;
     }
