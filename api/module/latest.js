@@ -1,61 +1,4 @@
-const https = require("https");
-
-function config() {
-  return {
-    githubToken: process.env.GITHUB_TOKEN || process.env.GH_TOKEN || "",
-    owner: process.env.AE_MODULE_REPO_OWNER || "",
-    repo: process.env.AE_MODULE_REPO_NAME || "",
-    ref: process.env.AE_MODULE_REF || "main",
-    houdiniRef: process.env.AE_MODULE_HOUDINI_REF || "houdini-x64-rewrite"
-  };
-}
-
-function normalizeModuleSource(value) {
-  return value === "houdini-x64-rewrite" ? "houdini-x64-rewrite" : "main";
-}
-
-function moduleSourceRef(cfg, moduleSource) {
-  return moduleSource === "houdini-x64-rewrite" ? cfg.houdiniRef : cfg.ref;
-}
-
-function moduleSourceLabel(moduleSource) {
-  return moduleSource === "houdini-x64-rewrite" ? "Houdini x64 rewrite" : "Main";
-}
-
-function githubJson(cfg, apiPath) {
-  return new Promise((resolve, reject) => {
-    const headers = {
-      "accept": "application/vnd.github+json",
-      "user-agent": "AE Patch Builder",
-      "x-github-api-version": "2022-11-28"
-    };
-    if (cfg.githubToken) headers.authorization = `Bearer ${cfg.githubToken}`;
-
-    const req = https.request({
-      hostname: "api.github.com",
-      path: apiPath,
-      method: "GET",
-      headers
-    }, response => {
-      let text = "";
-      response.setEncoding("utf8");
-      response.on("data", chunk => { text += chunk; });
-      response.on("end", () => {
-        if (response.statusCode >= 200 && response.statusCode < 300) {
-          try {
-            resolve(JSON.parse(text));
-          } catch (error) {
-            reject(new Error(`GitHub returned non-JSON response: ${text.slice(0, 300)}`));
-          }
-          return;
-        }
-        reject(new Error(`GitHub API failed HTTP ${response.statusCode}: ${text.slice(0, 500)}`));
-      });
-    });
-    req.on("error", reject);
-    req.end();
-  });
-}
+const { config, normalizeModuleSource, moduleSourceRef, resolveModuleCommit } = require("../_shared/github.js");
 
 module.exports = async function handler(req, res) {
   if (req.method !== "GET") {
@@ -68,29 +11,27 @@ module.exports = async function handler(req, res) {
   const cfg = config();
   const requestUrl = new URL(req.url || "/", "http://localhost");
   const moduleSource = normalizeModuleSource(requestUrl.searchParams.get("moduleSource"));
-  const ref = moduleSourceRef(cfg, moduleSource);
+
+  res.setHeader("content-type", "application/json");
+  // Edge-cache for 60s and let stale results serve another 5 min while revalidating.
+  // Browsers see no-store so the UI keeps the freshness story; only Vercel's edge dedupes.
+  res.setHeader("cache-control", "no-store");
+  res.setHeader("cdn-cache-control", "public, s-maxage=60, stale-while-revalidate=300");
+  res.setHeader("vercel-cdn-cache-control", "public, s-maxage=60, stale-while-revalidate=300");
+
   try {
-    if (!cfg.owner || !cfg.repo) {
+    if (!cfg.moduleOwner || !cfg.moduleRepo) {
       throw new Error("Module commit source is not configured");
     }
-    const commit = await githubJson(cfg,
-      `/repos/${cfg.owner}/${cfg.repo}/commits/${encodeURIComponent(ref)}`);
-    if (!commit || typeof commit.sha !== "string" || commit.sha.length < 7) {
-      throw new Error(`Could not resolve latest ${moduleSourceLabel(moduleSource)} module commit`);
-    }
-
+    const commit = await resolveModuleCommit(cfg, moduleSource);
     res.statusCode = 200;
-    res.setHeader("content-type", "application/json");
-    res.setHeader("cache-control", "no-store");
     res.end(JSON.stringify({
-      shortSha: commit.sha.slice(0, 7),
+      shortSha: commit.shortSha,
       moduleSource,
-      ref
+      ref: moduleSourceRef(cfg, moduleSource)
     }));
   } catch (error) {
     res.statusCode = 500;
-    res.setHeader("content-type", "application/json");
-    res.setHeader("cache-control", "no-store");
     res.end(JSON.stringify({ message: "Could not resolve latest module commit" }));
   }
 };

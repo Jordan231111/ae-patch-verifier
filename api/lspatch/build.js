@@ -4,6 +4,15 @@ const path = require("path");
 const https = require("https");
 const crypto = require("crypto");
 const { spawn } = require("child_process");
+const {
+  config: sharedConfig,
+  normalizeModuleSource,
+  moduleSourceRef,
+  moduleSourceLabel,
+  moduleFilenamePart,
+  githubJson,
+  resolveModuleCommit
+} = require("../_shared/github.js");
 
 const GAMES = {
   global: {
@@ -20,18 +29,7 @@ const GAMES = {
 
 function config() {
   return {
-    builderMode: process.env.LSPATCH_BUILDER_MODE || "local",
-    githubToken: process.env.GITHUB_TOKEN || process.env.GH_TOKEN || "",
-    githubOwner: process.env.GITHUB_REPO_OWNER || "",
-    githubRepo: process.env.GITHUB_REPO_NAME || "",
-    githubRef: process.env.GITHUB_REF_NAME || "main",
-    githubWorkflow: process.env.GITHUB_WORKFLOW_FILE || "build-lspatched-apks.yml",
-    githubPollMs: Number(process.env.GITHUB_BUILDER_POLL_MS || 5000),
-    githubTimeoutMs: Number(process.env.GITHUB_BUILDER_TIMEOUT_MS || 270000),
-    moduleOwner: process.env.AE_MODULE_REPO_OWNER || "",
-    moduleRepo: process.env.AE_MODULE_REPO_NAME || "",
-    moduleRef: process.env.AE_MODULE_REF || "main",
-    houdiniModuleRef: process.env.AE_MODULE_HOUDINI_REF || "houdini-x64-rewrite",
+    ...sharedConfig(),
     lspatchJar: process.env.LSPATCH_JAR || "[removed-private-value]/Tools/RE/lspatch/lspatch-v0.8.jar",
     signerJar: process.env.UBER_APK_SIGNER_JAR || "[removed-private-value]/Downloads/uber-apk-signer.jar",
     keystore: process.env.ASHFUR_KEYSTORE || "[removed-private-value]/Downloads/Ashfur.jks",
@@ -45,27 +43,11 @@ function config() {
   };
 }
 
-function normalizeModuleSource(value) {
-  return value === "houdini-x64-rewrite" ? "houdini-x64-rewrite" : "main";
-}
-
-function moduleSourceRef(cfg, moduleSource) {
-  return moduleSource === "houdini-x64-rewrite" ? cfg.houdiniModuleRef : cfg.moduleRef;
-}
-
-function moduleSourceLabel(moduleSource) {
-  return moduleSource === "houdini-x64-rewrite" ? "Houdini x64 rewrite" : "Main";
-}
-
 function moduleApkPath(cfg, moduleSource, moduleVariant) {
   if (moduleSource === "houdini-x64-rewrite") {
     return moduleVariant === "debug" ? cfg.houdiniModuleDebug : cfg.houdiniModuleRelease;
   }
   return moduleVariant === "debug" ? cfg.moduleDebug : cfg.moduleRelease;
-}
-
-function moduleFilenamePart(moduleSource) {
-  return moduleSource === "houdini-x64-rewrite" ? "_houdini-x64-rewrite" : "";
 }
 
 function requireFile(file, label) {
@@ -83,14 +65,8 @@ function run(cmd, args, options = {}) {
     });
     let stdout = "";
     let stderr = "";
-    child.stdout.on("data", chunk => {
-      stdout += chunk.toString();
-      if (options.onStdout) options.onStdout(chunk.toString());
-    });
-    child.stderr.on("data", chunk => {
-      stderr += chunk.toString();
-      if (options.onStderr) options.onStderr(chunk.toString());
-    });
+    child.stdout.on("data", chunk => { stdout += chunk.toString(); });
+    child.stderr.on("data", chunk => { stderr += chunk.toString(); });
     child.on("error", reject);
     child.on("close", code => {
       if (code === 0) resolve({ stdout, stderr });
@@ -113,10 +89,7 @@ function headerFilename(headers, fallback) {
 function download(url, target) {
   return new Promise((resolve, reject) => {
     const request = https.get(url, {
-      headers: {
-        "user-agent": "Mozilla/5.0 AE Patch Builder",
-        "accept": "*/*"
-      }
+      headers: { "user-agent": "Mozilla/5.0 AE Patch Builder", accept: "*/*" }
     }, response => {
       if (response.statusCode >= 300 && response.statusCode < 400 && response.headers.location) {
         response.resume();
@@ -139,9 +112,7 @@ function download(url, target) {
       });
       out.on("error", reject);
     });
-    request.setTimeout(120000, () => {
-      request.destroy(new Error("Download timed out"));
-    });
+    request.setTimeout(120000, () => request.destroy(new Error("Download timed out")));
     request.on("error", reject);
   });
 }
@@ -155,203 +126,6 @@ function newestApk(dir, suffix) {
   return files[0];
 }
 
-function sleep(ms) {
-  return new Promise(resolve => setTimeout(resolve, ms));
-}
-
-function githubJson(cfg, method, apiPath, body) {
-  if (!cfg.githubToken) throw new Error("GITHUB_TOKEN is required for hosted GitHub builder mode");
-  const payload = body === undefined ? undefined : JSON.stringify(body);
-  return new Promise((resolve, reject) => {
-    const req = https.request({
-      hostname: "api.github.com",
-      path: apiPath,
-      method,
-      headers: {
-        "accept": "application/vnd.github+json",
-        "authorization": `Bearer ${cfg.githubToken}`,
-        "user-agent": "AE Patch Builder",
-        "x-github-api-version": "2022-11-28",
-        ...(payload ? {
-          "content-type": "application/json",
-          "content-length": Buffer.byteLength(payload)
-        } : {})
-      }
-    }, response => {
-      let text = "";
-      response.setEncoding("utf8");
-      response.on("data", chunk => { text += chunk; });
-      response.on("end", () => {
-        if (response.statusCode >= 200 && response.statusCode < 300) {
-          if (!text.trim()) {
-            resolve({});
-            return;
-          }
-          try {
-            resolve(JSON.parse(text));
-          } catch (error) {
-            reject(new Error(`GitHub returned non-JSON response: ${text.slice(0, 300)}`));
-          }
-          return;
-        }
-        reject(new Error(`GitHub API ${method} ${apiPath} failed HTTP ${response.statusCode}: ${text.slice(0, 500)}`));
-      });
-    });
-    req.on("error", reject);
-    if (payload) req.write(payload);
-    req.end();
-  });
-}
-
-function streamUrl(url, headers, res) {
-  return new Promise((resolve, reject) => {
-    const req = https.get(url, { headers }, response => {
-      if (response.statusCode >= 300 && response.statusCode < 400 && response.headers.location) {
-        response.resume();
-        const next = new URL(response.headers.location, url).toString();
-        streamUrl(next, headers, res).then(resolve, reject);
-        return;
-      }
-      if (response.statusCode !== 200) {
-        let text = "";
-        response.setEncoding("utf8");
-        response.on("data", chunk => { text += chunk; });
-        response.on("end", () => reject(new Error(`Asset download failed HTTP ${response.statusCode}: ${text.slice(0, 500)}`)));
-        return;
-      }
-      response.pipe(res);
-      response.on("end", resolve);
-      response.on("error", reject);
-    });
-    req.on("error", reject);
-  });
-}
-
-async function waitForGithubRun(cfg, nonce) {
-  const ownerRepo = `/repos/${cfg.githubOwner}/${cfg.githubRepo}`;
-  const runsPath = `${ownerRepo}/actions/workflows/${encodeURIComponent(cfg.githubWorkflow)}/runs?event=workflow_dispatch&branch=${encodeURIComponent(cfg.githubRef)}&per_page=30`;
-  const deadline = Date.now() + cfg.githubTimeoutMs;
-  while (Date.now() < deadline) {
-    const data = await githubJson(cfg, "GET", runsPath);
-    const runs = Array.isArray(data.workflow_runs) ? data.workflow_runs : [];
-    const run = runs.find(candidate => (candidate.display_title || candidate.name || "").includes(nonce));
-    if (run) {
-      if (run.status === "completed") {
-        if (run.conclusion !== "success") {
-          throw new Error(`GitHub builder run failed: ${run.conclusion || "unknown"} (${run.html_url})`);
-        }
-        return run;
-      }
-    }
-    await sleep(cfg.githubPollMs);
-  }
-  throw new Error(`Timed out waiting for GitHub builder run ${nonce}`);
-}
-
-async function buildApksViaGithub({ region, moduleVariant, moduleSource }, res) {
-  const game = GAMES[region] || GAMES.global;
-  const cfg = config();
-  if (!cfg.githubOwner || !cfg.githubRepo) {
-    throw new Error("GitHub builder repository is not configured");
-  }
-  const nonce = `${Date.now()}-${crypto.randomBytes(4).toString("hex")}`;
-  const ownerRepo = `/repos/${cfg.githubOwner}/${cfg.githubRepo}`;
-  const workflowPath = `${ownerRepo}/actions/workflows/${encodeURIComponent(cfg.githubWorkflow)}/dispatches`;
-  const moduleCommit = await resolveModuleCommit(cfg, moduleSource);
-
-  await githubJson(cfg, "POST", workflowPath, {
-    ref: cfg.githubRef,
-    inputs: {
-      region,
-      variant: moduleVariant,
-      moduleSha: moduleCommit.shortSha,
-      nonce
-    }
-  });
-
-  await waitForGithubRun(cfg, nonce);
-  const release = await githubJson(cfg, "GET", `${ownerRepo}/releases/tags/lspatch-${nonce}`);
-  const assets = Array.isArray(release.assets) ? release.assets : [];
-  const asset = assets.find(item => item.name && item.name.endsWith(".apks"));
-  if (!asset) throw new Error(`GitHub builder finished but no .apks release asset was found for ${nonce}`);
-
-  const filename = `${game.defaultName}_LSPatched_Ashfur${moduleFilenamePart(moduleSource)}_${moduleVariant}_${moduleCommit.shortSha}.apks`;
-  res.statusCode = 200;
-  res.setHeader("content-type", "application/vnd.android.apks");
-  res.setHeader("content-disposition", `attachment; filename="${filename}"`);
-  res.setHeader("x-builder", "github-actions");
-  res.setHeader("x-module-short-sha", moduleCommit.shortSha);
-  res.setHeader("x-module-source", moduleSource);
-  res.setHeader("x-module-ref", moduleCommit.ref);
-  try {
-    await streamUrl(asset.url, {
-      "accept": "application/octet-stream",
-      "authorization": `Bearer ${cfg.githubToken}`,
-      "user-agent": "AE Patch Builder"
-    }, res);
-  } finally {
-    await cleanupGithubRelease(cfg, release).catch(error => {
-      console.warn("GitHub cleanup failed:", error.message);
-    });
-  }
-}
-
-async function cleanupGithubRelease(cfg, release) {
-  if (!release || !release.id) return;
-  const ownerRepo = `/repos/${cfg.githubOwner}/${cfg.githubRepo}`;
-  await githubJson(cfg, "DELETE", `${ownerRepo}/releases/${release.id}`);
-  const tagName = githubReleaseTag(release);
-  if (tagName) {
-    await sleep(15000);
-    await deleteGithubTagWithRetry(cfg, ownerRepo, tagName);
-  }
-}
-
-async function deleteGithubTagWithRetry(cfg, ownerRepo, tagName) {
-  const refPath = `${ownerRepo}/git/refs/tags/${encodeURIComponent(tagName)}`;
-  let lastError = null;
-  for (let attempt = 0; attempt < 8; attempt += 1) {
-    try {
-      await githubJson(cfg, "DELETE", refPath);
-      return;
-    } catch (error) {
-      lastError = error;
-      await sleep(1000);
-    }
-  }
-  if (lastError) throw lastError;
-}
-
-function githubReleaseTag(release) {
-  if (!release) return "";
-  if (release.tag_name) return release.tag_name;
-  if (release.tagName) return release.tagName;
-  const match = /\/tag\/([^/?#]+)/.exec(release.html_url || release.url || "");
-  return match ? decodeURIComponent(match[1]) : "";
-}
-
-async function resolveModuleCommit(cfg, moduleSource) {
-  if (!cfg.moduleOwner || !cfg.moduleRepo) {
-    throw new Error("Module commit source is not configured");
-  }
-  const ref = moduleSourceRef(cfg, moduleSource);
-  let commit;
-  try {
-    commit = await githubJson(cfg, "GET",
-      `/repos/${cfg.moduleOwner}/${cfg.moduleRepo}/commits/${encodeURIComponent(ref)}`);
-  } catch (_) {
-    throw new Error(`Could not resolve latest ${moduleSourceLabel(moduleSource)} module commit`);
-  }
-  if (!commit || typeof commit.sha !== "string" || commit.sha.length < 7) {
-    throw new Error(`Could not resolve latest ${moduleSourceLabel(moduleSource)} module commit`);
-  }
-  return {
-    sha: commit.sha,
-    shortSha: commit.sha.slice(0, 7),
-    ref
-  };
-}
-
 function splitInputs(extractedDir) {
   const names = fs.readdirSync(extractedDir).filter(name => name.endsWith(".apk"));
   const base = names.find(name => !name.startsWith("config.") && name !== "AssetPack1.apk");
@@ -363,7 +137,7 @@ function splitInputs(extractedDir) {
   };
 }
 
-async function buildApks({ region, moduleVariant, moduleSource }) {
+async function buildApksLocal({ region, moduleVariant, moduleSource }) {
   const game = GAMES[region] || GAMES.global;
   const cfg = config();
   const moduleApk = moduleApkPath(cfg, moduleSource, moduleVariant);
@@ -442,11 +216,38 @@ async function buildApks({ region, moduleVariant, moduleSource }) {
   const bundleNames = fs.readdirSync(bundle).filter(name => name.endsWith(".apk") || name === "manifest.json");
   await run("zip", ["-q", "-r", "-0", "-Z", "store", outFile, ...bundleNames], { cwd: bundle });
 
+  return { file: outFile, tempRoot: root, filename: path.basename(outFile), downloaded };
+}
+
+async function dispatchGithubBuild({ region, moduleVariant, moduleSource }) {
+  const cfg = config();
+  if (!cfg.githubOwner || !cfg.githubRepo) {
+    throw new Error("GitHub builder repository is not configured");
+  }
+  const moduleCommit = await resolveModuleCommit(cfg, moduleSource);
+  const nonce = `${Date.now()}-${crypto.randomBytes(4).toString("hex")}`;
+  const game = GAMES[region] || GAMES.global;
+  const filename = `${game.defaultName}_LSPatched_Ashfur${moduleFilenamePart(moduleSource)}_${moduleVariant}_${moduleCommit.shortSha}.apks`;
+  await githubJson(cfg, "POST",
+    `/repos/${cfg.githubOwner}/${cfg.githubRepo}/actions/workflows/${encodeURIComponent(cfg.githubWorkflow)}/dispatches`,
+    {
+      ref: cfg.githubRef,
+      inputs: {
+        region,
+        variant: moduleVariant,
+        moduleSha: moduleCommit.shortSha,
+        nonce
+      }
+    }
+  );
   return {
-    file: outFile,
-    tempRoot: root,
-    filename: path.basename(outFile),
-    downloaded
+    nonce,
+    filename,
+    moduleSource,
+    moduleShortSha: moduleCommit.shortSha,
+    moduleRef: moduleCommit.ref,
+    region,
+    moduleVariant
   };
 }
 
@@ -463,11 +264,23 @@ module.exports = async function handler(req, res) {
     const region = body.region === "japan" ? "japan" : "global";
     const moduleVariant = body.moduleVariant === "debug" ? "debug" : "release";
     const moduleSource = normalizeModuleSource(body.moduleSource);
-    if (config().builderMode === "github") {
-      await buildApksViaGithub({ region, moduleVariant, moduleSource }, res);
+    const cfg = config();
+
+    if (cfg.builderMode === "github") {
+      const dispatched = await dispatchGithubBuild({ region, moduleVariant, moduleSource });
+      res.statusCode = 202;
+      res.setHeader("content-type", "application/json");
+      res.setHeader("cache-control", "no-store");
+      res.end(JSON.stringify({
+        mode: "github",
+        ...dispatched,
+        statusUrl: `/api/lspatch/status?nonce=${encodeURIComponent(dispatched.nonce)}`,
+        downloadUrl: `/api/lspatch/download?nonce=${encodeURIComponent(dispatched.nonce)}`
+      }));
       return;
     }
-    const result = await buildApks({ region, moduleVariant, moduleSource });
+
+    const result = await buildApksLocal({ region, moduleVariant, moduleSource });
 
     res.statusCode = 200;
     res.setHeader("content-type", "application/vnd.android.apks");

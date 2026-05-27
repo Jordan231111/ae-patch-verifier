@@ -3,239 +3,362 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Verify AE ModMenu</title>
+  <title>AE ModMenu Builder</title>
   <style>
     :root {
-      color-scheme: light;
-      --bg: #f5f5f2;
-      --panel: #ffffff;
-      --ink: #191b1f;
-      --muted: #626772;
-      --line: #d8d9d4;
-      --ok: #137a3f;
-      --fail: #b42318;
-      --warn: #a15c00;
-      --info: #2454a6;
+      color-scheme: dark;
+      --bg: #0d0f14;
+      --bg-elev: #14171f;
+      --panel: #181c25;
+      --panel-2: #1f2430;
+      --ink: #f1f3f8;
+      --muted: #8a93a6;
+      --line: #2a3142;
+      --line-strong: #3b4358;
+      --accent: #6aa3ff;
+      --accent-2: #4d83de;
+      --accent-soft: rgba(106, 163, 255, 0.14);
+      --ok: #4ec38a;
+      --fail: #ff6b6b;
+      --warn: #f5b042;
+      --info: #6aa3ff;
+      --shadow: 0 12px 40px rgba(0, 0, 0, 0.35);
+      --radius: 12px;
+      --radius-sm: 8px;
     }
 
-    * {
-      box-sizing: border-box;
-    }
+    * { box-sizing: border-box; }
+
+    html, body { background: var(--bg); }
 
     body {
       margin: 0;
       min-height: 100vh;
-      background: var(--bg);
       color: var(--ink);
-      font: 14px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      font: 14.5px/1.5 -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", system-ui, sans-serif;
+      -webkit-font-smoothing: antialiased;
+      background-image:
+        radial-gradient(1100px 600px at 80% -10%, rgba(106, 163, 255, 0.10), transparent 60%),
+        radial-gradient(900px 500px at -10% 110%, rgba(78, 195, 138, 0.07), transparent 60%);
     }
 
     main {
-      max-width: 1180px;
+      max-width: 1080px;
       margin: 0 auto;
-      padding: 28px;
+      padding: 36px 24px 80px;
+    }
+
+    .hero {
+      margin: 0 0 28px;
+    }
+
+    .eyebrow {
+      display: inline-block;
+      font: 600 11px/1 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+      color: var(--muted);
+      padding: 6px 10px;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      background: var(--bg-elev);
     }
 
     h1 {
-      margin: 0 0 8px;
-      font-size: 26px;
+      margin: 14px 0 6px;
+      font-size: 30px;
       font-weight: 700;
-      letter-spacing: 0;
+      letter-spacing: -0.01em;
     }
 
-    p {
+    .lede {
       margin: 0;
       color: var(--muted);
+      max-width: 70ch;
     }
 
-    #dropZone {
-      display: grid;
-      place-items: center;
-      min-height: 180px;
-      margin: 22px 0;
-      border: 2px dashed #9aa0aa;
-      border-radius: 8px;
-      background: var(--panel);
-      text-align: center;
-      transition: border-color 120ms ease, background 120ms ease;
-    }
+    p { margin: 0; color: var(--muted); }
 
-    #dropZone.dragover {
-      border-color: var(--info);
-      background: #eef4ff;
-    }
-
-    #dropZone strong {
-      display: block;
-      margin-bottom: 8px;
-      font-size: 18px;
-    }
-
-    button {
-      appearance: none;
+    .card {
+      background: linear-gradient(180deg, var(--panel) 0%, var(--panel-2) 100%);
       border: 1px solid var(--line);
-      border-radius: 6px;
-      background: #fff;
-      color: var(--ink);
-      padding: 8px 12px;
-      font: inherit;
-      cursor: pointer;
-    }
-
-    button:hover {
-      border-color: #9aa0aa;
-    }
-
-    input[type="file"] {
-      display: none;
-    }
-
-    .toolbar {
-      display: grid;
-      grid-template-columns: minmax(0, 1fr) 360px;
-      gap: 16px;
-      align-items: stretch;
-      margin: 22px 0;
-    }
-
-    .toolbar #dropZone {
-      margin: 0;
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
     }
 
     .builder {
-      background: var(--panel);
-      border: 1px solid var(--line);
-      border-radius: 8px;
-      padding: 14px;
+      padding: 22px;
       display: grid;
-      gap: 12px;
+      grid-template-columns: minmax(0, 1.45fr) minmax(0, 1fr);
+      gap: 22px;
+      margin-bottom: 24px;
     }
 
+    .builder-main { display: grid; gap: 18px; }
+    .builder-side { display: grid; gap: 14px; }
+
     .builder h2 {
-      margin: 0;
-      font-size: 16px;
+      margin: 0 0 4px;
+      font-size: 18px;
       letter-spacing: 0;
     }
 
-    .builder-row {
-      display: grid;
-      gap: 6px;
+    .builder-sub {
+      margin: 0 0 6px;
+      color: var(--muted);
+      font-size: 13px;
     }
 
-    .builder-label {
-      font-size: 12px;
-      font-weight: 700;
+    .field { display: grid; gap: 8px; }
+
+    .field-label {
+      font: 700 11px/1 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      letter-spacing: 0.12em;
       color: var(--muted);
       text-transform: uppercase;
     }
 
-    .segmented {
+    .cards-2 {
       display: grid;
       grid-template-columns: 1fr 1fr;
-      gap: 6px;
+      gap: 10px;
     }
 
-    .segmented input {
-      position: absolute;
-      opacity: 0;
-      pointer-events: none;
-    }
-
-    .segmented span,
-    select {
-      display: block;
-      width: 100%;
-      min-height: 36px;
+    .pick {
+      position: relative;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      padding: 12px 14px;
       border: 1px solid var(--line);
-      border-radius: 6px;
-      background: #fff;
+      border-radius: var(--radius-sm);
+      background: var(--bg-elev);
+      cursor: pointer;
+      transition: border-color 120ms ease, background 120ms ease, transform 120ms ease;
+    }
+
+    .pick:hover { border-color: var(--line-strong); }
+    .pick input { position: absolute; opacity: 0; pointer-events: none; }
+    .pick input:checked ~ .pick-body { color: var(--ink); }
+    .pick:has(input:checked) {
+      border-color: var(--accent);
+      background: var(--accent-soft);
+      box-shadow: inset 0 0 0 1px var(--accent);
+    }
+
+    .pick-title {
+      font-weight: 700;
+      font-size: 14px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .pick-tag {
+      display: inline-block;
+      font: 700 9.5px/1 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      letter-spacing: 0.10em;
+      padding: 4px 6px;
+      border-radius: 4px;
+      background: var(--line);
+      color: var(--muted);
+      text-transform: uppercase;
+    }
+
+    .pick:has(input:checked) .pick-tag.real {
+      background: rgba(78, 195, 138, 0.18);
+      color: var(--ok);
+    }
+
+    .pick:has(input:checked) .pick-tag.emu {
+      background: rgba(245, 176, 66, 0.18);
+      color: var(--warn);
+    }
+
+    .pick-desc {
+      font-size: 12.5px;
+      color: var(--muted);
+      line-height: 1.4;
+    }
+
+    select {
+      width: 100%;
+      min-height: 38px;
+      border: 1px solid var(--line);
+      border-radius: var(--radius-sm);
+      background: var(--bg-elev);
       color: var(--ink);
-      padding: 8px 10px;
+      padding: 8px 12px;
       font: inherit;
+      appearance: none;
+      background-image: linear-gradient(45deg, transparent 50%, var(--muted) 50%), linear-gradient(135deg, var(--muted) 50%, transparent 50%);
+      background-position: calc(100% - 18px) 50%, calc(100% - 12px) 50%;
+      background-size: 6px 6px;
+      background-repeat: no-repeat;
     }
 
-    .segmented input:checked + span {
-      border-color: var(--info);
-      background: #eef4ff;
-      color: var(--info);
-      font-weight: 700;
+    select:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+
+    button.primary {
+      appearance: none;
+      width: 100%;
+      min-height: 46px;
+      border: 0;
+      border-radius: var(--radius-sm);
+      background: linear-gradient(180deg, var(--accent) 0%, var(--accent-2) 100%);
+      color: #0d0f14;
+      font: 700 15px/1 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      letter-spacing: 0.01em;
+      cursor: pointer;
+      box-shadow: 0 6px 18px rgba(106, 163, 255, 0.22);
+      transition: transform 80ms ease, box-shadow 120ms ease, opacity 120ms ease;
     }
 
-    .primary {
-      border-color: var(--info);
-      background: var(--info);
-      color: #fff;
-      font-weight: 700;
-    }
+    button.primary:hover:not(:disabled) { transform: translateY(-1px); box-shadow: 0 10px 22px rgba(106, 163, 255, 0.28); }
+    button.primary:active:not(:disabled) { transform: translateY(0); }
+    button.primary:disabled { opacity: 0.7; cursor: progress; }
 
-    .primary:disabled {
-      opacity: 0.6;
-      cursor: progress;
-    }
-
-    #builderStatus {
-      min-height: 20px;
-      font-size: 12px;
+    .commit-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 10px 12px;
+      background: var(--bg-elev);
+      border: 1px solid var(--line);
+      border-radius: var(--radius-sm);
+      font-size: 12.5px;
       color: var(--muted);
     }
 
     .commit-chip {
-      display: inline-flex;
-      align-items: center;
-      min-height: 34px;
-      width: fit-content;
-      max-width: 100%;
-      border: 1px solid var(--line);
-      border-radius: 6px;
-      background: #fafafa;
+      font: 700 12.5px/1 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      padding: 4px 8px;
+      border-radius: 4px;
+      background: var(--line);
       color: var(--ink);
-      padding: 6px 9px;
-      font: 700 13px/1.2 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-      text-decoration: none;
     }
 
-    .commit-chip:hover {
-      border-color: #9aa0aa;
-    }
+    .commit-chip.ok { background: rgba(78, 195, 138, 0.16); color: var(--ok); }
+    .commit-chip.fail { background: rgba(255, 107, 107, 0.16); color: var(--fail); }
 
-    .commit-meta {
-      min-height: 16px;
+    .status {
+      min-height: 18px;
+      font-size: 12.5px;
       color: var(--muted);
-      font-size: 12px;
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
+      display: flex;
+      align-items: center;
+      gap: 8px;
     }
 
-    @media (max-width: 860px) {
-      .toolbar {
-        grid-template-columns: 1fr;
-      }
+    .status .dot {
+      width: 8px; height: 8px;
+      border-radius: 999px;
+      background: var(--muted);
+      flex-shrink: 0;
     }
+    .status.info .dot { background: var(--info); animation: pulse 1.6s ease-in-out infinite; }
+    .status.ok .dot { background: var(--ok); }
+    .status.fail .dot { background: var(--fail); }
+    .status.warn .dot { background: var(--warn); }
+
+    @keyframes pulse {
+      0%, 100% { transform: scale(1); opacity: 0.8; }
+      50% { transform: scale(1.4); opacity: 1; }
+    }
+
+    .progress {
+      margin-top: 4px;
+      height: 4px;
+      width: 100%;
+      background: var(--line);
+      border-radius: 999px;
+      overflow: hidden;
+      display: none;
+    }
+    .progress.active { display: block; }
+    .progress::after {
+      content: "";
+      display: block;
+      width: 35%;
+      height: 100%;
+      background: linear-gradient(90deg, var(--accent), var(--ok), var(--accent));
+      animation: slide 1.6s linear infinite;
+    }
+    @keyframes slide {
+      0% { transform: translateX(-100%); }
+      100% { transform: translateX(400%); }
+    }
+
+    .verifier-card { padding: 0; overflow: hidden; }
+
+    .verifier-head {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 16px 20px;
+      border-bottom: 1px solid var(--line);
+    }
+    .verifier-head .label { display: grid; gap: 2px; }
+    .verifier-head h2 { margin: 0; font-size: 16px; }
+    .verifier-head p { font-size: 12.5px; }
+
+    .verifier-body { padding: 20px; display: grid; gap: 14px; }
+
+    #dropZone {
+      display: grid;
+      place-items: center;
+      min-height: 140px;
+      border: 2px dashed var(--line-strong);
+      border-radius: var(--radius-sm);
+      background: var(--bg-elev);
+      text-align: center;
+      transition: border-color 120ms ease, background 120ms ease;
+      cursor: pointer;
+    }
+    #dropZone:hover, #dropZone.dragover {
+      border-color: var(--accent);
+      background: var(--accent-soft);
+    }
+    #dropZone strong { display: block; margin-bottom: 6px; font-size: 16px; font-weight: 700; }
+    #dropZone span > span { color: var(--muted); font-size: 12.5px; }
+
+    button.ghost {
+      appearance: none;
+      border: 1px solid var(--line-strong);
+      border-radius: 6px;
+      background: var(--panel);
+      color: var(--ink);
+      padding: 8px 14px;
+      font: inherit;
+      cursor: pointer;
+      margin-top: 8px;
+    }
+    button.ghost:hover { border-color: var(--accent); color: var(--accent); }
+    input[type="file"] { display: none; }
 
     #status {
       min-height: 22px;
-      margin: 0 0 14px;
       font-weight: 600;
       color: var(--muted);
+      font-size: 13px;
     }
 
     .summary {
       display: flex;
-      gap: 10px;
+      gap: 8px;
       flex-wrap: wrap;
-      margin: 0 0 16px;
     }
 
     .pill {
       display: inline-flex;
       align-items: center;
       min-height: 28px;
-      padding: 4px 10px;
+      padding: 4px 12px;
       border: 1px solid var(--line);
       border-radius: 999px;
-      background: var(--panel);
+      background: var(--bg-elev);
       font-weight: 600;
+      font-size: 12.5px;
     }
 
     .ok { color: var(--ok); }
@@ -243,30 +366,27 @@
     .warn { color: var(--warn); }
     .info { color: var(--info); }
 
-    section {
-      margin: 18px 0;
-      background: var(--panel);
+    .verifier-body section {
+      margin: 14px 0 0;
+      background: var(--bg-elev);
       border: 1px solid var(--line);
-      border-radius: 8px;
+      border-radius: var(--radius-sm);
       overflow: hidden;
     }
 
-    section h2 {
+    .verifier-body section h2 {
       margin: 0;
       padding: 12px 14px;
       border-bottom: 1px solid var(--line);
-      font-size: 16px;
+      font-size: 14px;
+      font-weight: 700;
       letter-spacing: 0;
     }
 
-    table {
-      width: 100%;
-      border-collapse: collapse;
-    }
+    table { width: 100%; border-collapse: collapse; }
 
-    th,
-    td {
-      padding: 9px 10px;
+    th, td {
+      padding: 8px 12px;
       border-bottom: 1px solid var(--line);
       text-align: left;
       vertical-align: top;
@@ -274,89 +394,147 @@
     }
 
     th {
-      font-size: 12px;
+      font-size: 11px;
       text-transform: uppercase;
+      letter-spacing: 0.08em;
       color: var(--muted);
-      background: #fafafa;
+      background: var(--panel);
     }
 
     td.detail {
       white-space: normal;
       color: var(--muted);
       font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-      font-size: 12px;
+      font-size: 11.5px;
       word-break: break-word;
     }
 
-    tr:last-child td {
-      border-bottom: 0;
-    }
+    tr:last-child td { border-bottom: 0; }
+    .result { font-weight: 700; }
+    .hidden { display: none; }
 
-    .result {
-      font-weight: 700;
+    .foot {
+      margin-top: 24px;
+      display: flex;
+      gap: 16px;
+      flex-wrap: wrap;
+      color: var(--muted);
+      font-size: 12px;
     }
+    .foot a { color: var(--muted); text-decoration: none; border-bottom: 1px dotted var(--line-strong); }
+    .foot a:hover { color: var(--accent); border-bottom-color: var(--accent); }
 
-    .hidden {
-      display: none;
+    @media (max-width: 820px) {
+      .builder { grid-template-columns: 1fr; padding: 18px; }
+      .cards-2 { grid-template-columns: 1fr; }
+      h1 { font-size: 24px; }
+      main { padding: 24px 16px 60px; }
     }
   </style>
 </head>
 <body>
   <main>
-    <h1>Verify AE ModMenu</h1>
-    <p>Drop an APK, XAPK, or raw <code>libapp.so</code>. The verifier extracts <code>lib/arm64-v8a/libapp.so</code> and checks every mod-menu byte patch, code cave, and native hook signature for unique resolution. Speedy is the only feature allowed to resolve more than one raw float constant.</p>
+    <header class="hero">
+      <span class="eyebrow">Another Eden &middot; LSPatch builder</span>
+      <h1>Build a signed Another Eden APKS</h1>
+      <p class="lede">Pick your target device, hit build, and a fresh signed .apks lands in your downloads. Optional verifier below double-checks any APK / XAPK / libapp.so against the current mod-menu signatures.</p>
+    </header>
 
-    <div class="toolbar">
-      <label id="dropZone" for="fileInput">
-        <span>
-          <strong>Drop APK/XAPK here</strong>
-          <button type="button" id="chooseButton">Choose file</button>
-        </span>
-      </label>
-
-      <form id="builderForm" class="builder">
-        <h2>LSPatch Builder</h2>
-        <div class="builder-row">
-          <div class="builder-label">Game</div>
-          <div class="segmented">
-            <label>
-              <input type="radio" name="region" value="global" checked>
-              <span>Global</span>
+    <form id="builderForm" class="card builder">
+      <div class="builder-main">
+        <div>
+          <h2>Target device</h2>
+          <p class="builder-sub">Most users want the phone build. Only choose Emulator if you run Another Eden in an x86_64 Android emulator (BlueStacks, LDPlayer, MEmu, WSA, etc).</p>
+        </div>
+        <div class="field">
+          <div class="cards-2">
+            <label class="pick">
+              <input type="radio" name="moduleSource" value="main" checked>
+              <div class="pick-body">
+                <span class="pick-title">Real Android Phone <span class="pick-tag real">arm64</span></span>
+                <span class="pick-desc">Standard ARM64 build for actual phones &amp; tablets.</span>
+              </div>
             </label>
-            <label>
-              <input type="radio" name="region" value="japan">
-              <span>Japan</span>
+            <label class="pick">
+              <input type="radio" name="moduleSource" value="houdini-x64-rewrite">
+              <div class="pick-body">
+                <span class="pick-title">Emulator Only <span class="pick-tag emu">x86_64</span></span>
+                <span class="pick-desc">x86_64 rewrite for BlueStacks / LDPlayer / WSA. Do not install on a phone.</span>
+              </div>
             </label>
           </div>
         </div>
-        <div class="builder-row">
-          <label class="builder-label" for="moduleVariant">Module</label>
+
+        <div class="field">
+          <div class="field-label">Game region</div>
+          <div class="cards-2">
+            <label class="pick">
+              <input type="radio" name="region" value="global" checked>
+              <div class="pick-body">
+                <span class="pick-title">Global</span>
+                <span class="pick-desc">games.wfs.anothereden &middot; latest XAPK from APKPure.</span>
+              </div>
+            </label>
+            <label class="pick">
+              <input type="radio" name="region" value="japan">
+              <div class="pick-body">
+                <span class="pick-title">Japan</span>
+                <span class="pick-desc">net.wrightflyer.anothereden &middot; latest JP XAPK.</span>
+              </div>
+            </label>
+          </div>
+        </div>
+      </div>
+
+      <div class="builder-side">
+        <div class="field">
+          <label class="field-label" for="moduleVariant">Module flavor</label>
           <select id="moduleVariant" name="moduleVariant">
-            <option value="release" selected>Release</option>
+            <option value="release" selected>Release (recommended)</option>
             <option value="debug">Debug logs</option>
           </select>
         </div>
-        <div class="builder-row">
-          <label class="builder-label" for="moduleSource">Source</label>
-          <select id="moduleSource" name="moduleSource">
-            <option value="houdini-x64-rewrite" selected>Houdini x64 rewrite</option>
-            <option value="main">Main</option>
-          </select>
-        </div>
-        <div class="builder-row">
-          <div class="builder-label">Latest Module Commit</div>
-          <span id="moduleCommit" class="commit-chip">loading</span>
-          <div id="moduleCommitMeta" class="commit-meta">Server-resolved latest module source</div>
-        </div>
-        <button id="builderButton" class="primary" type="submit">Build .apks</button>
-        <div id="builderStatus">Builds the selected server-resolved module with LSPatch 0.8, latest APKPure XAPK, and the Ashfur signer.</div>
-      </form>
-    </div>
-    <input id="fileInput" type="file" accept=".apk,.xapk,.so,application/zip">
 
-    <div id="status">Waiting for file.</div>
-    <div id="summary" class="summary hidden"></div>
-    <div id="results"></div>
+        <div class="field">
+          <div class="field-label">Latest module commit</div>
+          <div class="commit-row">
+            <span id="moduleCommit" class="commit-chip">loading</span>
+            <span id="moduleCommitMeta">Resolving latest source...</span>
+          </div>
+        </div>
+
+        <button id="builderButton" class="primary" type="submit">Build &amp; download .apks</button>
+        <div id="builderStatus" class="status"><span class="dot"></span><span class="text">Ready when you are. The build typically takes 2-3 minutes.</span></div>
+        <div id="builderProgress" class="progress"></div>
+      </div>
+    </form>
+
+    <section class="card verifier-card" id="verifierPanel">
+      <header class="verifier-head">
+        <div class="label">
+          <h2>Verify a libapp.so (optional)</h2>
+          <p>Drop an APK / XAPK / libapp.so to check every mod-menu byte patch resolves uniquely.</p>
+        </div>
+      </header>
+      <div class="verifier-body">
+        <label id="dropZone" for="fileInput">
+          <span>
+            <strong>Drop APK, XAPK, or libapp.so</strong>
+            <span>Extracts lib/arm64-v8a/libapp.so and checks every signature.</span>
+            <button type="button" id="chooseButton" class="ghost">Choose file</button>
+          </span>
+        </label>
+        <input id="fileInput" type="file" accept=".apk,.xapk,.so,application/zip">
+        <div id="status">Waiting for file.</div>
+        <div id="summary" class="summary hidden"></div>
+        <div id="results"></div>
+      </div>
+    </section>
+
+    <div class="foot">
+      <span>Signed with Ashfur &middot; LSPatch 0.8</span>
+      <a href="https://github.com/[removed-private-value]" target="_blank" rel="noopener">Source on GitHub</a>
+    </div>
   </main>
 
   <script src="./jszip.min.js"></script>
@@ -621,12 +799,19 @@
     const builderForm = document.getElementById("builderForm");
     const builderButton = document.getElementById("builderButton");
     const builderStatus = document.getElementById("builderStatus");
-    const moduleSource = document.getElementById("moduleSource");
+    const builderStatusText = builderStatus.querySelector(".text");
+    const builderProgress = document.getElementById("builderProgress");
     const moduleCommit = document.getElementById("moduleCommit");
     const moduleCommitMeta = document.getElementById("moduleCommitMeta");
-    let latestModuleCommit = null;
+    const moduleSourceInputs = document.querySelectorAll('input[name="moduleSource"]');
 
-    chooseButton.addEventListener("click", () => fileInput.click());
+    let latestModuleCommit = null;
+    let commitRefreshTimer = null;
+
+    chooseButton.addEventListener("click", event => {
+      event.preventDefault();
+      fileInput.click();
+    });
     fileInput.addEventListener("change", () => {
       if (fileInput.files.length) handleFile(fileInput.files[0]);
     });
@@ -654,12 +839,19 @@
       event.preventDefault();
       buildLspatchBundle();
     });
-    moduleSource.addEventListener("change", refreshModuleCommit);
+    moduleSourceInputs.forEach(input => input.addEventListener("change", () => refreshModuleCommit()));
 
     refreshModuleCommit();
-    window.setInterval(refreshModuleCommit, 60000);
     document.addEventListener("visibilitychange", () => {
-      if (!document.hidden) refreshModuleCommit();
+      if (!document.hidden) {
+        // Refresh once after the tab regains focus, throttled to once per 5 min.
+        if (!commitRefreshTimer) {
+          commitRefreshTimer = window.setTimeout(() => {
+            commitRefreshTimer = null;
+            refreshModuleCommit();
+          }, 200);
+        }
+      }
     });
 
     function setStatus(text, className = "") {
@@ -668,12 +860,21 @@
     }
 
     function setBuilderStatus(text, className = "") {
-      builderStatus.textContent = text;
-      builderStatus.className = className;
+      builderStatusText.textContent = text;
+      builderStatus.className = "status" + (className ? " " + className : "");
+    }
+
+    function setBuilderProgress(active) {
+      builderProgress.classList.toggle("active", !!active);
+    }
+
+    function selectedModuleSource() {
+      const checked = document.querySelector('input[name="moduleSource"]:checked');
+      return checked ? checked.value : "main";
     }
 
     async function refreshModuleCommit() {
-      const source = moduleSource.value;
+      const source = selectedModuleSource();
       try {
         const response = await fetch(`/api/module/latest?moduleSource=${encodeURIComponent(source)}`, { cache: "no-store" });
         if (!response.ok) throw new Error("HTTP " + response.status);
@@ -682,19 +883,19 @@
         latestModuleCommit = body;
         moduleCommit.textContent = body.shortSha;
         moduleCommit.className = "commit-chip ok";
-        moduleCommitMeta.textContent = `Server-resolved ${sourceLabel(source)} source`;
+        moduleCommitMeta.textContent = `Latest ${sourceLabel(source)} source`;
         return body;
       } catch (error) {
         latestModuleCommit = null;
         moduleCommit.textContent = "unavailable";
         moduleCommit.className = "commit-chip fail";
-        moduleCommitMeta.textContent = `Could not load latest ${sourceLabel(source)} commit`;
+        moduleCommitMeta.textContent = `Couldn't load latest ${sourceLabel(source)} commit`;
         return null;
       }
     }
 
     function sourceLabel(source) {
-      return source === "houdini-x64-rewrite" ? "Houdini x64 rewrite" : "Main";
+      return source === "houdini-x64-rewrite" ? "Emulator (x86_64)" : "Phone (ARM64)";
     }
 
     function selectedRadio(name) {
@@ -702,23 +903,69 @@
       return checked ? checked.value : "";
     }
 
-    function filenameFromDisposition(value) {
-      if (!value) return "";
-      const match = /filename\*?=(?:UTF-8''|")?([^";]+)/i.exec(value);
-      return match ? decodeURIComponent(match[1].replace(/"/g, "")) : "";
+    function sleep(ms) {
+      return new Promise(resolve => setTimeout(resolve, ms));
+    }
+
+    async function readJsonSafe(response) {
+      try {
+        return await response.json();
+      } catch (_) {
+        return null;
+      }
+    }
+
+    async function pollBuildStatus(nonce, source) {
+      const sourceText = sourceLabel(source);
+      const startedAt = Date.now();
+      // Wait a beat before the first poll so the workflow run can register.
+      let delay = 4000;
+      const maxDelay = 8000;
+      for (;;) {
+        await sleep(delay);
+        delay = Math.min(maxDelay, delay + 500);
+
+        const response = await fetch(`/api/lspatch/status?nonce=${encodeURIComponent(nonce)}`, { cache: "no-store" });
+        const body = await readJsonSafe(response) || {};
+        if (!response.ok && body.status !== "running" && body.status !== "queued") {
+          throw new Error(body.message || ("Status check failed HTTP " + response.status));
+        }
+        const elapsed = Math.round((Date.now() - startedAt) / 1000);
+        switch (body.status) {
+          case "ready":
+            return body;
+          case "failed":
+            throw new Error("GitHub build failed (" + (body.conclusion || "unknown") + "). See " + (body.runUrl || "Actions tab") + ".");
+          case "running":
+            setBuilderStatus(`Building ${sourceText} on GitHub Actions... ${elapsed}s elapsed`, "info");
+            break;
+          case "queued":
+          default:
+            setBuilderStatus(`Waiting for GitHub Actions to pick up the job... ${elapsed}s elapsed`, "info");
+            break;
+        }
+        if (elapsed > 600) {
+          throw new Error("Build did not finish within 10 minutes. Check the Actions tab.");
+        }
+      }
     }
 
     async function buildLspatchBundle() {
+      const moduleSource = selectedModuleSource();
       const payload = {
         region: selectedRadio("region"),
         moduleVariant: document.getElementById("moduleVariant").value,
-        moduleSource: moduleSource.value
+        moduleSource
       };
+      const sourceText = sourceLabel(moduleSource);
 
       builderButton.disabled = true;
+      setBuilderProgress(true);
       const visibleCommit = await refreshModuleCommit();
       setBuilderStatus(
-        visibleCommit ? `Starting server build with ${sourceLabel(payload.moduleSource)} module ${visibleCommit.shortSha}...` : "Starting server build...",
+        visibleCommit
+          ? `Dispatching ${sourceText} build (module ${visibleCommit.shortSha})...`
+          : `Dispatching ${sourceText} build...`,
         "info"
       );
 
@@ -732,42 +979,65 @@
         if (response.status === 404) {
           throw new Error("Builder API is not deployed on this host.");
         }
-        if (!response.ok) {
-          let message = "Build failed with HTTP " + response.status;
-          try {
-            const error = await response.json();
-            if (error && error.message) message = error.message;
-          } catch (_) {}
-          throw new Error(message);
-        }
 
         const type = response.headers.get("content-type") || "";
-        if (type.includes("application/json")) {
-          const body = await response.json();
-          setBuilderStatus(body.message || "Build queued.", "info");
+
+        // Local dev mode returns the file body directly (binary stream).
+        if (response.ok && !type.includes("application/json")) {
+          const blob = await response.blob();
+          const filename = filenameFromDisposition(response.headers.get("content-disposition")) ||
+            `AnotherEden_${payload.region}_LSPatched_Ashfur.apks`;
+          triggerBlobDownload(blob, filename);
+          setBuilderStatus(`Local build complete: ${filename}`, "ok");
           return;
         }
 
-        const blob = await response.blob();
-        const moduleShortSha = response.headers.get("x-module-short-sha") ||
-          (latestModuleCommit && latestModuleCommit.shortSha) || "";
-        const moduleSourceLabel = sourceLabel(response.headers.get("x-module-source") || payload.moduleSource);
-        const name = filenameFromDisposition(response.headers.get("content-disposition")) ||
-          `AnotherEden_${payload.region}_LSPatched_Ashfur.apks`;
-        const url = URL.createObjectURL(blob);
+        const body = await readJsonSafe(response) || {};
+        if (!response.ok) {
+          throw new Error(body.message || ("Build failed HTTP " + response.status));
+        }
+        if (body.mode !== "github" || !body.nonce) {
+          throw new Error(body.message || "Builder returned an unexpected response.");
+        }
+
+        setBuilderStatus(`Build queued on GitHub Actions (module ${body.moduleShortSha || "?"})...`, "info");
+
+        const ready = await pollBuildStatus(body.nonce, moduleSource);
+        const sizeMb = ready.sizeBytes ? ` · ${(ready.sizeBytes / 1024 / 1024).toFixed(1)} MB` : "";
+        setBuilderStatus(`Download starting (direct from GitHub)${sizeMb}`, "ok");
+
+        // Redirect the browser to /api/lspatch/download which 302s to GitHub's signed S3 URL.
+        // Using an <a download> click instead of window.location keeps the user on the page.
         const link = document.createElement("a");
-        link.href = url;
-        link.download = name;
+        link.href = `/api/lspatch/download?nonce=${encodeURIComponent(body.nonce)}`;
+        link.download = ready.filename || body.filename || "";
+        link.rel = "noopener";
         document.body.appendChild(link);
         link.click();
         link.remove();
-        URL.revokeObjectURL(url);
-        setBuilderStatus("Download started: " + name + (moduleShortSha ? ` (${moduleSourceLabel} module ${moduleShortSha})` : ""), "ok");
       } catch (error) {
         setBuilderStatus(error.message, "fail");
       } finally {
         builderButton.disabled = false;
+        setBuilderProgress(false);
       }
+    }
+
+    function filenameFromDisposition(value) {
+      if (!value) return "";
+      const match = /filename\*?=(?:UTF-8''|")?([^";]+)/i.exec(value);
+      return match ? decodeURIComponent(match[1].replace(/"/g, "")) : "";
+    }
+
+    function triggerBlobDownload(blob, name) {
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = name;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
     }
 
     function hexToBytes(hex) {

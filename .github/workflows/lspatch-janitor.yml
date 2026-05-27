@@ -1,0 +1,140 @@
+name: LSPatch Release Janitor
+
+on:
+  schedule:
+    # Sweep stale lspatch-* releases and tags every 30 minutes.
+    - cron: "*/30 * * * *"
+  workflow_dispatch:
+    inputs:
+      max_age_minutes:
+        description: "Delete lspatch-* releases/tags older than this many minutes."
+        required: false
+        default: "60"
+      purge_all:
+        description: "Delete every lspatch-* release and tag regardless of age (one-shot cleanup of the backlog)."
+        required: false
+        default: "false"
+        type: choice
+        options:
+          - "false"
+          - "true"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: lspatch-janitor
+  cancel-in-progress: false
+
+jobs:
+  sweep:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Purge stale lspatch releases and tags
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          MAX_AGE_MINUTES: ${{ inputs.max_age_minutes || '60' }}
+          PURGE_ALL: ${{ inputs.purge_all || 'false' }}
+        run: |
+          set -euo pipefail
+
+          now_epoch=$(date -u +%s)
+          max_age_minutes="${MAX_AGE_MINUTES:-60}"
+          if ! [[ "$max_age_minutes" =~ ^[0-9]+$ ]]; then
+            echo "Invalid max_age_minutes: $max_age_minutes" >&2
+            exit 1
+          fi
+          max_age_seconds=$(( max_age_minutes * 60 ))
+          purge_all="${PURGE_ALL,,}"
+
+          echo "Mode: purge_all=$purge_all max_age_minutes=$max_age_minutes"
+
+          deleted_releases=0
+          deleted_tags=0
+          kept_releases=0
+          failures=0
+
+          # ---- 1. Releases ---------------------------------------------------
+          page=1
+          while :; do
+            page_json=$(gh api "repos/$REPO/releases?per_page=100&page=$page")
+            count=$(echo "$page_json" | jq 'length')
+            if [ "$count" -eq 0 ]; then break; fi
+
+            while IFS=$'\t' read -r tag_name created_at release_id; do
+              [ -z "$tag_name" ] && continue
+              case "$tag_name" in
+                lspatch-*) ;;
+                *) continue ;;
+              esac
+
+              age=999999999
+              if [ -n "$created_at" ] && [ "$created_at" != "null" ]; then
+                created_epoch=$(date -u -d "$created_at" +%s 2>/dev/null || echo 0)
+                age=$(( now_epoch - created_epoch ))
+              fi
+
+              if [ "$purge_all" = "true" ] || [ "$age" -ge "$max_age_seconds" ]; then
+                echo "Deleting release $tag_name (id=$release_id, age=${age}s)"
+                if gh api -X DELETE "repos/$REPO/releases/$release_id" >/dev/null 2>&1; then
+                  deleted_releases=$(( deleted_releases + 1 ))
+                else
+                  echo "  -> release delete failed" >&2
+                  failures=$(( failures + 1 ))
+                fi
+              else
+                kept_releases=$(( kept_releases + 1 ))
+              fi
+            done < <(echo "$page_json" | jq -r '.[] | [.tag_name, .created_at, (.id|tostring)] | @tsv')
+
+            if [ "$count" -lt 100 ]; then break; fi
+            page=$(( page + 1 ))
+          done
+
+          # Give GitHub a moment so tag refs see the release deletions.
+          sleep 5
+
+          # ---- 2. Tags (catches orphans the inline cleanup left behind) -----
+          page=1
+          while :; do
+            tags_json=$(gh api "repos/$REPO/tags?per_page=100&page=$page")
+            count=$(echo "$tags_json" | jq 'length')
+            if [ "$count" -eq 0 ]; then break; fi
+
+            while read -r tag_name; do
+              [ -z "$tag_name" ] && continue
+              case "$tag_name" in
+                lspatch-*) ;;
+                *) continue ;;
+              esac
+
+              keep=false
+              if [ "$purge_all" != "true" ]; then
+                # If a matching release still exists, the release was kept on purpose, so leave the tag.
+                if gh api "repos/$REPO/releases/tags/$tag_name" >/dev/null 2>&1; then
+                  keep=true
+                fi
+              fi
+
+              if [ "$keep" = "true" ]; then continue; fi
+
+              echo "Deleting tag $tag_name"
+              if gh api -X DELETE "repos/$REPO/git/refs/tags/$tag_name" >/dev/null 2>&1; then
+                deleted_tags=$(( deleted_tags + 1 ))
+              else
+                echo "  -> tag delete failed" >&2
+                failures=$(( failures + 1 ))
+              fi
+            done < <(echo "$tags_json" | jq -r '.[].name')
+
+            if [ "$count" -lt 100 ]; then break; fi
+            page=$(( page + 1 ))
+          done
+
+          echo
+          echo "Summary: releases_deleted=$deleted_releases releases_kept=$kept_releases tags_deleted=$deleted_tags failures=$failures"
+
+          # Don't fail the run on individual delete errors; the next sweep will retry.
+          exit 0
