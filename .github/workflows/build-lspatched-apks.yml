@@ -156,22 +156,50 @@ jobs:
           # Start the XAPK download in the background of THIS shell so we can
           # genuinely wait for it later. The previous design used a separate step
           # and lost the child PID across the shell boundary.
+          #
+          # APKPure throttles single connections to ~750 KB/s. aria2c with 16
+          # parallel connections + 4 MB splits typically gets 4-8x speedup.
           XAPK_FILE="$WORK/source.xapk"
-          rm -f "$XAPK_FILE"
+          XAPK_DIR="$(dirname "$XAPK_FILE")"
+          XAPK_NAME="$(basename "$XAPK_FILE")"
+          rm -f "$XAPK_FILE" "$XAPK_FILE.aria2"
           (
             set +e
             attempt=0
             until [ "$attempt" -ge 5 ]; do
               attempt=$((attempt + 1))
               echo "[xapk] attempt $attempt -> $XAPK_URL"
-              if curl -L --fail --silent --show-error \
-                   --connect-timeout 30 --max-time 600 \
-                   -A "Mozilla/5.0 AE Patch Builder" \
-                   -o "$XAPK_FILE" \
-                   "$XAPK_URL"; then
-                echo "[xapk] attempt $attempt succeeded"
-                exit 0
+              if command -v aria2c >/dev/null 2>&1; then
+                if aria2c \
+                    --console-log-level=warn \
+                    --summary-interval=0 \
+                    --max-connection-per-server=16 \
+                    --split=16 \
+                    --min-split-size=2M \
+                    --max-tries=3 \
+                    --retry-wait=3 \
+                    --connect-timeout=30 \
+                    --timeout=120 \
+                    --allow-overwrite=true \
+                    --auto-file-renaming=false \
+                    --user-agent="Mozilla/5.0 AE Patch Builder" \
+                    --dir="$XAPK_DIR" \
+                    --out="$XAPK_NAME" \
+                    "$XAPK_URL"; then
+                  echo "[xapk] attempt $attempt succeeded (aria2c)"
+                  exit 0
+                fi
+              else
+                if curl -L --fail --silent --show-error \
+                     --connect-timeout 30 --max-time 600 \
+                     -A "Mozilla/5.0 AE Patch Builder" \
+                     -o "$XAPK_FILE" \
+                     "$XAPK_URL"; then
+                  echo "[xapk] attempt $attempt succeeded (curl)"
+                  exit 0
+                fi
               fi
+              rm -f "$XAPK_FILE" "$XAPK_FILE.aria2"
               echo "[xapk] attempt $attempt failed, retrying after 5s..."
               sleep 5
             done
