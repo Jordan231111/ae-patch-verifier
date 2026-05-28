@@ -790,20 +790,14 @@
       {
         feature: "Fast-iterate dialogue (trace-only)",
         check: "FieldTalkBaseNode::startOutAnimation hook signature",
-        pattern: "FD7B05A9F73300F9F65707A9F44F08A9FD43019156D03BD5F30300AAC81640F9A8831FF800E441F9????????600642FD????????E1230091E00700FD00554CBD????????F40300AA",
-        detail: "Trace-only, fail-safe. Wildcards CBZ +0x28, ADRP +0x30, BL +0x40. Was hardcoded RVA 0x2C15EDC."
+        pattern: "FD7B05A9F73300F9F65707A9F44F08A9FD43019156D03BD5F30300AAC81640F9A8831FF800E441F9????????600642FD????????E1230091E00700FD????????????????F40300AA",
+        detail: "Trace-only, fail-safe. Wildcards CBZ +0x28, ADRP +0x30, the version-shifting `ldr s0,[x8,#imm]` float-const load, and the following BL. Verified 1:1:1 unique across 3.14.50/3.15.0/latest."
       },
       {
         feature: "Fast-iterate dialogue (trace-only)",
         check: "FieldTalkBaseNode::onEndInAnimation hook signature",
-        pattern: "FD7B07A9F74300F9F65709A9F44F0AA9FDC3019156D03BD5F30300AAC81640F9A8831FF8080042F9????????148542F9????????21C02591E0630091",
-        detail: "Trace-only, fail-safe. Wildcards CBZ +0x28 and ADRP +0x30. Was hardcoded RVA 0x2C168D0."
-      },
-      {
-        feature: "PCD Paw Stamps (safe)",
-        check: "achievement shared_ptr vector push/dump hook signature",
-        pattern: "????????29613B91090000F9????????C0035FD6000C40F9",
-        detail: "Trace-only achievement-catalog dump. Wildcards the leading ADRP and the TBNZ. Was hardcoded RVA 0x303FB18."
+        pattern: "FD7B07A9F74300F9F65709A9F44F0AA9FDC3019156D03BD5F30300AAC81640F9A8831FF8080042F9????????148542F9????????????????E0630091????????E1630091E00314AA????????E8634039",
+        detail: "Trace-only, fail-safe. Wildcards CBZ +0x28, ADRP +0x30, the version-shifting `add x1,#imm` string offset, and two BLs. Extended to 80 bytes to stay 1:1:1 unique across 3.14.50/3.15.0/latest."
       }
     ];
 
