@@ -780,6 +780,30 @@
         feature: "Mass Purchase owned-count patch",
         check: "owned-count LDR/LDR/BLR instruction triple inside tokenShopPurchase",
         pattern: "080040F9080940F900013FD6E80240F9A1FE161BE203002A082940F9E00317AA00013FD6"
+      },
+      {
+        feature: "Fast-iterate dialogue (trace-only)",
+        check: "FieldTalkBaseNode::startInAnimation hook signature",
+        pattern: "FD7B07A9F74300F9F65709A9F44F0AA9FDC3019156D03BD5F30300AAC81640F9A8831EF800E441F9????????080040F9085540F900013FD6000040FDE003803D",
+        detail: "Trace-only, fail-safe (installs only on exactly one hit). Wildcards the PC-relative CBZ at +0x28. Was hardcoded RVA 0x2C15CC0."
+      },
+      {
+        feature: "Fast-iterate dialogue (trace-only)",
+        check: "FieldTalkBaseNode::startOutAnimation hook signature",
+        pattern: "FD7B05A9F73300F9F65707A9F44F08A9FD43019156D03BD5F30300AAC81640F9A8831FF800E441F9????????600642FD????????E1230091E00700FD00554CBD????????F40300AA",
+        detail: "Trace-only, fail-safe. Wildcards CBZ +0x28, ADRP +0x30, BL +0x40. Was hardcoded RVA 0x2C15EDC."
+      },
+      {
+        feature: "Fast-iterate dialogue (trace-only)",
+        check: "FieldTalkBaseNode::onEndInAnimation hook signature",
+        pattern: "FD7B07A9F74300F9F65709A9F44F0AA9FDC3019156D03BD5F30300AAC81640F9A8831FF8080042F9????????148542F9????????21C02591E0630091",
+        detail: "Trace-only, fail-safe. Wildcards CBZ +0x28 and ADRP +0x30. Was hardcoded RVA 0x2C168D0."
+      },
+      {
+        feature: "PCD Paw Stamps (safe)",
+        check: "achievement shared_ptr vector push/dump hook signature",
+        pattern: "????????29613B91090000F9????????C0035FD6000C40F9",
+        detail: "Trace-only achievement-catalog dump. Wildcards the leading ADRP and the TBNZ. Was hardcoded RVA 0x303FB18."
       }
     ];
 
