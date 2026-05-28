@@ -72,25 +72,6 @@ jobs:
           curl -L --fail -o tools-cache/lspatch.jar "$LSPATCH_JAR_URL"
           curl -L --fail -o tools-cache/uber-apk-signer.jar "$UBER_SIGNER_JAR_URL"
 
-      - name: Pre-fetch APKPure XAPK in background
-        env:
-          REGION: ${{ inputs.region }}
-        run: |
-          set -euo pipefail
-          case "$REGION" in
-            japan) URL="https://d.apkpure.net/b/XAPK/net.wrightflyer.anothereden?version=latest" ;;
-            global|*) URL="https://d.apkpure.net/b/XAPK/games.wfs.anothereden?version=latest" ;;
-          esac
-          mkdir -p "$RUNNER_TEMP/ae-lspatch"
-          # Spawn a fire-and-forget downloader; the build step will wait on the pid below.
-          (
-            curl -L --fail --retry 3 --silent --show-error \
-              -A "Mozilla/5.0 AE Patch Builder" \
-              -o "$RUNNER_TEMP/ae-lspatch/source.xapk" \
-              "$URL"
-          ) &
-          echo "XAPK_PID=$!" >> "$GITHUB_ENV"
-
       - name: Prepare module source (shallow)
         env:
           MODULE_SHA: ${{ inputs.moduleSha }}
@@ -159,16 +140,45 @@ jobs:
             japan)
               PACKAGE_NAME="net.wrightflyer.anothereden"
               DEFAULT_NAME="AnotherEden_Japan"
+              XAPK_URL="https://d.apkpure.net/b/XAPK/net.wrightflyer.anothereden?version=latest"
               ;;
             global|*)
               PACKAGE_NAME="games.wfs.anothereden"
               DEFAULT_NAME="AnotherEden_Global"
+              XAPK_URL="https://d.apkpure.net/b/XAPK/games.wfs.anothereden?version=latest"
               ;;
           esac
 
           KEYSTORE="builder/signing/Ashfur.jks"
           test -f "$KEYSTORE"
           test -n "$WORK"
+
+          # Start the XAPK download in the background of THIS shell so we can
+          # genuinely wait for it later. The previous design used a separate step
+          # and lost the child PID across the shell boundary.
+          XAPK_FILE="$WORK/source.xapk"
+          rm -f "$XAPK_FILE"
+          (
+            set +e
+            attempt=0
+            until [ "$attempt" -ge 5 ]; do
+              attempt=$((attempt + 1))
+              echo "[xapk] attempt $attempt -> $XAPK_URL"
+              if curl -L --fail --silent --show-error \
+                   --connect-timeout 30 --max-time 600 \
+                   -A "Mozilla/5.0 AE Patch Builder" \
+                   -o "$XAPK_FILE" \
+                   "$XAPK_URL"; then
+                echo "[xapk] attempt $attempt succeeded"
+                exit 0
+              fi
+              echo "[xapk] attempt $attempt failed, retrying after 5s..."
+              sleep 5
+            done
+            echo "[xapk] all attempts failed" >&2
+            exit 1
+          ) &
+          XAPK_PID=$!
 
           case "$VARIANT" in
             debug)
@@ -185,12 +195,28 @@ jobs:
           echo "Using module commit: $MODULE_SHA_SHORT"
           sha256sum "$MODULE_APK"
 
-          # Wait for the parallel XAPK pre-fetch.
-          if [ -n "${XAPK_PID:-}" ]; then
-            wait "$XAPK_PID" || true
+          # Wait for the parallel XAPK download (same shell, so this works).
+          echo "Waiting for XAPK download (pid $XAPK_PID)..."
+          if ! wait "$XAPK_PID"; then
+            echo "::error::APKPure XAPK download failed after 5 attempts."
+            exit 1
           fi
-          test -s "$WORK/source.xapk"
-          unzip -q -o "$WORK/source.xapk" -d "$WORK/xapk"
+
+          # Validate the file: must exist, be at least 50 MB, and have a ZIP signature.
+          test -s "$XAPK_FILE" || { echo "::error::source.xapk is empty"; exit 1; }
+          XAPK_SIZE="$(stat -c %s "$XAPK_FILE")"
+          echo "XAPK size: $XAPK_SIZE bytes"
+          if [ "$XAPK_SIZE" -lt 52428800 ]; then
+            echo "::error::source.xapk is only $XAPK_SIZE bytes; APKPure likely returned an error page."
+            head -c 512 "$XAPK_FILE" | od -c | head -5 >&2 || true
+            exit 1
+          fi
+          SIGN="$(head -c 4 "$XAPK_FILE" | od -An -tx1 | tr -d ' \n')"
+          if [ "$SIGN" != "504b0304" ]; then
+            echo "::error::source.xapk does not have a ZIP signature (got $SIGN)."
+            exit 1
+          fi
+          unzip -q -o "$XAPK_FILE" -d "$WORK/xapk"
 
           BASE_APK="$(find "$WORK/xapk" -maxdepth 1 -type f -name "*.apk" ! -name "config.*.apk" ! -name "AssetPack*.apk" | head -n 1)"
           if [ -z "$BASE_APK" ]; then
