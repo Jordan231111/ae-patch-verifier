@@ -22,6 +22,10 @@ on:
       moduleSha:
         description: Server-resolved module commit to embed
         required: true
+      moduleRef:
+        description: Branch the module commit was resolved from
+        required: false
+        default: main
       nonce:
         description: Request nonce from Vercel
         required: true
@@ -75,6 +79,7 @@ jobs:
       - name: Prepare module source (shallow)
         env:
           MODULE_SHA: ${{ inputs.moduleSha }}
+          MODULE_REF: ${{ inputs.moduleRef }}
           MODULE_REPO: ${{ secrets.AE_MODULE_REPO }}
           GH_TOKEN: ${{ secrets.AE_MODULE_REPO_TOKEN }}
         run: |
@@ -90,20 +95,16 @@ jobs:
           git init -q "$WORK/module"
           git -C "$WORK/module" config core.fsmonitor false
           git -C "$WORK/module" remote add origin "https://x-access-token:${GH_TOKEN}@github.com/${MODULE_REPO}.git"
-          if ! git -C "$WORK/module" fetch --depth 1 origin "$MODULE_SHA" 2>/dev/null; then
-            # Fall back to fetching the default branch if shallow-by-sha is refused.
-            git -C "$WORK/module" fetch --depth 50 origin HEAD
+          # Fetch exactly the pinned commit at depth 1. GitHub lets us fetch any
+          # commit reachable from an advertised ref, so this works no matter which
+          # branch the commit lives on (main, houdini-x64-rewrite, ...) and pulls a
+          # single commit -- maximally cheap. If the direct SHA fetch is ever
+          # refused, shallow-fetch the source branch instead. Either path stays
+          # shallow; we never --unshallow (which would download the full history).
+          if ! git -C "$WORK/module" fetch --depth 1 origin "$MODULE_SHA"; then
+            git -C "$WORK/module" fetch --depth 50 origin "${MODULE_REF:-HEAD}"
           fi
-          git -C "$WORK/module" checkout --detach FETCH_HEAD
-          # Make sure we ended up on the requested commit (full-fetch fallback if not).
-          ACTUAL_FULL="$(git -C "$WORK/module" rev-parse HEAD)"
-          case "$ACTUAL_FULL" in
-            "$MODULE_SHA"*) ;;
-            *)
-              git -C "$WORK/module" fetch --unshallow origin
-              git -C "$WORK/module" checkout --detach "$MODULE_SHA"
-              ;;
-          esac
+          git -C "$WORK/module" checkout --detach "$MODULE_SHA"
 
           MODULE_SHA_SHORT="$(git -C "$WORK/module" rev-parse --short=7 HEAD)"
           chmod +x "$WORK/module/gradlew"

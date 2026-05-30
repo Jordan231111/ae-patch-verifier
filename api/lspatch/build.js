@@ -235,7 +235,8 @@ async function dispatchGithubBuild({ region, moduleVariant, moduleSource }) {
       inputs: {
         region,
         variant: moduleVariant,
-        moduleSha: moduleCommit.shortSha,
+        moduleSha: moduleCommit.sha,
+        moduleRef: moduleCommit.ref,
         nonce
       }
     }
