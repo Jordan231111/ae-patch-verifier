@@ -798,6 +798,16 @@
         check: "FieldTalkBaseNode::onEndInAnimation hook signature",
         pattern: "FD7B07A9F74300F9F65709A9F44F0AA9FDC3019156D03BD5F30300AAC81640F9A8831FF8080042F9????????148542F9????????????????E0630091????????E1630091E00314AA????????E8634039",
         detail: "Trace-only, fail-safe. Wildcards CBZ +0x28, ADRP +0x30, the version-shifting `add x1,#imm` string offset, and two BLs. Extended to 80 bytes to stay 1:1:1 unique across 3.14.50/3.15.0/latest."
+      },
+      {
+        feature: "Item map dumper",
+        check: "DomainItemRepository singleton resolves 1:1 via getItemName anchor",
+        itemRepoGlobal: true,
+        anchorString: "static int toybox::script::ScriptFunction::getItemName",
+        pattern: "FD7BBEA9F44F01A9FD030091????????93????F9??????B500??8052????????F30300AA????????93????F9E00313AA",
+        adrpOffset: 0x0C,
+        ldrOffset: 0x10,
+        detail: "Backs the item-map dump button (itemId -> localized name). Anchors on the getItemName assert literal, backward-scans <=0x200 for the BL to the repo getInstance idiom, then ADRP+LDR decodes &instance. The singleton RVA drifts every build (0x4769A98 / 0x4769AA8 / 0x468E740 on 3.15.20 / 3.15.10 / 3.14.60) so it is resolved by signature, never hardcoded; the object-size immediate (0x78 vs 0x60) is wildcarded to survive class-size changes."
       }
     ];
 
@@ -1321,6 +1331,13 @@
       return base + imm;
     }
 
+    function decodeLdrUnsignedOffset(data, offset, baseReg) {
+      const instruction = readU32(data, offset);
+      if (((instruction & 0xFFC00000) >>> 0) !== 0xF9400000) return null; // LDR Xt,[Xn,#imm] 64-bit
+      if (((instruction >>> 5) & 0x1F) !== baseReg) return null;
+      return ((instruction >>> 10) & 0xFFF) * 8;
+    }
+
     function pcRelativeSequenceReferencesRva(data, execRanges, offset, targetRva) {
       if (!inRanges(offset, execRanges, 4)) return false;
       const pcRva = rvaForOffset(offset, execRanges);
@@ -1692,8 +1709,64 @@
         (candidates.length ? " dispatcher=" + candidates.map(hit => toHex(rvaForOffset(hit, execRanges))).join(", ") : ""));
     }
 
+    function verifyItemRepoGlobal(data, execRanges, loadRanges, def) {
+      // Resolve the DomainItemRepository singleton the same way the in-process item-map dumper
+      // does: anchor on getItemName's assert literal, find code refs to it, backward-scan <=0x200
+      // for the BL to the getInstance idiom, then ADRP+LDR decode &instance. The singleton RVA
+      // drifts every build, so it is resolved by signature (never hardcoded).
+      const parsed = parseBytePattern(def.pattern);
+      const patternBytes = def.pattern.replace(/\s+/g, "").length / 2;
+      const bareMatches = findPatternAll(data, def.pattern, execRanges).length;
+      // The literal is a prefix of "...getItemName(lua_State *) ...", so search WITHOUT a trailing
+      // NUL (asciiBytes would NUL-terminate the needle and miss it).
+      const needle = new Uint8Array(def.anchorString.length);
+      for (let i = 0; i < def.anchorString.length; i++) needle[i] = def.anchorString.charCodeAt(i) & 0xFF;
+      const anchorHits = findAll(data, needle, loadRanges);
+
+      const seen = new Set();
+      const globals = [];
+      const getInstances = [];
+      let anchorRefs = 0;
+      for (const anchorHit of anchorHits) {
+        const anchorRva = rvaForOffset(anchorHit, loadRanges);
+        const refs = findPcRelativeRefs(data, execRanges, anchorRva);
+        anchorRefs += refs.length;
+        for (const ref of refs) {
+          const min = Math.max(0, ref - 0x200);
+          for (let scan = ref & ~3; scan >= min; scan -= 4) {
+            if (!inRanges(scan, execRanges, 4)) break;
+            const targetOffset = branchTarget(data, scan, true); // BL target as a file offset
+            if (targetOffset === null) continue;
+            if (!inRanges(targetOffset, execRanges, patternBytes)) continue;
+            if (!bytesMatchPattern(data, targetOffset, parsed)) continue;
+            const adrpOffset = targetOffset + def.adrpOffset;
+            const adrp = decodeAdrpPage(data, adrpOffset, rvaForOffset(adrpOffset, execRanges));
+            if (!adrp) break;
+            const ldrImmediate = decodeLdrUnsignedOffset(data, targetOffset + def.ldrOffset, adrp.reg);
+            if (ldrImmediate === null) break;
+            const globalRva = adrp.page + ldrImmediate;
+            if (!seen.has(globalRva)) {
+              seen.add(globalRva);
+              globals.push(globalRva);
+              getInstances.push(targetOffset);
+            }
+            break; // first matching getInstance BL for this ref wins
+          }
+        }
+      }
+
+      const extra = def.detail ? def.detail + " " : "";
+      return makeRow(def.feature, def.check, getInstances, execRanges,
+        extra +
+        "anchorHits=" + anchorHits.length +
+        " anchorRefs=" + anchorRefs +
+        " bareIdiomMatches=" + bareMatches +
+        (globals.length ? " singletonGlobalRVA=" + globals.map(toHex).join(", ") : ""));
+    }
+
     function verifyHookSignature(data, execRanges, loadRanges, def, resolvedHooks) {
       if (def.deriveFrom) return verifyDerivedHook(data, execRanges, def, resolvedHooks);
+      if (def.itemRepoGlobal) return verifyItemRepoGlobal(data, execRanges, loadRanges, def);
       if (def.luaName) return verifyLuaRegistration(data, execRanges, loadRanges, def);
       if (def.achievementDispatch) return verifyAchievementDispatcher(data, execRanges, loadRanges, def);
       const hits = findHookSignatureHits(data, execRanges, def);
