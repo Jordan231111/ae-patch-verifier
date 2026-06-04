@@ -141,14 +141,40 @@ jobs:
             japan)
               PACKAGE_NAME="net.wrightflyer.anothereden"
               DEFAULT_NAME="AnotherEden_Japan"
-              XAPK_URL="https://d.apkpure.net/b/XAPK/net.wrightflyer.anothereden?version=latest"
               ;;
             global|*)
               PACKAGE_NAME="games.wfs.anothereden"
               DEFAULT_NAME="AnotherEden_Global"
-              XAPK_URL="https://d.apkpure.net/b/XAPK/games.wfs.anothereden?version=latest"
               ;;
           esac
+
+          # APKPure recently re-enabled the 32-bit armeabi-v7a variant, and `?version=latest` now
+          # resolves to that 32-bit build. A 32-bit XAPK won't install on arm64-only emulators
+          # (INSTALL_FAILED_NO_MATCHING_ABIS) and makes LSPatch's ShadowHook init fail on real
+          # arm64 devices, so we must pin arm64-v8a. APKPure ignores the `nc` arch filter whenever
+          # `version=latest` is used, so resolve the latest versionCode first, then pin the ABI.
+          # (The `version=latest` 302 points at a CDN path = base64("<pkg>_<versionCode>_<hash>").)
+          # No `sv` (device SDK) param on purpose: APKPure rejects an sv below the app's minSdk, so
+          # hardcoding it would break if the game raises minSdk; omitting it serves arm64 regardless.
+          APKPURE_ABI="arm64-v8a"
+          echo "[xapk] resolving latest versionCode for $PACKAGE_NAME ..."
+          LATEST_LOC="$(curl -sS -m 30 -A "Mozilla/5.0 AE Patch Builder" -o /dev/null -D - \
+            "https://d.apkpure.net/b/XAPK/$PACKAGE_NAME?version=latest" \
+            | tr -d '\r' | awk 'tolower($1)=="location:"{print $2; exit}')"
+          XAPK_TOKEN="$(printf '%s' "$LATEST_LOC" | sed -nE 's#.*/b/(XAPK|APK)/([A-Za-z0-9_-]+).*#\2#p')"
+          XAPK_B64="$(printf '%s' "$XAPK_TOKEN" | sed 'y#-_#+/#')"
+          while [ $(( ${#XAPK_B64} % 4 )) -ne 0 ]; do XAPK_B64="${XAPK_B64}="; done
+          XAPK_DECODED="$(printf '%s' "$XAPK_B64" | base64 -d 2>/dev/null || true)"
+          VERSION_CODE="$(printf '%s' "$XAPK_DECODED" | awk -F_ '{print $(NF-1)}')"
+          case "$VERSION_CODE" in
+            ''|*[!0-9]*)
+              echo "::error::Could not resolve latest versionCode from APKPure (token='$XAPK_TOKEN' decoded='$XAPK_DECODED' loc='$LATEST_LOC')"
+              exit 1
+              ;;
+          esac
+          XAPK_URL="https://d.apkpure.net/b/XAPK/$PACKAGE_NAME?versionCode=$VERSION_CODE&nc=$APKPURE_ABI"
+          echo "[xapk] latest versionCode=$VERSION_CODE, pinned ABI=$APKPURE_ABI"
+          echo "[xapk] url=$XAPK_URL"
 
           KEYSTORE="builder/signing/Ashfur.jks"
           test -f "$KEYSTORE"
@@ -250,6 +276,14 @@ jobs:
           BASE_APK="$(find "$WORK/xapk" -maxdepth 1 -type f -name "*.apk" ! -name "config.*.apk" ! -name "AssetPack*.apk" | head -n 1)"
           if [ -z "$BASE_APK" ]; then
             echo "No base APK found in XAPK" >&2
+            exit 1
+          fi
+
+          # Safety net: refuse to ship a 32-bit build. If APKPure ever changes its default ABI
+          # again, fail loudly here instead of producing an uninstallable/ShadowHook-failing APKS.
+          if [ -z "$(find "$WORK/xapk" -maxdepth 1 -type f -name 'config.arm64_v8a.apk')" ]; then
+            echo "::error::Downloaded XAPK has no config.arm64_v8a.apk split (expected arm64-v8a)." >&2
+            find "$WORK/xapk" -maxdepth 1 -type f -name '*.apk' -printf '  %f\n' >&2 || true
             exit 1
           fi
 

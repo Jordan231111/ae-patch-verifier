@@ -14,18 +14,69 @@ const {
   resolveModuleCommit
 } = require("../_shared/github.js");
 
+// APKPure recently re-enabled the 32-bit armeabi-v7a variant, and its `?version=latest`
+// endpoint now resolves to that 32-bit build by default. A 32-bit XAPK fails to install on
+// arm64-only emulators (INSTALL_FAILED_NO_MATCHING_ABIS) and makes LSPatch's ShadowHook
+// inline-hook init fail on real arm64 devices, so we must pin the arm64-v8a native-code split.
+const APKPURE_ABI = "arm64-v8a";
+
 const GAMES = {
   global: {
     packageName: "games.wfs.anothereden",
-    downloadUrl: "https://d.apkpure.net/b/XAPK/games.wfs.anothereden?version=latest",
     defaultName: "AnotherEden_Global"
   },
   japan: {
     packageName: "net.wrightflyer.anothereden",
-    downloadUrl: "https://d.apkpure.net/b/XAPK/net.wrightflyer.anothereden?version=latest",
     defaultName: "AnotherEden_Japan"
   }
 };
+
+// APKPure ignores the `nc` (native-code/ABI) filter whenever `version=latest` is present — it
+// always serves the default variant. The only way to force arm64-v8a is to request a concrete
+// versionCode together with `nc`. There is no single "latest + arm64" URL, so we mirror what
+// apkpure.com's own download buttons do: resolve the latest versionCode, then pin the ABI.
+function apkpureXapkUrl(packageName, versionCode, abi) {
+  // Deliberately NO `sv` (device SDK level) param: APKPure serves the requested versionCode's
+  // arm64 splits without it, and supplying it couples us to the app's minSdk — APKPure rejects
+  // any `sv` below minSdk (returns the app landing page instead of the file). Omitting it is
+  // assumption-free and won't break if the game ever raises its minSdk.
+  const params = new URLSearchParams({ versionCode: String(versionCode), nc: abi });
+  return `https://d.apkpure.net/b/XAPK/${packageName}?${params.toString()}`;
+}
+
+// Read APKPure's `?version=latest` 302 WITHOUT downloading the ~200 MB file. The redirect points
+// at a CDN path whose segment is base64("<pkg>_<versionCode>_<hash>"); we parse the versionCode
+// out of it, then re-request that exact version pinned to arm64-v8a.
+function resolveLatestVersionCode(packageName) {
+  const url = `https://d.apkpure.net/b/XAPK/${packageName}?version=latest`;
+  return new Promise((resolve, reject) => {
+    const request = https.get(url, {
+      headers: { "user-agent": "Mozilla/5.0 AE Patch Builder", accept: "*/*" }
+    }, response => {
+      response.resume(); // discard body; we only need the redirect target
+      const location = response.headers.location;
+      if (response.statusCode < 300 || response.statusCode >= 400 || !location) {
+        reject(new Error(`APKPure latest lookup returned HTTP ${response.statusCode} (expected redirect)`));
+        return;
+      }
+      const match = /\/b\/(?:XAPK|APK)\/([A-Za-z0-9_-]+)/.exec(location);
+      if (!match) {
+        reject(new Error("APKPure latest redirect had no recognizable XAPK token"));
+        return;
+      }
+      const b64 = match[1].replace(/-/g, "+").replace(/_/g, "/");
+      const decoded = Buffer.from(b64, "base64").toString("utf8"); // "<pkg>_<versionCode>_<hash>"
+      const versionCode = decoded.split("_").slice(-2)[0];
+      if (!/^\d+$/.test(versionCode || "")) {
+        reject(new Error(`Could not parse versionCode from APKPure token "${decoded}"`));
+        return;
+      }
+      resolve(versionCode);
+    });
+    request.setTimeout(30000, () => request.destroy(new Error("APKPure latest lookup timed out")));
+    request.on("error", reject);
+  });
+}
 
 function config() {
   return {
@@ -161,9 +212,15 @@ async function buildApksLocal({ region, moduleVariant, moduleSource }) {
     fs.mkdirSync(dir, { recursive: true });
   }
 
-  const downloaded = await download(game.downloadUrl, xapk);
+  const versionCode = await resolveLatestVersionCode(game.packageName);
+  const xapkUrl = apkpureXapkUrl(game.packageName, versionCode, APKPURE_ABI);
+  const downloaded = await download(xapkUrl, xapk);
   await run("unzip", ["-q", "-o", xapk, "-d", extracted]);
   const inputs = splitInputs(extracted);
+  const splitNames = inputs.splits.map(name => path.basename(name));
+  if (!splitNames.some(name => /arm64_v8a/i.test(name))) {
+    throw new Error(`Downloaded XAPK (versionCode ${versionCode}) has no arm64-v8a split; got [${splitNames.join(", ")}]. APKPure may have changed its default ABI again.`);
+  }
 
   await run("java", [
     "-jar", cfg.lspatchJar,
