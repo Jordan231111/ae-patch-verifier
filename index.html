@@ -694,7 +694,8 @@
       {
         feature: "Quest non-item grant count",
         check: "quest reward grant hook signature",
-        pattern: "FF0304D1FD7B0CA9F76B00F9F6570EA9F44F0FA9FD03039157D03BD5F40300AA"
+        pattern: "FF0304D1FD7B0CA9F76B00F9F6570EA9F44F0FA9FD03039157D03BD5????????????????E81640F901018052E2031F2AA8831FF8001840F9????????1F0C0071",
+        detail: "Wildcards the self/count register-save pair and one internal BL so the 3.15.50 compiler allocation drift still resolves to the same DomainQuestReward::grant guard."
       },
       {
         feature: "Final item setter increases",
@@ -807,7 +808,7 @@
         pattern: "FD7BBEA9F44F01A9FD030091????????93????F9??????B500??8052????????F30300AA????????93????F9E00313AA",
         adrpOffset: 0x0C,
         ldrOffset: 0x10,
-        detail: "Backs the item-map dump button (itemId -> localized name). Anchors on the getItemName assert literal, backward-scans <=0x200 for the BL to the repo getInstance idiom, then ADRP+LDR decodes &instance. The singleton RVA drifts every build (0x4769A98 / 0x4769AA8 / 0x468E740 on 3.15.20 / 3.15.10 / 3.14.60) so it is resolved by signature, never hardcoded; the object-size immediate (0x78 vs 0x60) is wildcarded to survive class-size changes."
+        detail: "Backs the item-map dump button (itemId -> localized name). Anchors on the getItemName assert literal, backward-scans <=0x200 for the BL to the repo getInstance idiom, then ADRP+LDR decodes &instance. The singleton RVA drifts every build (0x47E9578 / 0x4769A98 / 0x4769AA8 / 0x468E740 on 3.15.50 / 3.15.20 / 3.15.10 / 3.14.60) so it is resolved by signature, never hardcoded; the object-size immediate (0x78 vs 0x60) is wildcarded to survive class-size changes."
       }
     ];
 
