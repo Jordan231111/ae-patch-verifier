@@ -50,6 +50,38 @@ jobs:
         with:
           fetch-depth: 1
 
+      # Resolve the module APK BEFORE any Android tooling. If the module repo already published a
+      # prebuilt APK for this commit (a durable module-<sha> release from its android.yml), download
+      # it (~2s) and skip the entire Android SDK + NDK + Gradle compile (~80s). If it's not there yet
+      # (e.g. the module was just pushed and its CI hasn't finished), fall back to compiling — so a
+      # build can never break, it just takes the old ~2-3 min that one time.
+      - name: Resolve module APK (prebuilt, else compile)
+        id: modapk
+        env:
+          MODULE_SHA: ${{ inputs.moduleSha }}
+          MODULE_REPO: ${{ secrets.AE_MODULE_REPO }}
+          GH_TOKEN: ${{ secrets.AE_MODULE_REPO_TOKEN }}
+          VARIANT: ${{ inputs.variant }}
+        run: |
+          set -euo pipefail
+          test -n "$MODULE_REPO"
+          test -n "$GH_TOKEN"
+          test -n "$MODULE_SHA"
+          WORK="$RUNNER_TEMP/ae-lspatch"
+          mkdir -p "$WORK"/{lspatch-out,signed-base,resign-in,signed-splits,bundle,xapk,prebuilt,module}
+          echo "WORK=$WORK" >> "$GITHUB_ENV"
+          echo "MODULE_SHA_SHORT=${MODULE_SHA:0:7}" >> "$GITHUB_ENV"
+          ASSET="app-${VARIANT}.apk"
+          if gh release download "module-${MODULE_SHA}" --repo "$MODULE_REPO" --pattern "$ASSET" --dir "$WORK/prebuilt" 2>/dev/null \
+             && [ -s "$WORK/prebuilt/$ASSET" ]; then
+            echo "MODULE_APK=$WORK/prebuilt/$ASSET" >> "$GITHUB_ENV"
+            echo "prebuilt=true" >> "$GITHUB_OUTPUT"
+            echo "[module] prebuilt $ASSET found for ${MODULE_SHA:0:7} -> skipping Android compile"
+          else
+            echo "prebuilt=false" >> "$GITHUB_OUTPUT"
+            echo "[module] no prebuilt for ${MODULE_SHA:0:7} -> compiling from source"
+          fi
+
       - name: Set up Java
         uses: actions/setup-java@v4
         with:
@@ -57,6 +89,7 @@ jobs:
           java-version: "21"
 
       - name: Set up Android SDK
+        if: steps.modapk.outputs.prebuilt != 'true'
         uses: android-actions/setup-android@v3
         with:
           packages: "platforms;android-35 build-tools;35.0.0 cmake;3.22.1 ndk;25.2.9519653"
@@ -77,6 +110,7 @@ jobs:
           curl -L --fail -o tools-cache/uber-apk-signer.jar "$UBER_SIGNER_JAR_URL"
 
       - name: Prepare module source (shallow)
+        if: steps.modapk.outputs.prebuilt != 'true'
         env:
           MODULE_SHA: ${{ inputs.moduleSha }}
           MODULE_REF: ${{ inputs.moduleRef }}
@@ -115,6 +149,7 @@ jobs:
           echo "MODULE_SHA_SHORT=$MODULE_SHA_SHORT" >> "$GITHUB_ENV"
 
       - name: Cache module Gradle files
+        if: steps.modapk.outputs.prebuilt != 'true'
         uses: actions/cache@v4
         with:
           path: |
@@ -235,16 +270,20 @@ jobs:
           ) &
           XAPK_PID=$!
 
-          case "$VARIANT" in
-            debug)
-              (cd "$WORK/module" && ./gradlew :app:assembleDebug -q)
-              MODULE_APK="$WORK/module/app/build/outputs/apk/debug/app-debug.apk"
-              ;;
-            release|*)
-              (cd "$WORK/module" && ./gradlew :app:assembleRelease -q)
-              MODULE_APK="$WORK/module/app/build/outputs/apk/release/app-release.apk"
-              ;;
-          esac
+          # MODULE_APK is already set (via $GITHUB_ENV) when a prebuilt was downloaded; only
+          # compile from source on the fallback path.
+          if [ -z "${MODULE_APK:-}" ]; then
+            case "$VARIANT" in
+              debug)
+                (cd "$WORK/module" && ./gradlew :app:assembleDebug -q)
+                MODULE_APK="$WORK/module/app/build/outputs/apk/debug/app-debug.apk"
+                ;;
+              release|*)
+                (cd "$WORK/module" && ./gradlew :app:assembleRelease -q)
+                MODULE_APK="$WORK/module/app/build/outputs/apk/release/app-release.apk"
+                ;;
+            esac
+          fi
           test -f "$MODULE_APK"
           echo "Using module APK: $MODULE_APK"
           echo "Using module commit: $MODULE_SHA_SHORT"
