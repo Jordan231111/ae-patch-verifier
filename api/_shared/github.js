@@ -85,20 +85,61 @@ async function githubJson(cfg, method, apiPath, body) {
   }
 }
 
-async function resolveModuleCommit(cfg, moduleSource) {
+const MODULE_RELEASE_TAG = /^module-([0-9a-f]{40})$/i;
+
+// Full commit SHAs that already have a durable `module-<sha>` release published by the module
+// repo's Android Build CI. Optionally require a specific asset (e.g. "app-release.apk") so we only
+// count releases that actually carry the variant the build will download.
+async function publishedModuleShas(cfg, asset) {
+  const releases = await githubJson(
+    cfg,
+    "GET",
+    `/repos/${cfg.moduleOwner}/${cfg.moduleRepo}/releases?per_page=100`
+  );
+  const shas = new Set();
+  for (const rel of Array.isArray(releases) ? releases : []) {
+    const match = MODULE_RELEASE_TAG.exec((rel && rel.tag_name) || "");
+    if (!match) continue;
+    if (asset && !(rel.assets || []).some(a => a && a.name === asset)) continue;
+    shas.add(match[1].toLowerCase());
+  }
+  return shas;
+}
+
+async function resolveModuleCommit(cfg, moduleSource, options = {}) {
   if (!cfg.moduleOwner || !cfg.moduleRepo) {
     throw new Error("Module commit source is not configured");
   }
   const ref = moduleSourceRef(cfg, moduleSource);
-  const commit = await githubJson(
+  // List recent branch commits (newest first) instead of just HEAD, so we can hand the builder the
+  // newest commit that is ACTUALLY prebuilt rather than a bleeding-edge HEAD the module CI may not
+  // have compiled yet. The builder skips its ~2-3 min Android compile only when a prebuilt exists,
+  // so this is what keeps every dispatched run on the <1 min fast path.
+  const commits = await githubJson(
     cfg,
     "GET",
-    `/repos/${cfg.moduleOwner}/${cfg.moduleRepo}/commits/${encodeURIComponent(ref)}`
+    `/repos/${cfg.moduleOwner}/${cfg.moduleRepo}/commits?sha=${encodeURIComponent(ref)}&per_page=30`
   );
-  if (!commit || typeof commit.sha !== "string" || commit.sha.length < 7) {
+  const head = Array.isArray(commits) ? commits[0] : null;
+  if (!head || typeof head.sha !== "string" || head.sha.length < 7) {
     throw new Error(`Could not resolve latest ${moduleSourceLabel(moduleSource)} module commit`);
   }
-  return { sha: commit.sha, shortSha: commit.sha.slice(0, 7), ref };
+
+  let chosen = head;
+  let prebuilt = false;
+  // Gated to `main` on purpose: main is branch-correct (every main release is a main build),
+  // whereas houdini-x64-rewrite shares pre-fork ancestors with main, so walking back there could
+  // hand an ARM64 module to an x86_64 build. houdini therefore stays on HEAD and lets the builder
+  // compile if its commit is not prebuilt -- correctness wins over the fast path for that variant.
+  if (moduleSource === "main" && options.preferPrebuilt !== false) {
+    const shas = await publishedModuleShas(cfg, options.requireAsset).catch(() => new Set());
+    const withPrebuilt = commits.find(c => c && shas.has(String(c.sha).toLowerCase()));
+    if (withPrebuilt) {
+      chosen = withPrebuilt;
+      prebuilt = true;
+    }
+  }
+  return { sha: chosen.sha, shortSha: chosen.sha.slice(0, 7), ref, prebuilt };
 }
 
 module.exports = {

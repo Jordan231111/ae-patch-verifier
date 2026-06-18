@@ -44,9 +44,11 @@ function apkpureXapkUrl(packageName, versionCode, abi) {
   return `https://d.apkpure.net/b/XAPK/${packageName}?${params.toString()}`;
 }
 
-// Read APKPure's `?version=latest` 302 WITHOUT downloading the ~200 MB file. The redirect points
-// at a CDN path whose segment is base64("<pkg>_<versionCode>_<hash>"); we parse the versionCode
-// out of it, then re-request that exact version pinned to arm64-v8a.
+// Read APKPure's `?version=latest` 302 WITHOUT downloading the ~200 MB file. The redirect target's
+// LAST path segment (before the query string) is base64url("<pkg>_<versionCode>_<hash>"); we parse
+// the versionCode out of it, then re-request that exact version pinned to arm64-v8a. The host/path
+// is NOT stable -- APKPure has moved this file from d.apkpure.net/b/XAPK/<token> to
+// data.winudf.com/XAPK/<token> -- so read the token as "last path segment", never a fixed regex.
 function resolveLatestVersionCode(packageName) {
   const url = `https://d.apkpure.net/b/XAPK/${packageName}?version=latest`;
   return new Promise((resolve, reject) => {
@@ -59,16 +61,17 @@ function resolveLatestVersionCode(packageName) {
         reject(new Error(`APKPure latest lookup returned HTTP ${response.statusCode} (expected redirect)`));
         return;
       }
-      const match = /\/b\/(?:XAPK|APK)\/([A-Za-z0-9_-]+)/.exec(location);
-      if (!match) {
-        reject(new Error("APKPure latest redirect had no recognizable XAPK token"));
-        return;
+      let token = "";
+      try {
+        token = new URL(location, url).pathname.split("/").filter(Boolean).pop() || "";
+      } catch (_) {
+        token = location.split("?")[0].split("/").filter(Boolean).pop() || "";
       }
-      const b64 = match[1].replace(/-/g, "+").replace(/_/g, "/");
+      const b64 = token.replace(/-/g, "+").replace(/_/g, "/");
       const decoded = Buffer.from(b64, "base64").toString("utf8"); // "<pkg>_<versionCode>_<hash>"
       const versionCode = decoded.split("_").slice(-2)[0];
       if (!/^\d+$/.test(versionCode || "")) {
-        reject(new Error(`Could not parse versionCode from APKPure token "${decoded}"`));
+        reject(new Error(`Could not parse versionCode from APKPure redirect "${location}" (token "${token}" decoded "${decoded}")`));
         return;
       }
       resolve(versionCode);
@@ -281,7 +284,12 @@ async function dispatchGithubBuild({ region, moduleVariant, moduleSource }) {
   if (!cfg.githubOwner || !cfg.githubRepo) {
     throw new Error("GitHub builder repository is not configured");
   }
-  const moduleCommit = await resolveModuleCommit(cfg, moduleSource);
+  // Require the exact variant asset to exist so the dispatched build is guaranteed to hit the
+  // prebuilt fast-path (skips the Android SDK/NDK/Gradle compile) and stays under a minute.
+  const moduleCommit = await resolveModuleCommit(cfg, moduleSource, {
+    preferPrebuilt: true,
+    requireAsset: `app-${moduleVariant}.apk`
+  });
   const nonce = `${Date.now()}-${crypto.randomBytes(4).toString("hex")}`;
   const game = GAMES[region] || GAMES.global;
   const filename = `${game.defaultName}_LSPatched_Ashfur${moduleFilenamePart(moduleSource)}_${moduleVariant}_${moduleCommit.shortSha}.apks`;
