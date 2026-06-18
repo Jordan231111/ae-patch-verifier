@@ -633,9 +633,14 @@
       caveSuffixHead: "FD7BA3A9",
       caveSuffixTail: "FD030091E827066D",
       sdkShowWrapperPrologue: "FF8301D1FD7B04A9",
+      sdkShowEpilogue: "60020012F44F42A9F50B40F9FD7BC3A8C0035FD6",
       openedBridgeTail: "080040F9010140F9FD7BC1A820001FD6",
       closedBridgeTail: "080040F9010540F9FD7BC1A820001FD6",
-      rewardBridgeTail: "080040F9021540F9F30B40F9FD7BC2A840001FD6",
+      // The reward bridge body drifts (3.15.60 dropped the x19 save, shrank the frame
+      // 0x20->0x10, and now passes NULL), so the two middle instructions are wildcarded.
+      // It is located by the unique availability bridge + fixed +0x98 delta, not by these
+      // bytes alone. Stable: `ldr x8,[x0]; ldr x2,[x8,#0x28]; ...; br x2`.
+      rewardBridgeTail: "080040F9021540F9????????????????40001FD6",
       availabilityBridgeTail: "080040F9020940F9E103132AF30B40F9FD7BC2A840001FD6",
       openedToAvailabilityDelta: 0x58,
       closedToAvailabilityDelta: 0x2C,
@@ -1846,24 +1851,38 @@
     }
 
     function uniqueSdkShowAnchors(data, ranges, expectedBytes) {
-      const expected = expectedBytes
-        ? (expectedBytes instanceof Uint8Array ? expectedBytes : hexToBytes(expectedBytes))
-        : null;
-      const patterns = [
-        hexToBytes(AD_BYPASS.sdkShowOriginalTail),
-        hexToBytes(AD_BYPASS.sdkShowPatchedTail)
-      ];
+      // Version-proof: the SDK-show call site is the UNIQUE place where a BL (post-patch: a
+      // NOP) is immediately followed by the bool-return epilogue, where that BL targets the
+      // showRewardedVideo wrapper, and where 0x1C earlier a BL targets the
+      // isRewardedVideoAvailable wrapper. Both BL offsets re-encode every build -- that is
+      // exactly what shattered the old literal `3D000094...` tail on 3.15.60 -- so they are
+      // NEVER matched literally; only the stable epilogue + the two wrapper prologues identify
+      // the site. expectedBytes selects the ON form (BL present) vs the OFF form (BL NOP'd).
+      const epilogue = hexToBytes(AD_BYPASS.sdkShowEpilogue);
+      const showProl = hexToBytes(AD_BYPASS.sdkShowWrapperPrologue);
+      const availProl = hexToBytes(AD_BYPASS.availabilityWrapperPrologue);
+      const wantPatched = expectedBytes === AD_BYPASS.sdkShowPatchBytes;
       const seen = new Set();
       const hits = [];
 
-      for (const pattern of patterns) {
-        for (const hit of findAll(data, pattern, ranges)) {
-          if (!bytesEqual(data, hit, pattern)) continue;
-          if (expected && !bytesEqual(data, hit, expected)) continue;
-          if (!seen.has(hit)) {
-            seen.add(hit);
-            hits.push(hit);
-          }
+      for (const epiOff of findAll(data, epilogue, ranges)) {
+        const site = epiOff - 4;
+        if (!inRanges(site, ranges, 4)) continue;
+        const instr = readU32(data, site);
+        const isNop = instr === 0xD503201F;
+        const isBl = ((instr & 0xFC000000) >>> 0) === 0x94000000;
+        if (wantPatched ? !isNop : !isBl) continue;
+        // The BL to the showRewardedVideo wrapper is gone once it is NOP'd, so only validate
+        // it on the ON form; both forms still validate the availability-wrapper BL at -0x1C.
+        if (!wantPatched) {
+          const showTarget = branchTarget(data, site, true);
+          if (showTarget === null || !bytesEqual(data, showTarget, showProl)) continue;
+        }
+        const availTarget = branchTarget(data, site - AD_BYPASS.sdkAvailabilityBlBackOffset, true);
+        if (availTarget === null || !bytesEqual(data, availTarget, availProl)) continue;
+        if (!seen.has(site)) {
+          seen.add(site);
+          hits.push(site);
         }
       }
 
@@ -1903,25 +1922,30 @@
     function bridgeHits(data, ranges) {
       const openedTail = hexToBytes(AD_BYPASS.openedBridgeTail);
       const closedTail = hexToBytes(AD_BYPASS.closedBridgeTail);
-      const rewardTail = hexToBytes(AD_BYPASS.rewardBridgeTail);
       const availabilityTail = hexToBytes(AD_BYPASS.availabilityBridgeTail);
+      const rewardParsed = parseBytePattern(AD_BYPASS.rewardBridgeTail);
+      const rewardLen = AD_BYPASS.rewardBridgeTail.replace(/\s+/g, "").length / 2;
+
       const opened = findAll(data, openedTail, ranges).map(hit => hit - 0x1C);
       const closed = findAll(data, closedTail, ranges).map(hit => hit - 0x1C);
-      const rewarded = findAll(data, rewardTail, ranges).map(hit => hit - 0x28);
       const availability = findAll(data, availabilityTail, ranges).map(hit => hit - 0x28);
-      const rewardedSet = new Set(rewarded);
+      const rewarded = findPatternAll(data, AD_BYPASS.rewardBridgeTail, ranges);
       const selected = [];
 
+      // The four IronSource rewarded-video JNI bridges sit at fixed inter-bridge deltas
+      // (proven 1:1 across 3.10.70 .. 3.15.60). Anchor the cluster on the UNIQUE availability
+      // bridge tail, derive opened/closed/reward by delta, and validate the reward bridge with
+      // a wildcarded tail -- its body drifted on 3.15.60 (x19-save dropped, frame 0x20->0x10,
+      // now passes NULL) so brittle literal bytes no longer work.
       for (const availabilityAddress of availability) {
         const openedAddress = availabilityAddress - AD_BYPASS.openedToAvailabilityDelta;
         const closedAddress = availabilityAddress - AD_BYPASS.closedToAvailabilityDelta;
         const rewardAddress = availabilityAddress + AD_BYPASS.rewardFromAvailabilityDelta;
         const ok =
-          rewardedSet.has(rewardAddress) &&
           bytesEqual(data, openedAddress + 0x1C, openedTail) &&
           bytesEqual(data, closedAddress + 0x1C, closedTail) &&
           bytesEqual(data, availabilityAddress + 0x28, availabilityTail) &&
-          bytesEqual(data, rewardAddress + 0x28, rewardTail);
+          rewardBridgeTailMatches(data, ranges, rewardAddress, rewardParsed, rewardLen);
         if (ok) {
           selected.push({
             opened: openedAddress,
@@ -1933,6 +1957,16 @@
       }
 
       return { opened, rewarded, closed, availability, selected };
+    }
+
+    function rewardBridgeTailMatches(data, ranges, rewardAddress, rewardParsed, rewardLen) {
+      // The reward bridge is a tiny JNI thunk; its vtable-call tail sits within ~0x40 of the
+      // function start. Scan that window for the wildcarded tail so frame/arg drift is tolerated.
+      for (let off = rewardAddress; off + rewardLen <= rewardAddress + 0x40; off += 4) {
+        if (!inRanges(off, ranges, rewardLen)) break;
+        if (bytesMatchPattern(data, off, rewardParsed)) return true;
+      }
+      return false;
     }
 
     function buildAdLifecyclePatch(caveAddress, stateAddress, bridges) {
