@@ -589,14 +589,31 @@
         patchBytes: "23B36DD3"
       },
       {
+        // The dungeon-skip gate reads [x0], the "skip_dungeon_enabled" config flag,
+        // and returns a bool; the patch forces it to return true (mov w0,#1; ret; nop).
+        // The function was recompiled at AE 3.16.0 (frame 0x50->0x70, an extra
+        // callee-saved pair, stack-guard reg x21->x22, cbz branch offset re-encoded),
+        // so the legacy prologue no longer appears. Both structural forms are kept;
+        // exactly one resolves per build. Only the drifting cbz word is wildcarded.
         name: "Dungeon Skip",
         patchOffset: 0,
-        searchPattern: "FF4301D1FD7B02A9F51B00F9F44F04A9FD83009155D03BD5A81640F9A8831FF8080040F9E80400B4F30300AA",
-        searchBytes: "FF4301D1FD7B02A9F51B00F9F44F04A9FD83009155D03BD5A81640F9A8831FF8080040F9E80400B4F30300AA",
-        patchedPattern: "20008052C0035FD61F2003D5F44F04A9FD83009155D03BD5A81640F9A8831FF8080040F9E80400B4F30300AA",
-        patchedBytes: "20008052C0035FD61F2003D5F44F04A9FD83009155D03BD5A81640F9A8831FF8080040F9E80400B4F30300AA",
-        originalBytes: "FF4301D1FD7B02A9F51B00F9",
-        patchBytes: "20008052C0035FD61F2003D5"
+        variants: [
+          {
+            // legacy: AE <= 3.15.60 (sub sp,#0x50; stp x29,x30,[sp,#0x20]; str x21,[sp,#0x30])
+            searchPattern: "FF4301D1FD7B02A9F51B00F9F44F04A9FD83009155D03BD5A81640F9A8831FF8080040F9E80400B4F30300AA",
+            patchedPattern: "20008052C0035FD61F2003D5F44F04A9FD83009155D03BD5A81640F9A8831FF8080040F9E80400B4F30300AA",
+            originalBytes: "FF4301D1FD7B02A9F51B00F9",
+            patchBytes: "20008052C0035FD61F2003D5"
+          },
+          {
+            // AE 3.16.0+ (sub sp,#0x70; stp x29,x30,[sp,#0x40]; stp x22,x21,[sp,#0x50]; ...
+            //   mrs x22,tpidr_el0; ldr x8,[x22,#0x28]; stur; ldr x8,[x0]; cbz*; mov x20,x0)
+            searchPattern: "FFC301D1FD7B04A9F65705A9F44F06A9FD03019156D03BD5C81640F9A8831FF8080040F9????????F40300AA",
+            patchedPattern: "20008052C0035FD61F2003D5F44F06A9FD03019156D03BD5C81640F9A8831FF8080040F9????????F40300AA",
+            originalBytes: "FFC301D1FD7B04A9F65705A9",
+            patchBytes: "20008052C0035FD61F2003D5"
+          }
+        ]
       }
     ];
 
@@ -1456,15 +1473,25 @@
     }
 
     function verifyPatch(data, ranges, def) {
+      // A patch may carry several structural `variants` (e.g. the target function was
+      // recompiled across game versions with a different frame/register layout). Each
+      // variant is a full override of the def; exactly one is expected to resolve on a
+      // given build. Defs without `variants` behave exactly as a single-variant patch.
+      const variants = def.variants
+        ? def.variants.map(v => Object.assign({}, def, v))
+        : [def];
+      const perVariant = variants.map(v => ({ v, hits: uniquePatchAnchors(data, ranges, v, "on") }));
+      const chosen = perVariant.find(p => p.hits.length === 1) || perVariant[0];
+      const onHits = chosen.hits;
+
       const rows = [];
-      const onHits = uniquePatchAnchors(data, ranges, def, "on");
       rows.push(makeRow(def.name, "ON anchor + original write bytes", onHits, ranges));
 
       const simulated = data.slice();
       if (onHits.length === 1) {
-        writeBytes(simulated, onHits[0], hexToBytes(def.patchBytes));
+        writeBytes(simulated, onHits[0], hexToBytes(chosen.v.patchBytes));
       }
-      const offHits = uniquePatchAnchors(simulated, ranges, def, "off");
+      const offHits = uniquePatchAnchors(simulated, ranges, chosen.v, "off");
       rows.push(makeRow(def.name, "OFF/UNDO anchor + patched write bytes after ON simulation", offHits, ranges));
       return rows;
     }
