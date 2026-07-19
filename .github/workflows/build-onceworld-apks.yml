@@ -141,6 +141,7 @@ jobs:
                 --max-connection-per-server=16 \
                 --split=16 \
                 --min-split-size=2M \
+                --file-allocation=none \
                 --max-tries=3 \
                 --retry-wait=2 \
                 --connect-timeout=20 \
