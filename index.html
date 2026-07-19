@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>AE ModMenu Builder</title>
+  <title>LSPatch Workshop</title>
   <style>
     :root {
       color-scheme: dark;
@@ -18,6 +18,9 @@
       --accent: #6aa3ff;
       --accent-2: #4d83de;
       --accent-soft: rgba(106, 163, 255, 0.14);
+      --once: #d2a05d;
+      --once-strong: #b9783f;
+      --once-soft: rgba(210, 160, 93, 0.13);
       --ok: #4ec38a;
       --fail: #ff6b6b;
       --warn: #f5b042;
@@ -49,7 +52,7 @@
     }
 
     .hero {
-      margin: 0 0 28px;
+      margin: 0 0 22px;
     }
 
     .eyebrow {
@@ -86,6 +89,88 @@
       box-shadow: var(--shadow);
     }
 
+    .launchpad {
+      display: grid;
+      grid-template-columns: 1.12fr 1fr;
+      gap: 10px;
+      margin-bottom: 14px;
+    }
+
+    .launch-tab {
+      appearance: none;
+      position: relative;
+      display: grid;
+      grid-template-columns: auto 1fr;
+      gap: 12px;
+      width: 100%;
+      min-height: 104px;
+      padding: 16px 17px;
+      overflow: hidden;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: var(--bg-elev);
+      color: var(--ink);
+      text-align: left;
+      cursor: pointer;
+      transition: border-color 140ms ease, background 140ms ease, transform 140ms ease;
+    }
+
+    .launch-tab::after {
+      content: "";
+      position: absolute;
+      inset: auto 0 0;
+      height: 3px;
+      background: transparent;
+      transition: background 140ms ease;
+    }
+
+    .launch-tab:hover { border-color: var(--line-strong); transform: translateY(-1px); }
+    .launch-tab:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+    .launch-tab.active[data-game="onceworld"] { border-color: rgba(210, 160, 93, 0.72); background: var(--once-soft); }
+    .launch-tab.active[data-game="onceworld"]::after { background: var(--once); }
+    .launch-tab.active[data-game="anothereden"] { border-color: rgba(106, 163, 255, 0.72); background: var(--accent-soft); }
+    .launch-tab.active[data-game="anothereden"]::after { background: var(--accent); }
+
+    .launch-mark {
+      display: grid;
+      place-items: center;
+      width: 38px;
+      height: 38px;
+      border: 1px solid var(--line-strong);
+      border-radius: 7px;
+      background: var(--panel);
+      color: var(--muted);
+      font: 800 12px/1 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      letter-spacing: -0.04em;
+    }
+
+    .launch-tab[data-game="onceworld"] .launch-mark { color: var(--once); }
+    .launch-tab[data-game="anothereden"] .launch-mark { color: var(--accent); }
+    .launch-copy { display: grid; gap: 4px; min-width: 0; }
+    .launch-title { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; font-size: 15px; font-weight: 750; }
+    .launch-desc { color: var(--muted); font-size: 12.5px; line-height: 1.42; }
+    .launch-meta { color: var(--muted); font: 600 10.5px/1.3 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; word-break: break-word; }
+
+    .route-tag {
+      padding: 4px 6px;
+      border-radius: 4px;
+      background: var(--line);
+      color: var(--muted);
+      font: 750 9.5px/1 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    .launch-tab.active[data-game="onceworld"] .route-tag { background: rgba(210, 160, 93, 0.17); color: var(--once); }
+    .launch-tab.active[data-game="anothereden"] .route-tag { background: rgba(106, 163, 255, 0.16); color: var(--accent); }
+
+    .game-panel { animation: panel-in 180ms ease both; }
+
+    @keyframes panel-in {
+      from { opacity: 0; transform: translateY(3px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
     .builder {
       padding: 22px;
       display: grid;
@@ -101,6 +186,77 @@
       margin: 0 0 4px;
       font-size: 18px;
       letter-spacing: 0;
+    }
+
+    .panel-kicker {
+      display: block;
+      margin-bottom: 7px;
+      color: var(--muted);
+      font: 700 10px/1 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+    }
+
+    .onceworld-panel {
+      position: relative;
+      border-color: rgba(210, 160, 93, 0.28);
+      background:
+        linear-gradient(100deg, rgba(210, 160, 93, 0.06), transparent 42%),
+        linear-gradient(180deg, var(--panel) 0%, var(--panel-2) 100%);
+    }
+
+    .onceworld-panel::before {
+      content: "";
+      position: absolute;
+      top: 0;
+      bottom: 0;
+      left: 0;
+      width: 3px;
+      border-radius: var(--radius) 0 0 var(--radius);
+      background: var(--once);
+    }
+
+    .onceworld-panel h2 { font-size: 20px; }
+
+    .build-spec {
+      display: grid;
+      gap: 0;
+      margin: 2px 0 0;
+      border-top: 1px solid var(--line);
+    }
+
+    .build-spec > div {
+      display: grid;
+      grid-template-columns: 105px 1fr;
+      gap: 12px;
+      padding: 10px 0;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .build-spec dt {
+      color: var(--muted);
+      font: 650 10.5px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    .build-spec dd { margin: 0; color: var(--ink); font-size: 13px; font-weight: 650; }
+    .build-spec code { color: var(--once); font: 650 12px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+
+    .onceworld-panel button.primary {
+      background: linear-gradient(180deg, #dda962 0%, var(--once-strong) 100%);
+      box-shadow: 0 6px 18px rgba(185, 120, 63, 0.22);
+    }
+
+    .onceworld-panel button.primary:hover:not(:disabled) { box-shadow: 0 10px 22px rgba(185, 120, 63, 0.3); }
+    .onceworld-panel .status.info { color: var(--once); }
+    .onceworld-panel .status.info .dot { background: var(--once); }
+
+    .estimate {
+      margin-top: -4px;
+      color: var(--muted);
+      font-size: 11.5px;
+      line-height: 1.4;
     }
 
     .builder-sub {
@@ -138,9 +294,11 @@
     }
 
     .pick:hover { border-color: var(--line-strong); }
+    .pick:focus-within { outline: 2px solid var(--accent); outline-offset: 2px; }
     .pick input { position: absolute; opacity: 0; pointer-events: none; }
     .pick input:checked ~ .pick-body { color: var(--ink); }
-    .pick:has(input:checked) {
+    .pick:has(input:checked),
+    .pick.selected {
       border-color: var(--accent);
       background: var(--accent-soft);
       box-shadow: inset 0 0 0 1px var(--accent);
@@ -165,12 +323,14 @@
       text-transform: uppercase;
     }
 
-    .pick:has(input:checked) .pick-tag.real {
+    .pick:has(input:checked) .pick-tag.real,
+    .pick.selected .pick-tag.real {
       background: rgba(78, 195, 138, 0.18);
       color: var(--ok);
     }
 
-    .pick:has(input:checked) .pick-tag.emu {
+    .pick:has(input:checked) .pick-tag.emu,
+    .pick.selected .pick-tag.emu {
       background: rgba(245, 176, 66, 0.18);
       color: var(--warn);
     }
@@ -284,6 +444,61 @@
       background: linear-gradient(90deg, var(--accent), var(--ok), var(--accent));
       animation: slide 1.6s linear infinite;
     }
+
+    .build-timeline {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 0;
+      margin: 0;
+      padding: 3px 0 0;
+      list-style: none;
+    }
+
+    .build-stage {
+      position: relative;
+      display: grid;
+      justify-items: start;
+      gap: 6px;
+      min-width: 0;
+      color: var(--muted);
+      font: 650 10px/1.2 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    .build-stage:not(:last-child)::after {
+      content: "";
+      position: absolute;
+      top: 9px;
+      right: 7px;
+      left: 25px;
+      height: 1px;
+      background: var(--line-strong);
+      transition: background 150ms ease;
+    }
+
+    .stage-index {
+      position: relative;
+      z-index: 1;
+      display: grid;
+      place-items: center;
+      width: 19px;
+      height: 19px;
+      border: 1px solid var(--line-strong);
+      border-radius: 50%;
+      background: var(--panel-2);
+      color: var(--muted);
+      font-size: 9px;
+      transition: border-color 150ms ease, background 150ms ease, color 150ms ease;
+    }
+
+    .build-stage.active { color: var(--once); }
+    .build-stage.active .stage-index { border-color: var(--once); background: var(--once-soft); color: var(--once); }
+    .build-stage.done { color: var(--ok); }
+    .build-stage.done .stage-index { border-color: var(--ok); background: rgba(78, 195, 138, 0.14); color: var(--ok); }
+    .build-stage.done:not(:last-child)::after { background: var(--ok); }
+    .build-stage.error { color: var(--fail); }
+    .build-stage.error .stage-index { border-color: var(--fail); background: rgba(255, 107, 107, 0.12); color: var(--fail); }
     @keyframes slide {
       0% { transform: translateX(-100%); }
       100% { transform: translateX(400%); }
@@ -430,17 +645,98 @@
       h1 { font-size: 24px; }
       main { padding: 24px 16px 60px; }
     }
+
+    @media (max-width: 620px) {
+      .launchpad { grid-template-columns: 1fr; }
+      .launch-tab { min-height: 0; padding: 14px; }
+      .build-spec > div { grid-template-columns: 92px 1fr; }
+      .foot { flex-direction: column; gap: 7px; }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after { scroll-behavior: auto !important; animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; transition-duration: 0.01ms !important; }
+    }
   </style>
 </head>
 <body>
   <main>
     <header class="hero">
-      <span class="eyebrow">Another Eden &middot; LSPatch builder</span>
-      <h1>Build a signed Another Eden APKS</h1>
-      <p class="lede">Pick your target device, hit build, and a fresh signed .apks lands in your downloads. Optional verifier below double-checks any APK / XAPK / libapp.so against the current mod-menu signatures.</p>
+      <span class="eyebrow">Release workbench &middot; two games</span>
+      <h1>LSPatch Workshop</h1>
+      <p class="lede">Build a ready-to-install .apks from the latest source bundle and precompiled module. Choose the one-click OnceWorld release or configure an Another Eden target.</p>
     </header>
 
-    <form id="builderForm" class="card builder">
+    <nav class="launchpad" role="tablist" aria-label="Choose a game to build">
+      <button id="onceworldTab" class="launch-tab active" type="button" role="tab" aria-selected="true" aria-controls="onceworldPanel" data-game="onceworld">
+        <span class="launch-mark" aria-hidden="true">OW</span>
+        <span class="launch-copy">
+          <span class="launch-title">OnceWorld <span class="route-tag">One click</span></span>
+          <span class="launch-desc">The safe default: one optimized ARM64 release with OWKit.</span>
+          <span class="launch-meta">work.ponix.onceworld</span>
+        </span>
+      </button>
+      <button id="anotheredenTab" class="launch-tab" type="button" role="tab" aria-selected="false" aria-controls="builderForm" data-game="anothereden" tabindex="-1">
+        <span class="launch-mark" aria-hidden="true">AE</span>
+        <span class="launch-copy">
+          <span class="launch-title">Another Eden <span class="route-tag">Configure</span></span>
+          <span class="launch-desc">Choose phone or emulator, game region, and module flavor.</span>
+          <span class="launch-meta">global / japan &middot; arm64 / x86_64</span>
+        </span>
+      </button>
+    </nav>
+
+    <section id="onceworldPanel" class="card builder onceworld-panel game-panel" role="tabpanel" aria-labelledby="onceworldTab">
+      <div class="builder-main">
+        <div>
+          <span class="panel-kicker">Fast lane &middot; optimized defaults locked in</span>
+          <h2>OnceWorld ARM64 release</h2>
+          <p class="builder-sub">No architecture, region, or debug choices are needed. The builder pairs the latest game source with the latest precompiled OWKit module.</p>
+        </div>
+        <dl class="build-spec">
+          <div>
+            <dt>Package</dt>
+            <dd><code>work.ponix.onceworld</code></dd>
+          </div>
+          <div>
+            <dt>Target</dt>
+            <dd>ARM64 only &middot; physical Android device</dd>
+          </div>
+          <div>
+            <dt>Profile</dt>
+            <dd>Release &middot; OWKit &middot; optimized</dd>
+          </div>
+        </dl>
+      </div>
+
+      <div class="builder-side">
+        <div class="field">
+          <div class="field-label">Latest OnceWorld release</div>
+          <div class="commit-row">
+            <span id="onceworldVersion" class="commit-chip">loading</span>
+            <span id="onceworldVersionMeta">Resolving game version...</span>
+          </div>
+        </div>
+
+        <div class="field">
+          <div class="field-label">Latest precompiled module</div>
+          <div class="commit-row">
+            <span id="onceworldModuleCommit" class="commit-chip">loading</span>
+            <span id="onceworldModuleMeta">Resolving latest OWKit build...</span>
+          </div>
+        </div>
+
+        <button id="onceworldButton" class="primary" type="button" disabled>Build &amp; download OnceWorld</button>
+        <p class="estimate">Most builds start the browser download within 1&ndash;2 minutes; queue load can vary.</p>
+        <div id="onceworldStatus" class="status" aria-live="polite"><span class="dot"></span><span class="text">Ready. One click queues the complete release build.</span></div>
+        <ol id="onceworldTimeline" class="build-timeline" aria-label="OnceWorld build progress">
+          <li class="build-stage" data-stage="queue"><span class="stage-index">1</span><span>Queue</span></li>
+          <li class="build-stage" data-stage="patch"><span class="stage-index">2</span><span>Patch</span></li>
+          <li class="build-stage" data-stage="download"><span class="stage-index">3</span><span>Download</span></li>
+        </ol>
+      </div>
+    </section>
+
+    <form id="builderForm" class="card builder game-panel hidden" role="tabpanel" aria-labelledby="anotheredenTab" aria-hidden="true">
       <div class="builder-main">
         <div>
           <h2>Target device</h2>
@@ -504,7 +800,7 @@
         </div>
 
         <button id="builderButton" class="primary" type="submit">Build &amp; download .apks</button>
-        <div id="builderStatus" class="status"><span class="dot"></span><span class="text">Ready when you are. The build typically takes 2-3 minutes.</span></div>
+        <div id="builderStatus" class="status" aria-live="polite"><span class="dot"></span><span class="text">Ready when you are. Builds usually take 1&ndash;3 minutes.</span></div>
         <div id="builderProgress" class="progress"></div>
       </div>
     </form>
@@ -512,18 +808,18 @@
     <section class="card verifier-card" id="verifierPanel">
       <header class="verifier-head">
         <div class="label">
-          <h2>Verify a libapp.so (optional)</h2>
+          <h2>Verify an Another Eden libapp.so (optional)</h2>
           <p>Drop an APK / XAPK / libapp.so to check every mod-menu byte patch resolves uniquely.</p>
         </div>
       </header>
       <div class="verifier-body">
-        <label id="dropZone" for="fileInput">
+        <div id="dropZone">
           <span>
             <strong>Drop APK, XAPK, or libapp.so</strong>
             <span>Extracts lib/arm64-v8a/libapp.so and checks every signature.</span>
             <button type="button" id="chooseButton" class="ghost">Choose file</button>
           </span>
-        </label>
+        </div>
         <input id="fileInput" type="file" accept=".apk,.xapk,.so,application/zip">
         <div id="status">Waiting for file.</div>
         <div id="summary" class="summary hidden"></div>
@@ -532,7 +828,7 @@
     </section>
 
     <div class="foot">
-      <span>Signed with Ashfur &middot; LSPatch 0.8</span>
+      <span>Game-specific signing identities &middot; LSPatch 0.8</span>
       <a href="https://github.com/[removed-private-value]" target="_blank" rel="noopener">Source on GitHub</a>
     </div>
   </main>
@@ -855,14 +1151,36 @@
     const moduleCommit = document.getElementById("moduleCommit");
     const moduleCommitMeta = document.getElementById("moduleCommitMeta");
     const moduleSourceInputs = document.querySelectorAll('input[name="moduleSource"]');
+    const builderConfigInputs = Array.from(builderForm.querySelectorAll("input, select"));
+    const pickInputs = document.querySelectorAll(".pick input[type=radio]");
+    const gameTabs = Array.from(document.querySelectorAll(".launch-tab[role=tab]"));
+    const onceworldPanel = document.getElementById("onceworldPanel");
+    const onceworldButton = document.getElementById("onceworldButton");
+    const onceworldStatus = document.getElementById("onceworldStatus");
+    const onceworldStatusText = onceworldStatus.querySelector(".text");
+    const onceworldStages = Array.from(document.querySelectorAll("#onceworldTimeline .build-stage"));
+    const onceworldModuleCommit = document.getElementById("onceworldModuleCommit");
+    const onceworldModuleMeta = document.getElementById("onceworldModuleMeta");
+    const onceworldVersion = document.getElementById("onceworldVersion");
+    const onceworldVersionMeta = document.getElementById("onceworldVersionMeta");
 
     let latestModuleCommit = null;
-    let commitRefreshTimer = null;
+    let latestOnceworldVersion = null;
+    let latestOnceworldModule = null;
+    let moduleRefreshSequence = 0;
+    let onceworldVersionRefreshSequence = 0;
+    let onceworldStageIndex = 0;
+    let onceworldBuildRunning = false;
+    let metadataRefreshTimer = null;
+    let lastMetadataRefreshAt = 0;
+    const METADATA_REFRESH_INTERVAL = 5 * 60 * 1000;
 
     chooseButton.addEventListener("click", event => {
       event.preventDefault();
+      event.stopPropagation();
       fileInput.click();
     });
+    dropZone.addEventListener("click", () => fileInput.click());
     fileInput.addEventListener("change", () => {
       if (fileInput.files.length) handleFile(fileInput.files[0]);
     });
@@ -890,20 +1208,289 @@
       event.preventDefault();
       buildLspatchBundle();
     });
-    moduleSourceInputs.forEach(input => input.addEventListener("change", () => refreshModuleCommit()));
-
-    refreshModuleCommit();
-    document.addEventListener("visibilitychange", () => {
-      if (!document.hidden) {
-        // Refresh once after the tab regains focus, throttled to once per 5 min.
-        if (!commitRefreshTimer) {
-          commitRefreshTimer = window.setTimeout(() => {
-            commitRefreshTimer = null;
-            refreshModuleCommit();
-          }, 200);
-        }
-      }
+    onceworldButton.addEventListener("click", () => buildOnceworldBundle());
+    gameTabs.forEach((tab, index) => {
+      tab.addEventListener("click", () => selectGame(tab.dataset.game));
+      tab.addEventListener("keydown", event => {
+        if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
+        event.preventDefault();
+        let nextIndex = index;
+        if (event.key === "ArrowLeft") nextIndex = (index - 1 + gameTabs.length) % gameTabs.length;
+        if (event.key === "ArrowRight") nextIndex = (index + 1) % gameTabs.length;
+        if (event.key === "Home") nextIndex = 0;
+        if (event.key === "End") nextIndex = gameTabs.length - 1;
+        gameTabs[nextIndex].focus();
+        selectGame(gameTabs[nextIndex].dataset.game);
+      });
     });
+    moduleSourceInputs.forEach(input => input.addEventListener("change", () => refreshModuleCommit()));
+    pickInputs.forEach(input => input.addEventListener("change", syncPickSelection));
+
+    syncPickSelection();
+    selectGame("onceworld");
+    refreshAllMetadata();
+    document.addEventListener("visibilitychange", () => {
+      if (document.hidden || Date.now() - lastMetadataRefreshAt < METADATA_REFRESH_INTERVAL || metadataRefreshTimer) return;
+      metadataRefreshTimer = window.setTimeout(() => {
+        metadataRefreshTimer = null;
+        refreshAllMetadata();
+      }, 200);
+    });
+
+    function selectGame(game) {
+      const showOnceworld = game === "onceworld";
+      gameTabs.forEach(tab => {
+        const selected = tab.dataset.game === game;
+        tab.classList.toggle("active", selected);
+        tab.setAttribute("aria-selected", selected ? "true" : "false");
+        tab.tabIndex = selected ? 0 : -1;
+      });
+      onceworldPanel.classList.toggle("hidden", !showOnceworld);
+      onceworldPanel.setAttribute("aria-hidden", showOnceworld ? "false" : "true");
+      builderForm.classList.toggle("hidden", showOnceworld);
+      builderForm.setAttribute("aria-hidden", showOnceworld ? "true" : "false");
+    }
+
+    function syncPickSelection() {
+      pickInputs.forEach(input => input.closest(".pick").classList.toggle("selected", input.checked));
+    }
+
+    function refreshAllMetadata() {
+      lastMetadataRefreshAt = Date.now();
+      return Promise.all([refreshModuleCommit(), refreshOnceworldModule(), refreshOnceworldVersion()]);
+    }
+
+    function setOnceworldStatus(text, className = "") {
+      onceworldStatusText.textContent = text;
+      onceworldStatus.className = "status" + (className ? " " + className : "");
+    }
+
+    function setOnceworldTimeline(state) {
+      if (state === "queued") onceworldStageIndex = 0;
+      if (state === "running") onceworldStageIndex = 1;
+      if (state === "ready") onceworldStageIndex = 2;
+      onceworldStages.forEach((stage, index) => {
+        stage.classList.remove("active", "done", "error");
+        stage.removeAttribute("aria-current");
+        if (state === "idle") return;
+        if (state === "complete" || index < onceworldStageIndex) {
+          stage.classList.add("done");
+          return;
+        }
+        if (index !== onceworldStageIndex) return;
+        stage.classList.add(state === "error" ? "error" : "active");
+        stage.setAttribute("aria-current", "step");
+      });
+    }
+
+    function normalizeOnceworldVersion(value) {
+      if (!value || typeof value !== "object") return null;
+      const versionName = typeof value.versionName === "string" ? value.versionName.trim() : "";
+      const versionCode = typeof value.versionCode === "number" ? value.versionCode : Number(value.versionCode);
+      if (!Number.isSafeInteger(versionCode) || versionCode < 1) return null;
+      return {
+        versionName,
+        versionCode,
+        packageName: typeof value.packageName === "string" ? value.packageName : "",
+        architecture: typeof value.architecture === "string" ? value.architecture : ""
+      };
+    }
+
+    function applyOnceworldVersion(value) {
+      const normalized = normalizeOnceworldVersion(value);
+      if (!normalized) return null;
+      latestOnceworldVersion = normalized;
+      onceworldVersion.textContent = normalized.versionName ? `v${normalized.versionName}` : `code ${normalized.versionCode}`;
+      onceworldVersion.className = "commit-chip ok";
+      const details = normalized.versionName ? [`code ${normalized.versionCode}`] : ["Version name unavailable"];
+      if (normalized.architecture) details.push(normalized.architecture);
+      onceworldVersionMeta.textContent = details.join(" · ");
+      announceOnceworldReady();
+      return normalized;
+    }
+
+    function onceworldVersionLabel(version) {
+      return version.versionName ? `v${version.versionName} (code ${version.versionCode})` : `version code ${version.versionCode}`;
+    }
+
+    function syncOnceworldButtonAvailability() {
+      onceworldButton.disabled = onceworldBuildRunning || !latestOnceworldVersion || !latestOnceworldModule;
+    }
+
+    function announceOnceworldReady() {
+      syncOnceworldButtonAvailability();
+      if (!onceworldBuildRunning && latestOnceworldVersion && latestOnceworldModule) {
+        setOnceworldStatus("Ready. One click queues the complete release build.");
+      }
+    }
+
+    async function refreshOnceworldVersion() {
+      const requestSequence = ++onceworldVersionRefreshSequence;
+      try {
+        const response = await fetch("/api/onceworld/version", { cache: "no-store" });
+        const body = await readJsonSafe(response);
+        if (!response.ok) throw new Error((body && body.message) || ("HTTP " + response.status));
+        const version = normalizeOnceworldVersion(body);
+        if (!version) throw new Error("missing release metadata");
+        if (requestSequence !== onceworldVersionRefreshSequence) return latestOnceworldVersion;
+        return applyOnceworldVersion(version);
+      } catch (error) {
+        if (requestSequence !== onceworldVersionRefreshSequence) return latestOnceworldVersion;
+        latestOnceworldVersion = null;
+        onceworldVersion.textContent = "unavailable";
+        onceworldVersion.className = "commit-chip fail";
+        onceworldVersionMeta.textContent = "Couldn't load the latest game version";
+        if (!onceworldBuildRunning) {
+          syncOnceworldButtonAvailability();
+          setOnceworldStatus("Latest OnceWorld version is unavailable. Refocus or reload the page to retry.", "warn");
+        }
+        return null;
+      }
+    }
+
+    function moduleShaFrom(value) {
+      if (!value || typeof value !== "object") return "";
+      const sha = value.shortSha || value.moduleShortSha || value.sha || value.commitSha;
+      return typeof sha === "string" && sha.trim() ? sha.trim().slice(0, 12) : "";
+    }
+
+    async function refreshOnceworldModule() {
+      try {
+        const response = await fetch("/api/onceworld/module/latest", { cache: "no-store" });
+        const body = await readJsonSafe(response);
+        if (!response.ok) throw new Error((body && body.message) || ("HTTP " + response.status));
+        const shortSha = moduleShaFrom(body);
+        if (!shortSha) throw new Error("missing SHA");
+        latestOnceworldModule = Object.assign({}, body, { shortSha });
+        onceworldModuleCommit.textContent = shortSha;
+        onceworldModuleCommit.className = "commit-chip ok";
+        onceworldModuleMeta.textContent = "Latest OWKit artifact";
+        announceOnceworldReady();
+        return body;
+      } catch (error) {
+        latestOnceworldModule = null;
+        onceworldModuleCommit.textContent = "unavailable";
+        onceworldModuleCommit.className = "commit-chip fail";
+        onceworldModuleMeta.textContent = "Couldn't load the latest module SHA";
+        if (!onceworldBuildRunning) {
+          syncOnceworldButtonAvailability();
+          setOnceworldStatus("Latest OWKit module is unavailable. Refocus or reload the page to retry.", "warn");
+        }
+        return null;
+      }
+    }
+
+    function sameOriginApiUrl(candidate, fallback) {
+      try {
+        const url = new URL(candidate || fallback, window.location.href);
+        if (url.origin !== window.location.origin) return fallback;
+        return url.pathname + url.search + url.hash;
+      } catch (_) {
+        return fallback;
+      }
+    }
+
+    async function pollOnceworldBuild(nonce, statusUrl) {
+      const startedAt = Date.now();
+      let delay = 3000;
+      const maxDelay = 7000;
+      for (;;) {
+        await sleep(delay);
+        delay = Math.min(maxDelay, delay + 500);
+        const response = await fetch(statusUrl, { cache: "no-store" });
+        const body = await readJsonSafe(response) || {};
+        if (!response.ok && body.status !== "running" && body.status !== "queued") {
+          throw new Error(body.message || ("Status check failed HTTP " + response.status));
+        }
+        const elapsed = Math.round((Date.now() - startedAt) / 1000);
+        switch (body.status) {
+          case "ready":
+          case "completed":
+          case "success":
+            setOnceworldTimeline("ready");
+            return body;
+          case "failed":
+          case "error":
+            throw new Error(body.message || ("OnceWorld build failed (" + (body.conclusion || "unknown") + ")."));
+          case "running":
+            setOnceworldTimeline("running");
+            setOnceworldStatus(`Patching the OnceWorld release on GitHub Actions... ${elapsed}s elapsed`, "info");
+            break;
+          case "queued":
+          default:
+            setOnceworldTimeline("queued");
+            setOnceworldStatus(`Waiting for a build runner... ${elapsed}s elapsed`, "info");
+            break;
+        }
+        if (elapsed > 600) throw new Error("Build did not finish within 10 minutes. Check the Actions tab.");
+      }
+    }
+
+    async function buildOnceworldBundle() {
+      if (onceworldBuildRunning) return;
+      if (!latestOnceworldVersion || !latestOnceworldModule) {
+        setOnceworldStatus("Resolving the latest OnceWorld release and OWKit module before building...", "info");
+        const [version, module] = await Promise.all([refreshOnceworldVersion(), refreshOnceworldModule()]);
+        if (!version || !module) return;
+      }
+
+      const requestedVersion = latestOnceworldVersion;
+      onceworldBuildRunning = true;
+      onceworldButton.disabled = true;
+      setOnceworldTimeline("queued");
+      setOnceworldStatus(`Queueing OnceWorld ${onceworldVersionLabel(requestedVersion)}...`, "info");
+
+      try {
+        const response = await fetch("/api/onceworld/build", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ versionCode: requestedVersion.versionCode })
+        });
+        const body = await readJsonSafe(response) || {};
+
+        if (response.status === 404) throw new Error("OnceWorld builder API is not deployed on this host.");
+        if (response.status === 409) {
+          const latest = applyOnceworldVersion(body.latest) || await refreshOnceworldVersion();
+          setOnceworldTimeline("idle");
+          setOnceworldStatus(
+            (body.message || "A newer OnceWorld release appeared before the build started.") +
+              (latest ? " Latest metadata is loaded; click Build once more." : " Refresh the page and try again."),
+            "warn"
+          );
+          return;
+        }
+        if (!response.ok) throw new Error(body.message || ("Build failed HTTP " + response.status));
+        if (body.mode !== "github" || !body.nonce) {
+          throw new Error(body.message || "OnceWorld builder returned an unexpected response.");
+        }
+
+        const echoedVersion = normalizeOnceworldVersion(body);
+        if (echoedVersion) applyOnceworldVersion(echoedVersion);
+        setOnceworldTimeline("queued");
+        setOnceworldStatus(`Build queued (module ${body.moduleShortSha || "resolving"})...`, "info");
+
+        const statusUrl = sameOriginApiUrl(body.statusUrl, `/api/onceworld/status?nonce=${encodeURIComponent(body.nonce)}`);
+        const ready = await pollOnceworldBuild(body.nonce, statusUrl);
+        const sizeMb = ready.sizeBytes ? ` · ${(ready.sizeBytes / 1024 / 1024).toFixed(1)} MB` : "";
+        setOnceworldStatus(`Download starting${sizeMb}...`, "ok");
+
+        const link = document.createElement("a");
+        link.href = sameOriginApiUrl(body.downloadUrl, `/api/onceworld/download?nonce=${encodeURIComponent(body.nonce)}`);
+        link.download = ready.filename || body.filename || "";
+        link.rel = "noopener";
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        setOnceworldTimeline("complete");
+        setOnceworldStatus(`Download started${link.download ? ": " + link.download : "."}`, "ok");
+      } catch (error) {
+        setOnceworldTimeline("error");
+        setOnceworldStatus(error.message, "fail");
+      } finally {
+        onceworldBuildRunning = false;
+        syncOnceworldButtonAvailability();
+      }
+    }
 
     function setStatus(text, className = "") {
       statusEl.textContent = text;
@@ -919,6 +1506,11 @@
       builderProgress.classList.toggle("active", !!active);
     }
 
+    function setAeBuilderBusy(active) {
+      builderButton.disabled = active;
+      builderConfigInputs.forEach(input => { input.disabled = active; });
+    }
+
     function selectedModuleSource() {
       const checked = document.querySelector('input[name="moduleSource"]:checked');
       return checked ? checked.value : "main";
@@ -926,17 +1518,20 @@
 
     async function refreshModuleCommit() {
       const source = selectedModuleSource();
+      const requestSequence = ++moduleRefreshSequence;
       try {
         const response = await fetch(`/api/module/latest?moduleSource=${encodeURIComponent(source)}`, { cache: "no-store" });
-        if (!response.ok) throw new Error("HTTP " + response.status);
-        const body = await response.json();
+        const body = await readJsonSafe(response);
+        if (!response.ok) throw new Error((body && body.message) || ("HTTP " + response.status));
         if (!body || !body.shortSha) throw new Error("missing SHA");
+        if (requestSequence !== moduleRefreshSequence || source !== selectedModuleSource()) return null;
         latestModuleCommit = body;
         moduleCommit.textContent = body.shortSha;
         moduleCommit.className = "commit-chip ok";
         moduleCommitMeta.textContent = `Latest ${sourceLabel(source)} source`;
         return body;
       } catch (error) {
+        if (requestSequence !== moduleRefreshSequence || source !== selectedModuleSource()) return null;
         latestModuleCommit = null;
         moduleCommit.textContent = "unavailable";
         moduleCommit.className = "commit-chip fail";
@@ -1010,7 +1605,7 @@
       };
       const sourceText = sourceLabel(moduleSource);
 
-      builderButton.disabled = true;
+      setAeBuilderBusy(true);
       setBuilderProgress(true);
       const visibleCommit = await refreshModuleCommit();
       setBuilderStatus(
@@ -1069,7 +1664,7 @@
       } catch (error) {
         setBuilderStatus(error.message, "fail");
       } finally {
-        builderButton.disabled = false;
+        setAeBuilderBusy(false);
         setBuilderProgress(false);
       }
     }

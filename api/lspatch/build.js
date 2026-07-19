@@ -13,6 +13,7 @@ const {
   githubJson,
   resolveModuleCommit
 } = require("../_shared/github.js");
+const { resolveLatestXapk } = require("../_shared/apkpure.js");
 
 // APKPure recently re-enabled the 32-bit armeabi-v7a variant, and its `?version=latest`
 // endpoint now resolves to that 32-bit build by default. A 32-bit XAPK fails to install on
@@ -50,35 +51,7 @@ function apkpureXapkUrl(packageName, versionCode, abi) {
 // is NOT stable -- APKPure has moved this file from d.apkpure.net/b/XAPK/<token> to
 // data.winudf.com/XAPK/<token> -- so read the token as "last path segment", never a fixed regex.
 function resolveLatestVersionCode(packageName) {
-  const url = `https://d.apkpure.net/b/XAPK/${packageName}?version=latest`;
-  return new Promise((resolve, reject) => {
-    const request = https.get(url, {
-      headers: { "user-agent": "Mozilla/5.0 AE Patch Builder", accept: "*/*" }
-    }, response => {
-      response.resume(); // discard body; we only need the redirect target
-      const location = response.headers.location;
-      if (response.statusCode < 300 || response.statusCode >= 400 || !location) {
-        reject(new Error(`APKPure latest lookup returned HTTP ${response.statusCode} (expected redirect)`));
-        return;
-      }
-      let token = "";
-      try {
-        token = new URL(location, url).pathname.split("/").filter(Boolean).pop() || "";
-      } catch (_) {
-        token = location.split("?")[0].split("/").filter(Boolean).pop() || "";
-      }
-      const b64 = token.replace(/-/g, "+").replace(/_/g, "/");
-      const decoded = Buffer.from(b64, "base64").toString("utf8"); // "<pkg>_<versionCode>_<hash>"
-      const versionCode = decoded.split("_").slice(-2)[0];
-      if (!/^\d+$/.test(versionCode || "")) {
-        reject(new Error(`Could not parse versionCode from APKPure redirect "${location}" (token "${token}" decoded "${decoded}")`));
-        return;
-      }
-      resolve(versionCode);
-    });
-    request.setTimeout(30000, () => request.destroy(new Error("APKPure latest lookup timed out")));
-    request.on("error", reject);
-  });
+  return resolveLatestXapk(packageName).then(latest => latest.versionCode);
 }
 
 function config() {

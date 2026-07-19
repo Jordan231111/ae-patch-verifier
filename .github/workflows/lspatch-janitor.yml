@@ -67,6 +67,7 @@ jobs:
               [ -z "$tag_name" ] && continue
               case "$tag_name" in
                 lspatch-*) ;;
+                onceworld-lspatch-*) ;;
                 *) continue ;;
               esac
 
@@ -107,6 +108,7 @@ jobs:
               [ -z "$tag_name" ] && continue
               case "$tag_name" in
                 lspatch-*) ;;
+                onceworld-lspatch-*) ;;
                 *) continue ;;
               esac
 

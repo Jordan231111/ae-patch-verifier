@@ -3,7 +3,12 @@
     "api/lspatch/build.js": { "maxDuration": 60 },
     "api/lspatch/status.js": { "maxDuration": 60 },
     "api/lspatch/download.js": { "maxDuration": 60 },
-    "api/module/latest.js": { "maxDuration": 30 }
+    "api/module/latest.js": { "maxDuration": 30 },
+    "api/onceworld/build.js": { "maxDuration": 60 },
+    "api/onceworld/status.js": { "maxDuration": 60 },
+    "api/onceworld/download.js": { "maxDuration": 60 },
+    "api/onceworld/module/latest.js": { "maxDuration": 30 },
+    "api/onceworld/version.js": { "maxDuration": 30 }
   },
   "headers": [
     {

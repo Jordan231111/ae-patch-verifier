@@ -1,0 +1,311 @@
+name: Build OnceWorld LSPatched APKS
+
+run-name: OnceWorld LSPatch ${{ inputs.versionName }} ${{ inputs.nonce }}
+
+on:
+  workflow_dispatch:
+    inputs:
+      packageName:
+        description: Server-resolved Android package
+        required: true
+      architecture:
+        description: Server-resolved ABI
+        required: true
+      versionCode:
+        description: Server-resolved APKPure version code
+        required: true
+      versionName:
+        description: Server-resolved APKPure version name
+        required: true
+      moduleSha:
+        description: Precompiled OWKit module commit
+        required: true
+      moduleRef:
+        description: OWKit source branch
+        required: false
+        default: main
+      moduleAsset:
+        description: Precompiled OWKit release asset
+        required: true
+      nonce:
+        description: Request nonce from Vercel
+        required: true
+
+permissions:
+  contents: write
+
+concurrency:
+  group: onceworld-${{ inputs.nonce }}
+  cancel-in-progress: false
+
+env:
+  LSPATCH_VERSION: v0.8
+  LSPATCH_JAR_URL: https://github.com/JingMatrix/LSPatch/releases/download/v0.8/lspatch.jar
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+
+    steps:
+      - name: Checkout builder
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Prepare workspace and precompiled module
+        env:
+          MODULE_SHA: ${{ inputs.moduleSha }}
+          MODULE_ASSET: ${{ inputs.moduleAsset }}
+          MODULE_REPO: ${{ secrets.ONCEWORLD_MODULE_REPO }}
+          GH_TOKEN: ${{ secrets.AE_MODULE_REPO_TOKEN }}
+        run: |
+          set -euo pipefail
+          test -n "$MODULE_REPO"
+          test -n "$GH_TOKEN"
+          [[ "$MODULE_SHA" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$MODULE_ASSET" =~ ^[A-Za-z0-9._-]+\.apk$ ]]
+
+          WORK="$RUNNER_TEMP/onceworld-lspatch"
+          mkdir -p "$WORK"/{tools,module,xapk,lspatch-out,bundle,signed-splits}
+          gh release download "module-${MODULE_SHA}" \
+            --repo "$MODULE_REPO" \
+            --pattern "$MODULE_ASSET" \
+            --dir "$WORK/module"
+          MODULE_APK="$WORK/module/$MODULE_ASSET"
+          test -s "$MODULE_APK"
+
+          echo "WORK=$WORK" >> "$GITHUB_ENV"
+          echo "MODULE_APK=$MODULE_APK" >> "$GITHUB_ENV"
+          echo "MODULE_SHA_SHORT=${MODULE_SHA:0:7}" >> "$GITHUB_ENV"
+
+      - name: Cache LSPatch
+        id: cache-lspatch
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/onceworld-lspatch/tools/lspatch.jar
+          key: onceworld-lspatch-${{ env.LSPATCH_VERSION }}
+
+      - name: Download LSPatch
+        if: steps.cache-lspatch.outputs.cache-hit != 'true'
+        run: |
+          set -euo pipefail
+          curl -L --fail --silent --show-error \
+            --connect-timeout 20 --max-time 120 \
+            -o "$WORK/tools/lspatch.jar" "$LSPATCH_JAR_URL"
+
+      - name: Fetch, patch, verify, and package
+        env:
+          PACKAGE_NAME: ${{ inputs.packageName }}
+          ARCHITECTURE: ${{ inputs.architecture }}
+          VERSION_CODE: ${{ inputs.versionCode }}
+          VERSION_NAME: ${{ inputs.versionName }}
+          NONCE: ${{ inputs.nonce }}
+          EXPECTED_MODULE_CERT: ${{ vars.ONCEWORLD_MODULE_CERT_SHA256 }}
+        run: |
+          set -euo pipefail
+          [[ "$PACKAGE_NAME" =~ ^[A-Za-z0-9._-]+$ ]]
+          [[ "$ARCHITECTURE" == 'arm64-v8a' ]]
+          [[ "$VERSION_CODE" =~ ^[0-9]+$ ]]
+          [[ "$NONCE" =~ ^[A-Za-z0-9._-]+$ ]]
+
+          LSPATCH_JAR="$WORK/tools/lspatch.jar"
+          test -s "$LSPATCH_JAR"
+          unzip -tq "$LSPATCH_JAR" >/dev/null
+
+          # The dispatch pins the version resolved when the user clicked. A new
+          # APKPure release appearing while this job queues cannot silently change
+          # the file being assembled beneath them.
+          XAPK_URL="https://d.apkpure.net/b/XAPK/${PACKAGE_NAME}?versionCode=${VERSION_CODE}&nc=${ARCHITECTURE}"
+          XAPK_FILE="$WORK/source.xapk"
+          rm -f "$XAPK_FILE" "$XAPK_FILE.aria2"
+
+          attempt=0
+          until [ "$attempt" -ge 5 ]; do
+            attempt=$((attempt + 1))
+            echo "[xapk] attempt $attempt: version=$VERSION_NAME code=$VERSION_CODE abi=$ARCHITECTURE"
+            if command -v aria2c >/dev/null 2>&1; then
+              aria2c \
+                --console-log-level=warn \
+                --summary-interval=0 \
+                --max-connection-per-server=16 \
+                --split=16 \
+                --min-split-size=2M \
+                --max-tries=3 \
+                --retry-wait=2 \
+                --connect-timeout=20 \
+                --timeout=120 \
+                --allow-overwrite=true \
+                --auto-file-renaming=false \
+                --user-agent='Mozilla/5.0 LSPatch Workshop' \
+                --dir="$WORK" \
+                --out=source.xapk \
+                "$XAPK_URL" && break
+            else
+              curl -L --fail --silent --show-error \
+                --retry 3 --retry-all-errors --retry-delay 2 \
+                --connect-timeout 20 --max-time 600 \
+                -A 'Mozilla/5.0 LSPatch Workshop' \
+                -o "$XAPK_FILE" "$XAPK_URL" && break
+            fi
+            rm -f "$XAPK_FILE" "$XAPK_FILE.aria2"
+          done
+
+          test -s "$XAPK_FILE"
+          XAPK_SIZE=$(stat -c %s "$XAPK_FILE")
+          [ "$XAPK_SIZE" -ge 52428800 ]
+          [ "$(head -c 4 "$XAPK_FILE" | od -An -tx1 | tr -d ' \n')" = '504b0304' ]
+          unzip -tq "$XAPK_FILE" >/dev/null
+          unzip -q -o "$XAPK_FILE" -d "$WORK/xapk"
+
+          MANIFEST="$WORK/xapk/manifest.json"
+          test -s "$MANIFEST"
+          jq -e --arg package "$PACKAGE_NAME" --arg code "$VERSION_CODE" \
+            '.package_name == $package and (.version_code | tostring) == $code' "$MANIFEST" >/dev/null
+          if [ "$VERSION_NAME" != 'unknown' ]; then
+            jq -e --arg version "$VERSION_NAME" '.version_name == $version' "$MANIFEST" >/dev/null
+          fi
+
+          EXPECTED_SPLIT="config.${ARCHITECTURE//-/_}"
+          jq -e --arg split "$EXPECTED_SPLIT" \
+            'any(.split_apks[]; .id == $split)' "$MANIFEST" >/dev/null
+
+          BASE_NAME=$(jq -r '.split_apks[] | select(.id == "base") | .file' "$MANIFEST")
+          [[ "$BASE_NAME" =~ ^[A-Za-z0-9._-]+\.apk$ ]]
+          BASE_APK="$WORK/xapk/$BASE_NAME"
+          test -s "$BASE_APK"
+
+          mapfile -t SPLIT_NAMES < <(jq -r '.split_apks[] | select(.id != "base") | .file' "$MANIFEST")
+          [ "${#SPLIT_NAMES[@]}" -gt 0 ]
+          for split_name in "${SPLIT_NAMES[@]}"; do
+            [[ "$split_name" =~ ^[A-Za-z0-9._-]+\.apk$ ]]
+            test -s "$WORK/xapk/$split_name"
+          done
+
+          SDK_ROOT="${ANDROID_HOME:-/usr/local/lib/android/sdk}"
+          APKSIGNER=$(find "$SDK_ROOT/build-tools" -type f -name apksigner -perm -111 2>/dev/null | sort -V | tail -1)
+          ZIPALIGN=$(find "$SDK_ROOT/build-tools" -type f -name zipalign -perm -111 2>/dev/null | sort -V | tail -1)
+          test -x "$APKSIGNER"
+          test -x "$ZIPALIGN"
+
+          # Validate the optimized classic-API module before embedding it.
+          [ "$(unzip -p "$MODULE_APK" assets/xposed_init)" = 'com.owkit.core.LSPatchEntry' ]
+          unzip -p "$MODULE_APK" META-INF/xposed/module.prop | grep -q '^minApiVersion=93$'
+          ! unzip -Z1 "$MODULE_APK" | grep -q '^META-INF/xposed/java_init.list$'
+          MODULE_ID=$(unzip -p "$MODULE_APK" META-INF/xposed/module.prop | awk -F= '$1 == "id" { print $2; exit }')
+          [[ "$MODULE_ID" =~ ^[A-Za-z0-9._-]+$ ]]
+          test -n "$(unzip -Z1 "$MODULE_APK" | grep '^lib/arm64-v8a/.*\.so$')"
+          ! unzip -Z1 "$MODULE_APK" | grep -Eq '^lib/(armeabi-v7a|x86|x86_64)/'
+          test -n "$EXPECTED_MODULE_CERT"
+          MODULE_CERT=$("$APKSIGNER" verify --print-certs "$MODULE_APK" \
+            | awk -F': ' '/certificate SHA-256 digest:/ {print $NF; exit}' \
+            | tr -d ':' | tr '[:upper:]' '[:lower:]')
+          EXPECTED_MODULE_CERT=$(printf '%s' "$EXPECTED_MODULE_CERT" \
+            | tr -d ':' | tr '[:upper:]' '[:lower:]')
+          [ "$MODULE_CERT" = "$EXPECTED_MODULE_CERT" ]
+
+          # LSPatch's embedded key is the established OnceWorld host/update key.
+          # Extract it from the pinned LSPatch release instead of committing a
+          # private keystore to this repository.
+          PATCH_KEY="$WORK/lspatch-default.jks"
+          unzip -p "$LSPATCH_JAR" assets/keystore > "$PATCH_KEY"
+          test -s "$PATCH_KEY"
+          keytool -list -keystore "$PATCH_KEY" -storepass 123456 -alias key0 >/dev/null
+
+          java -jar "$LSPATCH_JAR" "$BASE_APK" \
+            -m "$MODULE_APK" \
+            -o "$WORK/lspatch-out" \
+            -l 2 \
+            -k "$PATCH_KEY" 123456 key0 123456 \
+            -f
+
+          mapfile -t PATCHED < <(find "$WORK/lspatch-out" -maxdepth 1 -type f -name '*-lspatched.apk')
+          [ "${#PATCHED[@]}" -eq 1 ]
+          cp "${PATCHED[0]}" "$WORK/bundle/base.apk"
+          PATCHED_BASE_SHA=$(sha256sum "$WORK/bundle/base.apk" | awk '{print $1}')
+
+          FINAL_ENTRIES=(base.apk)
+          for split_name in "${SPLIT_NAMES[@]}"; do
+            "$APKSIGNER" sign \
+              --v4-signing-enabled false \
+              --ks "$PATCH_KEY" \
+              --ks-pass pass:123456 \
+              --ks-key-alias key0 \
+              --key-pass pass:123456 \
+              --out "$WORK/bundle/$split_name" \
+              "$WORK/xapk/$split_name"
+            FINAL_ENTRIES+=("$split_name")
+          done
+
+          # The LSPatch-produced base is immutable: no re-signing, realignment, or
+          # archive rebuild is permitted after this point.
+          [ "$(sha256sum "$WORK/bundle/base.apk" | awk '{print $1}')" = "$PATCHED_BASE_SHA" ]
+          HOST_CERT=$(keytool -list -v -keystore "$PATCH_KEY" -storepass 123456 -alias key0 2>/dev/null \
+            | awk '/SHA256:/ {print $2; exit}' | tr -d ':' | tr '[:upper:]' '[:lower:]')
+          test -n "$HOST_CERT"
+          for apk_name in "${FINAL_ENTRIES[@]}"; do
+            APK="$WORK/bundle/$apk_name"
+            "$APKSIGNER" verify "$APK"
+            CERT=$("$APKSIGNER" verify --print-certs "$APK" \
+              | awk -F': ' '/certificate SHA-256 digest:/ {print $NF; exit}' \
+              | tr -d ':' | tr '[:upper:]' '[:lower:]')
+            [ "$CERT" = "$HOST_CERT" ]
+          done
+
+          LSPATCH_CONFIG=$(unzip -p "$WORK/bundle/base.apk" assets/lspatch/config.json)
+          jq -e '.useManager == false and .sigBypassLevel == 2 and .API_CODE == 93' \
+            <<< "$LSPATCH_CONFIG" >/dev/null
+          MODULE_SHA=$(sha256sum "$MODULE_APK" | awk '{print $1}')
+          EMBEDDED_MODULE_SHA=$(unzip -p "$WORK/bundle/base.apk" \
+            "assets/lspatch/modules/${MODULE_ID}.apk" | sha256sum | awk '{print $1}')
+          SOURCE_BASE_SHA=$(sha256sum "$BASE_APK" | awk '{print $1}')
+          EMBEDDED_ORIGIN_SHA=$(unzip -p "$WORK/bundle/base.apk" \
+            assets/lspatch/origin.apk | sha256sum | awk '{print $1}')
+          [ "$MODULE_SHA" = "$EMBEDDED_MODULE_SHA" ]
+          [ "$SOURCE_BASE_SHA" = "$EMBEDDED_ORIGIN_SHA" ]
+
+          for split_name in "${SPLIT_NAMES[@]}"; do
+            "$ZIPALIGN" -c -P 16 -v 4 "$WORK/bundle/$split_name" >/dev/null
+          done
+          BASE_ALIGNMENT="$WORK/base-alignment.txt"
+          "$ZIPALIGN" -c -P 16 -v 4 "$WORK/bundle/base.apk" > "$BASE_ALIGNMENT" 2>&1 || true
+          grep -Eq 'assets/lspatch/so/arm64-v8a/liblspatch\.so \(OK\)' "$BASE_ALIGNMENT"
+          UNEXPECTED_BAD=$(grep 'BAD' "$BASE_ALIGNMENT" \
+            | grep -Ev 'assets/lspatch/so/(armeabi-v7a|x86|x86_64)/liblspatch\.so \(BAD - ' || true)
+          test -z "$UNEXPECTED_BAD"
+
+          cp "$MANIFEST" "$WORK/bundle/manifest.json"
+          if [ "$VERSION_NAME" = 'unknown' ]; then
+            VERSION_LABEL="code${VERSION_CODE}"
+          else
+            VERSION_LABEL=$(printf '%s' "$VERSION_NAME" | tr -c 'A-Za-z0-9._-' '_')
+            [ -n "$VERSION_LABEL" ] || VERSION_LABEL="code${VERSION_CODE}"
+          fi
+          OUT="$GITHUB_WORKSPACE/OnceWorld_${VERSION_LABEL}_LSPatched_OWKit_ARM64_${MODULE_SHA_SHORT}_${NONCE}.apks"
+          (
+            cd "$WORK/bundle"
+            zip -q -0 "$OUT" "${FINAL_ENTRIES[@]}" manifest.json
+          )
+          unzip -tq "$OUT" >/dev/null
+
+          echo "OUT=$OUT" >> "$GITHUB_ENV"
+          echo "PACKAGE_NAME=$PACKAGE_NAME" >> "$GITHUB_ENV"
+          echo "VERSION_LABEL=$VERSION_LABEL" >> "$GITHUB_ENV"
+
+      - name: Publish short-lived download
+        env:
+          GH_TOKEN: ${{ github.token }}
+          NONCE: ${{ inputs.nonce }}
+        run: |
+          set -euo pipefail
+          TAG="onceworld-lspatch-${NONCE}"
+          gh release create "$TAG" "$OUT#$(basename "$OUT")" \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "OnceWorld ${VERSION_LABEL} OWKit ${MODULE_SHA_SHORT}" \
+            --notes "Temporary private ARM64 OnceWorld build for ${PACKAGE_NAME}. Module ${MODULE_SHA_SHORT}. Automatically removed by the lspatch janitor."

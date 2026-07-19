@@ -2,22 +2,24 @@ const { config, githubJson } = require("../_shared/github.js");
 
 function parseNonce(value) {
   if (!value || typeof value !== "string") return "";
-  if (!/^[A-Za-z0-9._-]{1,128}$/.test(value)) return "";
-  return value;
+  return /^[A-Za-z0-9._-]{1,128}$/.test(value) ? value : "";
 }
 
 async function findRun(cfg, nonce) {
   const ownerRepo = `/repos/${cfg.githubOwner}/${cfg.githubRepo}`;
-  const runsPath = `${ownerRepo}/actions/workflows/${encodeURIComponent(cfg.githubWorkflow)}/runs?event=workflow_dispatch&branch=${encodeURIComponent(cfg.githubRef)}&per_page=100`;
-  const data = await githubJson(cfg, "GET", runsPath);
+  const path = `${ownerRepo}/actions/workflows/${encodeURIComponent(cfg.onceworldWorkflow)}/runs?event=workflow_dispatch&branch=${encodeURIComponent(cfg.githubRef)}&per_page=100`;
+  const data = await githubJson(cfg, "GET", path);
   const runs = Array.isArray(data.workflow_runs) ? data.workflow_runs : [];
-  return runs.find(candidate => (candidate.display_title || candidate.name || "").includes(nonce)) || null;
+  return runs.find(run => (run.display_title || run.name || "").includes(nonce)) || null;
 }
 
 async function findRelease(cfg, nonce) {
-  const ownerRepo = `/repos/${cfg.githubOwner}/${cfg.githubRepo}`;
   try {
-    return await githubJson(cfg, "GET", `${ownerRepo}/releases/tags/lspatch-${encodeURIComponent(nonce)}`);
+    return await githubJson(
+      cfg,
+      "GET",
+      `/repos/${cfg.githubOwner}/${cfg.githubRepo}/releases/tags/onceworld-lspatch-${encodeURIComponent(nonce)}`
+    );
   } catch (error) {
     if (error.status === 404) return null;
     throw error;
@@ -45,39 +47,30 @@ module.exports = async function handler(req, res) {
     }
 
     const cfg = config();
-    if (cfg.builderMode !== "github") {
-      res.statusCode = 200;
-      res.end(JSON.stringify({ status: "ready", message: "Local builder returns the file directly from /api/lspatch/build" }));
-      return;
-    }
-
     const release = await findRelease(cfg, nonce);
-    if (release && Array.isArray(release.assets) && release.assets.length) {
-      const asset = release.assets.find(item => item.name && item.name.endsWith(".apks"));
-      if (asset) {
-        res.statusCode = 200;
-        res.end(JSON.stringify({
-          status: "ready",
-          filename: asset.name,
-          sizeBytes: asset.size || 0,
-          downloadUrl: `/api/lspatch/download?nonce=${encodeURIComponent(nonce)}`
-        }));
-        return;
-      }
+    const asset = release && Array.isArray(release.assets)
+      ? release.assets.find(item => item.name && item.name.endsWith(".apks"))
+      : null;
+    if (asset) {
+      res.statusCode = 200;
+      res.end(JSON.stringify({
+        status: "ready",
+        filename: asset.name,
+        sizeBytes: asset.size || 0,
+        downloadUrl: `/api/onceworld/download?nonce=${encodeURIComponent(nonce)}`
+      }));
+      return;
     }
 
     const run = await findRun(cfg, nonce);
     if (!run) {
       res.statusCode = 200;
-      res.end(JSON.stringify({ status: "queued", message: "Waiting for GitHub Actions to register the run" }));
+      res.end(JSON.stringify({ status: "queued", message: "Waiting for GitHub Actions to register the build" }));
       return;
     }
 
     if (run.status === "completed") {
       if (run.conclusion === "success") {
-        // A successful Actions run can become visible milliseconds before its
-        // release asset does. Keep polling until the release lookup above sees
-        // the actual downloadable file instead of sending the browser to a 404.
         res.statusCode = 200;
         res.end(JSON.stringify({
           status: "running",

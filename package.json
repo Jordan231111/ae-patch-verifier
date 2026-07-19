@@ -4,6 +4,6 @@
   "private": true,
   "scripts": {
     "serve": "vercel dev",
-    "check": "node --check api/lspatch/build.js"
+    "check": "find api -name '*.js' -type f -print0 | xargs -0 -n1 node --check"
   }
 }

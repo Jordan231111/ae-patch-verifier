@@ -8,10 +8,25 @@ function config() {
     githubRepo: process.env.GITHUB_REPO_NAME || "",
     githubRef: process.env.GITHUB_REF_NAME || "main",
     githubWorkflow: process.env.GITHUB_WORKFLOW_FILE || "build-lspatched-apks.yml",
+    githubTimeoutMs: Math.min(55000, Math.max(1000, Number(process.env.GITHUB_BUILDER_TIMEOUT_MS) || 20000)),
     moduleOwner: process.env.AE_MODULE_REPO_OWNER || "",
     moduleRepo: process.env.AE_MODULE_REPO_NAME || "",
     moduleRef: process.env.AE_MODULE_REF || "main",
-    houdiniModuleRef: process.env.AE_MODULE_HOUDINI_REF || "houdini-x64-rewrite"
+    houdiniModuleRef: process.env.AE_MODULE_HOUDINI_REF || "houdini-x64-rewrite",
+    onceworldWorkflow: process.env.ONCEWORLD_GITHUB_WORKFLOW_FILE || "build-onceworld-apks.yml",
+    onceworldModuleOwner: process.env.ONCEWORLD_MODULE_REPO_OWNER || "",
+    onceworldModuleRepo: process.env.ONCEWORLD_MODULE_REPO_NAME || "",
+    onceworldModuleRef: process.env.ONCEWORLD_MODULE_REF || "main"
+  };
+}
+
+function onceworldModuleConfig(cfg) {
+  return {
+    ...cfg,
+    moduleOwner: cfg.onceworldModuleOwner,
+    moduleRepo: cfg.onceworldModuleRepo,
+    moduleRef: cfg.onceworldModuleRef,
+    houdiniModuleRef: cfg.onceworldModuleRef
   };
 }
 
@@ -62,6 +77,9 @@ function githubRequest(cfg, { method, apiPath, body, accept, followRedirect = fa
       response.setEncoding("utf8");
       response.on("data", chunk => { text += chunk; });
       response.on("end", () => resolve({ status, headers: response.headers, body: text }));
+    });
+    req.setTimeout(cfg.githubTimeoutMs || 20000, () => {
+      req.destroy(new Error(`GitHub API request timed out after ${cfg.githubTimeoutMs || 20000}ms`));
     });
     req.on("error", reject);
     if (payload) req.write(payload);
@@ -148,6 +166,7 @@ module.exports = {
   moduleSourceRef,
   moduleSourceLabel,
   moduleFilenamePart,
+  onceworldModuleConfig,
   githubRequest,
   githubJson,
   resolveModuleCommit
