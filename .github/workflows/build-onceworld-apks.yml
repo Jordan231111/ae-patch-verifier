@@ -41,6 +41,7 @@ concurrency:
 env:
   LSPATCH_VERSION: v0.8
   LSPATCH_JAR_URL: https://github.com/JingMatrix/LSPatch/releases/download/v0.8/lspatch.jar
+  LSPATCH_JAR_SHA256: b81094ac3d088849d9781e2678a87562936f8e0d78c4d136a9072dce40f72208
 
 jobs:
   build:
@@ -108,6 +109,7 @@ jobs:
           VERSION_NAME: ${{ inputs.versionName }}
           NONCE: ${{ inputs.nonce }}
           EXPECTED_MODULE_CERT: ${{ vars.ONCEWORLD_MODULE_CERT_SHA256 }}
+          EXPECTED_HOST_CERT: ${{ vars.ONCEWORLD_HOST_CERT_SHA256 }}
         run: |
           set -Eeuo pipefail
           trap 'status=$?; echo "Failed at workflow script line $LINENO: $BASH_COMMAND (exit $status)" >&2; exit $status' ERR
@@ -118,6 +120,7 @@ jobs:
 
           LSPATCH_JAR="$WORK/tools/lspatch.jar"
           test -s "$LSPATCH_JAR"
+          [ "$(sha256sum "$LSPATCH_JAR" | awk '{print $1}')" = "$LSPATCH_JAR_SHA256" ]
           unzip -tq "$LSPATCH_JAR" >/dev/null
 
           # The dispatch pins the version resolved when the user clicked. A new
@@ -252,6 +255,9 @@ jobs:
           HOST_CERT=$(keytool -list -v -keystore "$PATCH_KEY" -storepass 123456 -alias key0 2>/dev/null \
             | awk '/SHA256:/ && !digest {digest=$2} END {print digest}' | tr -d ':' | tr '[:upper:]' '[:lower:]')
           test -n "$HOST_CERT"
+          EXPECTED_HOST_CERT=$(printf '%s' "$EXPECTED_HOST_CERT" \
+            | tr -d ':' | tr '[:upper:]' '[:lower:]')
+          [ "$HOST_CERT" = "$EXPECTED_HOST_CERT" ]
           for apk_name in "${FINAL_ENTRIES[@]}"; do
             APK="$WORK/bundle/$apk_name"
             CERT_OUTPUT="$WORK/${apk_name}.certificates.txt"
@@ -266,7 +272,7 @@ jobs:
           done
 
           LSPATCH_CONFIG=$(unzip -p "$WORK/bundle/base.apk" assets/lspatch/config.json)
-          jq -e '.useManager == false and .sigBypassLevel == 2 and .API_CODE == 93' \
+          jq -e '.useManager == false and .sigBypassLevel == 2 and .lspConfig.API_CODE == 93' \
             <<< "$LSPATCH_CONFIG" >/dev/null
           MODULE_SHA=$(sha256sum "$MODULE_APK" | awk '{print $1}')
           EMBEDDED_MODULE_SHA=$(unzip -p "$WORK/bundle/base.apk" \
