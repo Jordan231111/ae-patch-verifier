@@ -1,0 +1,106 @@
+name: Benchmark OnceWorld APKPure Download
+
+run-name: OnceWorld transfer benchmark ${{ inputs.versionCode }}
+
+on:
+  workflow_dispatch:
+    inputs:
+      packageName:
+        required: true
+      architecture:
+        required: true
+      versionCode:
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  benchmark:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Compare transfer strategies
+        env:
+          PACKAGE_NAME: ${{ inputs.packageName }}
+          ARCHITECTURE: ${{ inputs.architecture }}
+          VERSION_CODE: ${{ inputs.versionCode }}
+        run: |
+          set -Eeuo pipefail
+          [[ "$PACKAGE_NAME" =~ ^[A-Za-z0-9._-]+$ ]]
+          [[ "$ARCHITECTURE" == 'arm64-v8a' ]]
+          [[ "$VERSION_CODE" =~ ^[0-9]+$ ]]
+
+          WORK="$RUNNER_TEMP/onceworld-download-benchmark"
+          mkdir -p "$WORK"
+          RESULTS="$WORK/results.tsv"
+          URL="https://d.apkpure.net/b/XAPK/${PACKAGE_NAME}?versionCode=${VERSION_CODE}&nc=${ARCHITECTURE}"
+          printf 'round\tmethod\telapsed_ms\tbytes\tsha256\n' > "$RESULTS"
+
+          record() {
+            local round="$1" method="$2" target="$3" start_ns="$4"
+            local end_ns elapsed bytes digest
+            end_ns=$(date +%s%N)
+            elapsed=$(( (end_ns - start_ns) / 1000000 ))
+            bytes=$(stat -c %s "$target")
+            digest=$(sha256sum "$target" | awk '{print $1}')
+            unzip -tq "$target" >/dev/null
+            printf '%s\t%s\t%s\t%s\t%s\n' \
+              "$round" "$method" "$elapsed" "$bytes" "$digest" | tee -a "$RESULTS"
+            rm -f "$target" "$target.aria2"
+          }
+
+          aria_download() {
+            local round="$1" method="$2" connections="$3" allocation="$4"
+            local target="$WORK/${round}-${method}.xapk" start_ns
+            start_ns=$(date +%s%N)
+            aria2c \
+              --console-log-level=warn \
+              --summary-interval=0 \
+              --max-connection-per-server="$connections" \
+              --split="$connections" \
+              --min-split-size=2M \
+              --file-allocation="$allocation" \
+              --max-tries=3 \
+              --retry-wait=2 \
+              --connect-timeout=20 \
+              --timeout=120 \
+              --allow-overwrite=true \
+              --auto-file-renaming=false \
+              --user-agent='Mozilla/5.0 LSPatch Workshop' \
+              --dir="$WORK" \
+              --out="$(basename "$target")" \
+              "$URL"
+            record "$round" "$method" "$target" "$start_ns"
+          }
+
+          curl_download() {
+            local round="$1" target="$WORK/${round}-curl.xapk" start_ns
+            start_ns=$(date +%s%N)
+            curl -L --fail --silent --show-error \
+              --retry 3 --retry-all-errors --retry-delay 2 \
+              --connect-timeout 20 --max-time 600 \
+              -A 'Mozilla/5.0 LSPatch Workshop' \
+              -o "$target" "$URL"
+            record "$round" curl "$target" "$start_ns"
+          }
+
+          # Counterbalanced order reduces the effect of transient CDN and runner throughput.
+          aria_download 1 aria16-current 16 prealloc
+          curl_download 1
+          aria_download 1 aria8-none 8 none
+          aria_download 1 aria16-none 16 none
+          aria_download 2 aria16-none 16 none
+          aria_download 2 aria8-none 8 none
+          curl_download 2
+          aria_download 2 aria16-current 16 prealloc
+
+          [ "$(tail -n +2 "$RESULTS" | cut -f4 | sort -u | wc -l)" -eq 1 ]
+          [ "$(tail -n +2 "$RESULTS" | cut -f5 | sort -u | wc -l)" -eq 1 ]
+          {
+            echo '### OnceWorld APKPure transfer benchmark'
+            echo
+            echo '```text'
+            column -t -s $'\t' "$RESULTS"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
