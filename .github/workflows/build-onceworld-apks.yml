@@ -204,7 +204,7 @@ jobs:
           ! unzip -Z1 "$MODULE_APK" | grep -Eq '^lib/(armeabi-v7a|x86|x86_64)/'
           test -n "$EXPECTED_MODULE_CERT"
           MODULE_CERT=$("$APKSIGNER" verify --print-certs "$MODULE_APK" \
-            | awk -F': ' '/certificate SHA-256 digest:/ {print $NF; exit}' \
+            | awk -F': ' '/certificate SHA-256 digest:/ && !digest {digest=$NF} END {print digest}' \
             | tr -d ':' | tr '[:upper:]' '[:lower:]')
           EXPECTED_MODULE_CERT=$(printf '%s' "$EXPECTED_MODULE_CERT" \
             | tr -d ':' | tr '[:upper:]' '[:lower:]')
@@ -247,15 +247,18 @@ jobs:
           # archive rebuild is permitted after this point.
           [ "$(sha256sum "$WORK/bundle/base.apk" | awk '{print $1}')" = "$PATCHED_BASE_SHA" ]
           HOST_CERT=$(keytool -list -v -keystore "$PATCH_KEY" -storepass 123456 -alias key0 2>/dev/null \
-            | awk '/SHA256:/ {print $2; exit}' | tr -d ':' | tr '[:upper:]' '[:lower:]')
+            | awk '/SHA256:/ && !digest {digest=$2} END {print digest}' | tr -d ':' | tr '[:upper:]' '[:lower:]')
           test -n "$HOST_CERT"
           for apk_name in "${FINAL_ENTRIES[@]}"; do
             APK="$WORK/bundle/$apk_name"
             "$APKSIGNER" verify "$APK"
             CERT=$("$APKSIGNER" verify --print-certs "$APK" \
-              | awk -F': ' '/certificate SHA-256 digest:/ {print $NF; exit}' \
+              | awk -F': ' '/certificate SHA-256 digest:/ && !digest {digest=$NF} END {print digest}' \
               | tr -d ':' | tr '[:upper:]' '[:lower:]')
-            [ "$CERT" = "$HOST_CERT" ]
+            if [ "$CERT" != "$HOST_CERT" ]; then
+              echo "Certificate mismatch for $apk_name: expected $HOST_CERT, got ${CERT:-<empty>}" >&2
+              exit 1
+            fi
           done
 
           LSPATCH_CONFIG=$(unzip -p "$WORK/bundle/base.apk" assets/lspatch/config.json)
