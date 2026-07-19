@@ -75,7 +75,8 @@ jobs:
           }
 
           curl_download() {
-            local round="$1" target="$WORK/${round}-curl.xapk" start_ns
+            local round="$1" target start_ns
+            target="$WORK/${round}-curl.xapk"
             start_ns=$(date +%s%N)
             curl -L --fail --silent --show-error \
               --retry 3 --retry-all-errors --retry-delay 2 \
