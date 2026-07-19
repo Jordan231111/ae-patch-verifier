@@ -57,12 +57,15 @@ function resolveLatestVersionCode(packageName) {
 function config() {
   return {
     ...sharedConfig(),
-    lspatchJar: process.env.LSPATCH_JAR || "[removed-private-value]/Tools/RE/lspatch/lspatch-v0.8.jar",
-    signerJar: process.env.UBER_APK_SIGNER_JAR || "[removed-private-value]/Downloads/uber-apk-signer.jar",
-    keystore: process.env.ASHFUR_KEYSTORE || "[removed-private-value]/Downloads/Ashfur.jks",
-    ksAlias: process.env.ASHFUR_ALIAS || "Ashfur",
-    ksPass: process.env.ASHFUR_STORE_PASS || "[removed-private-value]",
-    keyPass: process.env.ASHFUR_KEY_PASS || "[removed-private-value]",
+    // Production dispatches GitHub Actions, but this legacy local path remains useful for
+    // rehearsals. Require its machine paths and credentials explicitly so a public checkout
+    // never contains a developer home path or a credential fallback.
+    lspatchJar: process.env.LSPATCH_JAR || "",
+    signerJar: process.env.UBER_APK_SIGNER_JAR || "",
+    keystore: process.env.ASHFUR_KEYSTORE || "",
+    ksAlias: process.env.ASHFUR_ALIAS || "",
+    ksPass: process.env.ASHFUR_STORE_PASS || "",
+    keyPass: process.env.ASHFUR_KEY_PASS || "",
     moduleRelease: process.env.AE_MODULE_RELEASE_APK || "",
     moduleDebug: process.env.AE_MODULE_DEBUG_APK || "",
     houdiniModuleRelease: process.env.AE_MODULE_HOUDINI_RELEASE_APK || process.env.AE_HOUDINI_MODULE_RELEASE_APK || "",

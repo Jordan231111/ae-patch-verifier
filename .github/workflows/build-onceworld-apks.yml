@@ -217,9 +217,9 @@ jobs:
             | tr -d ':' | tr '[:upper:]' '[:lower:]')
           [ "$MODULE_CERT" = "$EXPECTED_MODULE_CERT" ]
 
-          # LSPatch's embedded key is the established OnceWorld host/update key.
-          # Extract it from the pinned LSPatch release instead of committing a
-          # private keystore to this repository.
+          # OnceWorld deliberately uses LSPatch's default host key, not AE's Ashfur key. Extract
+          # it from the integrity-pinned release so local and hosted OnceWorld builds retain the
+          # same update-compatible identity without committing another keystore here.
           PATCH_KEY="$WORK/lspatch-default.jks"
           unzip -p "$LSPATCH_JAR" assets/keystore > "$PATCH_KEY"
           test -s "$PATCH_KEY"

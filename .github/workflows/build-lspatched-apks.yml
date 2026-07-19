@@ -168,9 +168,34 @@ jobs:
           REGION: ${{ inputs.region }}
           VARIANT: ${{ inputs.variant }}
           NONCE: ${{ inputs.nonce }}
+          # AE intentionally uses the established Ashfur identity. OnceWorld uses LSPatch's
+          # default host identity in its own workflow; never substitute one key for the other.
+          AE_HOST_KEYSTORE_BASE64: ${{ secrets.AE_HOST_KEYSTORE_BASE64 }}
+          AE_HOST_KEYSTORE_PASSWORD: ${{ secrets.AE_HOST_KEYSTORE_PASSWORD }}
+          AE_HOST_KEY_ALIAS: ${{ secrets.AE_HOST_KEY_ALIAS }}
+          AE_HOST_CERT_SHA256: ${{ vars.AE_HOST_CERT_SHA256 }}
           GRADLE_OPTS: "-Dorg.gradle.daemon=false -Dorg.gradle.parallel=true -Dorg.gradle.caching=true -Dorg.gradle.configureondemand=true"
         run: |
           set -euo pipefail
+
+          test -n "$AE_HOST_KEYSTORE_BASE64"
+          test -n "$AE_HOST_KEYSTORE_PASSWORD"
+          test -n "$AE_HOST_KEY_ALIAS"
+          test -n "$AE_HOST_CERT_SHA256"
+          # Recreate the encrypted repository secret only inside this disposable runner.
+          KEYSTORE="$RUNNER_TEMP/ae-host-signing.jks"
+          printf '%s' "$AE_HOST_KEYSTORE_BASE64" | base64 --decode > "$KEYSTORE"
+          chmod 600 "$KEYSTORE"
+          test -s "$KEYSTORE"
+          ACTUAL_HOST_CERT_SHA256="$(keytool -list -v \
+            -keystore "$KEYSTORE" \
+            -storepass "$AE_HOST_KEYSTORE_PASSWORD" \
+            -alias "$AE_HOST_KEY_ALIAS" 2>/dev/null \
+            | awk -F': ' '/SHA256:/{gsub(":", "", $2); print tolower($2); exit}')"
+          if [ "$ACTUAL_HOST_CERT_SHA256" != "$AE_HOST_CERT_SHA256" ]; then
+            echo "::error::AE host signing certificate does not match the established identity."
+            exit 1
+          fi
 
           case "$REGION" in
             japan)
@@ -236,8 +261,6 @@ jobs:
           echo "[xapk] latest versionCode=$VERSION_CODE, pinned ABI=$APKPURE_ABI"
           echo "[xapk] url=$XAPK_URL"
 
-          KEYSTORE="builder/signing/Ashfur.jks"
-          test -f "$KEYSTORE"
           test -n "$WORK"
 
           # Start the XAPK download in the background of THIS shell so we can
@@ -359,7 +382,7 @@ jobs:
 
           java -jar "$LSPATCH_JAR" \
             -m "$MODULE_APK" \
-            -k "$KEYSTORE" "[removed-private-value]" "Ashfur" "[removed-private-value]" \
+            -k "$KEYSTORE" "$AE_HOST_KEYSTORE_PASSWORD" "$AE_HOST_KEY_ALIAS" "$AE_HOST_KEYSTORE_PASSWORD" \
             -l 2 \
             -f \
             -o "$WORK/lspatch-out" \
@@ -369,9 +392,9 @@ jobs:
           java -jar "$SIGNER_JAR" \
             -a "$LSPATCHED_BASE" \
             --ks "$KEYSTORE" \
-            --ksAlias "Ashfur" \
-            --ksPass "[removed-private-value]" \
-            --ksKeyPass "[removed-private-value]" \
+            --ksAlias "$AE_HOST_KEY_ALIAS" \
+            --ksPass "$AE_HOST_KEYSTORE_PASSWORD" \
+            --ksKeyPass "$AE_HOST_KEYSTORE_PASSWORD" \
             --allowResign \
             --out "$WORK/signed-base"
 
@@ -384,9 +407,9 @@ jobs:
             java -jar "$SIGNER_JAR" \
               -a "$WORK/resign-in" \
               --ks "$KEYSTORE" \
-              --ksAlias "Ashfur" \
-              --ksPass "[removed-private-value]" \
-              --ksKeyPass "[removed-private-value]" \
+              --ksAlias "$AE_HOST_KEY_ALIAS" \
+              --ksPass "$AE_HOST_KEYSTORE_PASSWORD" \
+              --ksKeyPass "$AE_HOST_KEYSTORE_PASSWORD" \
               --allowResign \
               --out "$WORK/signed-splits"
           fi
