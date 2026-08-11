@@ -235,7 +235,27 @@ jobs:
           mapfile -t PATCHED < <(find "$WORK/lspatch-out" -maxdepth 1 -type f -name '*-lspatched.apk')
           [ "${#PATCHED[@]}" -eq 1 ]
           cp "${PATCHED[0]}" "$WORK/bundle/base.apk"
-          PATCHED_BASE_SHA=$(sha256sum "$WORK/bundle/base.apk" | awk '{print $1}')
+
+          # LSPatch signs its output, but can leave uncompressed native libraries off a
+          # 16 KiB page boundary. Alignment must precede the final signature because
+          # zipalign invalidates the APK signature. Preserve that layout while signing;
+          # LSPatch stores its libraries under assets/ instead of the conventional lib/.
+          # Keep the original until both steps succeed so a failed tool invocation cannot
+          # leave a partial base APK.
+          ALIGNED_BASE="$WORK/base-aligned.apk"
+          SIGNED_BASE="$WORK/base-aligned-signed.apk"
+          "$ZIPALIGN" -f -P 16 4 "$WORK/bundle/base.apk" "$ALIGNED_BASE"
+          "$APKSIGNER" sign \
+            --v4-signing-enabled false \
+            --alignment-preserved true \
+            --ks "$PATCH_KEY" \
+            --ks-pass pass:123456 \
+            --ks-key-alias key0 \
+            --key-pass pass:123456 \
+            --out "$SIGNED_BASE" \
+            "$ALIGNED_BASE"
+          mv "$SIGNED_BASE" "$WORK/bundle/base.apk"
+          rm -f "$ALIGNED_BASE"
 
           FINAL_ENTRIES=(base.apk)
           for split_name in "${SPLIT_NAMES[@]}"; do
@@ -250,9 +270,6 @@ jobs:
             FINAL_ENTRIES+=("$split_name")
           done
 
-          # The LSPatch-produced base is immutable: no re-signing, realignment, or
-          # archive rebuild is permitted after this point.
-          [ "$(sha256sum "$WORK/bundle/base.apk" | awk '{print $1}')" = "$PATCHED_BASE_SHA" ]
           HOST_CERT=$(keytool -list -v -keystore "$PATCH_KEY" -storepass 123456 -alias key0 2>/dev/null \
             | awk '/SHA256:/ && !digest {digest=$2} END {print digest}' | tr -d ':' | tr '[:upper:]' '[:lower:]')
           test -n "$HOST_CERT"
