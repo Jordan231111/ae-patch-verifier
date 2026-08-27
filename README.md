@@ -17,6 +17,13 @@ identities separate.
 The janitor workflow removes temporary `lspatch-*` and `onceworld-lspatch-*` releases. Durable
 module releases live in their module repositories and are never removed by this janitor.
 
+Both builders pin JingMatrix LSPatch `v1.2` build `487` by its release-jar SHA-256
+(`d238fdc414d121b7fa454d8b4ccf420df3a8c97d563761861ff92bd9c5da2165`) and verify the digest
+before execution. Published bundles must report Vector API 102, LSPatch 1.2, signature-bypass
+level 2, and byte-identical embedded module/origin inputs. When the Another Eden `main` source is
+selected, the builder additionally rejects classic XposedBridge modules and requires modern
+libxposed API 102. The separate emulator compatibility branch retains its own loader contract.
+
 ## Signing identities
 
 The identities are intentionally different and must never be interchanged:
@@ -60,3 +67,5 @@ npm run check
 Real signing and packaging checks run in GitHub Actions because their credentials are not available
 to public checkouts. Both builders use retries, transfer fallbacks, archive validation,
 package/version/ABI checks, and post-signing certificate verification before publishing an asset.
+The legacy local rehearsal path also refuses any `LSPATCH_JAR` whose digest is not the pinned v1.2
+release and validates the runtime config in its patched base.

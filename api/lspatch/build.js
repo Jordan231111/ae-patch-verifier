@@ -20,6 +20,12 @@ const { resolveLatestXapk } = require("../_shared/apkpure.js");
 // arm64-only emulators (INSTALL_FAILED_NO_MATCHING_ABIS) and makes LSPatch's ShadowHook
 // inline-hook init fail on real arm64 devices, so we must pin the arm64-v8a native-code split.
 const APKPURE_ABI = "arm64-v8a";
+const LSPATCH_RELEASE = Object.freeze({
+  versionName: "1.2",
+  versionCode: 487,
+  apiCode: 102,
+  sha256: "d238fdc414d121b7fa454d8b4ccf420df3a8c97d563761861ff92bd9c5da2165"
+});
 
 const GAMES = {
   global: {
@@ -86,6 +92,17 @@ function requireFile(file, label) {
   }
 }
 
+function sha256File(file) {
+  return crypto.createHash("sha256").update(fs.readFileSync(file)).digest("hex");
+}
+
+function verifyLspatchJar(file) {
+  const actual = sha256File(file);
+  if (actual !== LSPATCH_RELEASE.sha256) {
+    throw new Error(`LSPatch jar digest mismatch: expected ${LSPATCH_RELEASE.sha256}, got ${actual}`);
+  }
+}
+
 function run(cmd, args, options = {}) {
   return new Promise((resolve, reject) => {
     const child = spawn(cmd, args, {
@@ -103,6 +120,44 @@ function run(cmd, args, options = {}) {
       else reject(new Error(`${cmd} exited ${code}\n${stdout}\n${stderr}`));
     });
   });
+}
+
+async function verifyModernMainModule(moduleApk) {
+  const entries = (await run("unzip", ["-Z1", moduleApk])).stdout.split(/\r?\n/).filter(Boolean);
+  for (const entry of [
+    "META-INF/xposed/java_init.list",
+    "META-INF/xposed/module.prop",
+    "META-INF/xposed/scope.list"
+  ]) {
+    if (!entries.includes(entry)) throw new Error(`Modern main module is missing ${entry}`);
+  }
+  if (entries.includes("assets/xposed_init")) {
+    throw new Error("Modern main module contains legacy assets/xposed_init");
+  }
+
+  const prop = (await run("unzip", ["-p", moduleApk, "META-INF/xposed/module.prop"])).stdout;
+  if (!/^minApiVersion=102$/m.test(prop) || !/^targetApiVersion=102$/m.test(prop)) {
+    throw new Error("Modern main module must target libxposed API 102");
+  }
+  const javaEntries = (await run("unzip", ["-p", moduleApk, "META-INF/xposed/java_init.list"])).stdout
+    .split(/\r?\n/)
+    .map(line => line.trim())
+    .filter(line => line && !line.startsWith("#"));
+  if (javaEntries.length !== 1) {
+    throw new Error(`Modern main module must contain exactly one Java entry; got ${javaEntries.length}`);
+  }
+}
+
+async function verifyLspatchConfig(apk) {
+  const raw = (await run("unzip", ["-p", apk, "assets/lspatch/config.json"])).stdout;
+  const config = JSON.parse(raw);
+  const actual = config.lspConfig || {};
+  if (config.useManager !== false || config.sigBypassLevel !== 2 ||
+      actual.API_CODE !== LSPATCH_RELEASE.apiCode ||
+      actual.VERSION_CODE !== LSPATCH_RELEASE.versionCode ||
+      actual.VERSION_NAME !== LSPATCH_RELEASE.versionName) {
+    throw new Error(`Unexpected LSPatch runtime config: ${raw}`);
+  }
 }
 
 function headerFilename(headers, fallback) {
@@ -176,6 +231,8 @@ async function buildApksLocal({ region, moduleVariant, moduleSource }) {
   requireFile(cfg.signerJar, "uber-apk-signer jar");
   requireFile(cfg.keystore, "Ashfur keystore");
   requireFile(moduleApk, `${moduleSourceLabel(moduleSource)} module APK`);
+  verifyLspatchJar(cfg.lspatchJar);
+  if (moduleSource === "main") await verifyModernMainModule(moduleApk);
 
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "ae-lspatch-"));
   const xapk = path.join(root, "source.xapk");
@@ -240,7 +297,9 @@ async function buildApksLocal({ region, moduleVariant, moduleSource }) {
   }
 
   const baseSigned = newestApk(signedBase, "-aligned-signed.apk");
-  fs.copyFileSync(baseSigned, path.join(bundle, path.basename(inputs.base)));
+  const finalBase = path.join(bundle, path.basename(inputs.base));
+  fs.copyFileSync(baseSigned, finalBase);
+  await verifyLspatchConfig(finalBase);
   for (const split of inputs.splits) {
     const signedName = path.basename(split, ".apk") + "-aligned-signed.apk";
     fs.copyFileSync(path.join(signedSplits, signedName), path.join(bundle, path.basename(split)));
