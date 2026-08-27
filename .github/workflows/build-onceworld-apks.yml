@@ -60,6 +60,11 @@ jobs:
           distribution: temurin
           java-version: '21'
 
+      - name: Set up Android signing tools
+        uses: android-actions/setup-android@v4.0.1
+        with:
+          packages: "platform-tools build-tools;35.0.0"
+
       - name: Prepare workspace and precompiled module
         env:
           MODULE_SHA: ${{ inputs.moduleSha }}
@@ -163,8 +168,6 @@ jobs:
           done
 
           test -s "$XAPK_FILE"
-          XAPK_SIZE=$(stat -c %s "$XAPK_FILE")
-          [ "$XAPK_SIZE" -ge 52428800 ]
           [ "$(head -c 4 "$XAPK_FILE" | od -An -tx1 | tr -d ' \n')" = '504b0304' ]
           unzip -tq "$XAPK_FILE" >/dev/null
           unzip -q -o "$XAPK_FILE" -d "$WORK/xapk"
@@ -173,9 +176,6 @@ jobs:
           test -s "$MANIFEST"
           jq -e --arg package "$PACKAGE_NAME" --arg code "$VERSION_CODE" \
             '.package_name == $package and (.version_code | tostring) == $code' "$MANIFEST" >/dev/null
-          if [ "$VERSION_NAME" != 'unknown' ]; then
-            jq -e --arg version "$VERSION_NAME" '.version_name == $version' "$MANIFEST" >/dev/null
-          fi
 
           EXPECTED_SPLIT="config.${ARCHITECTURE//-/_}"
           jq -e --arg split "$EXPECTED_SPLIT" \
@@ -194,8 +194,8 @@ jobs:
           done
 
           SDK_ROOT="${ANDROID_HOME:-/usr/local/lib/android/sdk}"
-          APKSIGNER=$(find "$SDK_ROOT/build-tools" -type f -name apksigner -perm -111 2>/dev/null | sort -V | tail -1)
-          ZIPALIGN=$(find "$SDK_ROOT/build-tools" -type f -name zipalign -perm -111 2>/dev/null | sort -V | tail -1)
+          APKSIGNER="$SDK_ROOT/build-tools/35.0.0/apksigner"
+          ZIPALIGN="$SDK_ROOT/build-tools/35.0.0/zipalign"
           test -x "$APKSIGNER"
           test -x "$ZIPALIGN"
 

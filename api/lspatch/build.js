@@ -63,20 +63,35 @@ function resolveLatestVersionCode(packageName) {
 function config() {
   return {
     ...sharedConfig(),
-    // Production dispatches GitHub Actions, but this legacy local path remains useful for
+    // Production dispatches GitHub Actions, but this local rehearsal path remains useful for
     // rehearsals. Require its machine paths and credentials explicitly so a public checkout
     // never contains a developer home path or a credential fallback.
     lspatchJar: process.env.LSPATCH_JAR || "",
-    signerJar: process.env.UBER_APK_SIGNER_JAR || "",
+    apksigner: process.env.APKSIGNER || androidBuildTool("apksigner"),
+    zipalign: process.env.ZIPALIGN || androidBuildTool("zipalign"),
     keystore: process.env.ASHFUR_KEYSTORE || "",
     ksAlias: process.env.ASHFUR_ALIAS || "",
     ksPass: process.env.ASHFUR_STORE_PASS || "",
     keyPass: process.env.ASHFUR_KEY_PASS || "",
+    hostCertSha256: process.env.AE_HOST_CERT_SHA256 || "",
     moduleRelease: process.env.AE_MODULE_RELEASE_APK || "",
     moduleDebug: process.env.AE_MODULE_DEBUG_APK || "",
     houdiniModuleRelease: process.env.AE_MODULE_HOUDINI_RELEASE_APK || process.env.AE_HOUDINI_MODULE_RELEASE_APK || "",
     houdiniModuleDebug: process.env.AE_MODULE_HOUDINI_DEBUG_APK || process.env.AE_HOUDINI_MODULE_DEBUG_APK || ""
   };
+}
+
+function androidBuildTool(name) {
+  const sdkRoot = process.env.ANDROID_HOME || process.env.ANDROID_SDK_ROOT || "";
+  const buildTools = path.join(sdkRoot, "build-tools");
+  if (!sdkRoot || !fs.existsSync(buildTools)) return "";
+  const versions = fs.readdirSync(buildTools)
+    .sort((a, b) => b.localeCompare(a, undefined, { numeric: true }));
+  for (const version of versions) {
+    const candidate = path.join(buildTools, version, name);
+    if (fs.existsSync(candidate)) return candidate;
+  }
+  return "";
 }
 
 function moduleApkPath(cfg, moduleSource, moduleVariant) {
@@ -211,15 +226,49 @@ function newestApk(dir, suffix) {
   return files[0];
 }
 
-function splitInputs(extractedDir) {
-  const names = fs.readdirSync(extractedDir).filter(name => name.endsWith(".apk"));
-  const base = names.find(name => !name.startsWith("config.") && name !== "AssetPack1.apk");
-  if (!base) throw new Error("No base APK found in XAPK");
+function splitInputs(extractedDir, expectedPackage, expectedVersionCode) {
+  const manifestPath = path.join(extractedDir, "manifest.json");
+  requireFile(manifestPath, "XAPK manifest");
+  const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
+  if (manifest.package_name !== expectedPackage ||
+      String(manifest.version_code) !== String(expectedVersionCode)) {
+    throw new Error("XAPK manifest does not match the requested package/version");
+  }
+  if (!Array.isArray(manifest.split_apks)) throw new Error("XAPK manifest has no split list");
+  if (!manifest.split_apks.some(split => split.id === "config.arm64_v8a")) {
+    throw new Error("XAPK manifest has no arm64-v8a split");
+  }
+  const base = manifest.split_apks.find(split => split.id === "base");
+  if (!base) throw new Error("XAPK manifest has no base split");
+  const safeFile = value => typeof value === "string" && /^[A-Za-z0-9._-]+\.apk$/.test(value);
+  if (!safeFile(base.file)) throw new Error(`Unsafe base filename in XAPK manifest: ${base.file}`);
+  const splits = manifest.split_apks.filter(split => split.id !== "base");
+  if (!splits.length) throw new Error("XAPK manifest has no installable splits");
+  for (const split of splits) {
+    if (!safeFile(split.file)) throw new Error(`Unsafe split filename in XAPK manifest: ${split.file}`);
+    requireFile(path.join(extractedDir, split.file), `XAPK split ${split.id}`);
+  }
+  requireFile(path.join(extractedDir, base.file), "XAPK base");
   return {
-    base: path.join(extractedDir, base),
-    splits: names.filter(name => name !== base).map(name => path.join(extractedDir, name)),
-    manifest: path.join(extractedDir, "manifest.json")
+    base: path.join(extractedDir, base.file),
+    baseName: base.file,
+    splits: splits.map(split => path.join(extractedDir, split.file)),
+    splitNames: splits.map(split => split.file),
+    manifest: manifestPath
   };
+}
+
+function normalizeDigest(value) {
+  return String(value || "").replace(/:/g, "").toLowerCase();
+}
+
+async function verifySigningIdentity(apksigner, apk, expectedDigest) {
+  const result = await run(apksigner, ["verify", "--print-certs", apk]);
+  const match = /certificate SHA-256 digest:\s*([0-9a-f:]+)/i.exec(result.stdout);
+  const actual = normalizeDigest(match && match[1]);
+  if (!actual || actual !== normalizeDigest(expectedDigest)) {
+    throw new Error(`Signing certificate mismatch for ${path.basename(apk)}: ${actual || "missing"}`);
+  }
 }
 
 async function buildApksLocal({ region, moduleVariant, moduleSource }) {
@@ -228,8 +277,11 @@ async function buildApksLocal({ region, moduleVariant, moduleSource }) {
   const moduleApk = moduleApkPath(cfg, moduleSource, moduleVariant);
 
   requireFile(cfg.lspatchJar, "LSPatch jar");
-  requireFile(cfg.signerJar, "uber-apk-signer jar");
+  requireFile(cfg.apksigner, "Android apksigner");
+  requireFile(cfg.zipalign, "Android zipalign");
   requireFile(cfg.keystore, "Ashfur keystore");
+  if (!cfg.ksAlias || !cfg.ksPass || !cfg.keyPass) throw new Error("Ashfur keystore credentials are required");
+  if (!normalizeDigest(cfg.hostCertSha256)) throw new Error("AE_HOST_CERT_SHA256 is required");
   requireFile(moduleApk, `${moduleSourceLabel(moduleSource)} module APK`);
   verifyLspatchJar(cfg.lspatchJar);
   if (moduleSource === "main") await verifyModernMainModule(moduleApk);
@@ -238,25 +290,19 @@ async function buildApksLocal({ region, moduleVariant, moduleSource }) {
   const xapk = path.join(root, "source.xapk");
   const extracted = path.join(root, "xapk");
   const lspatchOut = path.join(root, "lspatch-out");
-  const signedBase = path.join(root, "signed-base");
-  const resignIn = path.join(root, "resign-in");
-  const signedSplits = path.join(root, "signed-splits");
   const bundle = path.join(root, "bundle");
   const outFile = path.join(root, `${game.defaultName}_LSPatched_Ashfur${moduleFilenamePart(moduleSource)}_${moduleVariant}.apks`);
 
-  for (const dir of [extracted, lspatchOut, signedBase, resignIn, signedSplits, bundle]) {
+  for (const dir of [extracted, lspatchOut, bundle]) {
     fs.mkdirSync(dir, { recursive: true });
   }
 
   const versionCode = await resolveLatestVersionCode(game.packageName);
   const xapkUrl = apkpureXapkUrl(game.packageName, versionCode, APKPURE_ABI);
   const downloaded = await download(xapkUrl, xapk);
+  await run("unzip", ["-tq", xapk]);
   await run("unzip", ["-q", "-o", xapk, "-d", extracted]);
-  const inputs = splitInputs(extracted);
-  const splitNames = inputs.splits.map(name => path.basename(name));
-  if (!splitNames.some(name => /arm64_v8a/i.test(name))) {
-    throw new Error(`Downloaded XAPK (versionCode ${versionCode}) has no arm64-v8a split; got [${splitNames.join(", ")}]. APKPure may have changed its default ABI again.`);
-  }
+  const inputs = splitInputs(extracted, game.packageName, versionCode);
 
   await run("java", [
     "-jar", cfg.lspatchJar,
@@ -269,47 +315,44 @@ async function buildApksLocal({ region, moduleVariant, moduleSource }) {
   ]);
 
   const lspatchedBase = newestApk(lspatchOut, "-lspatched.apk");
-  await run("java", [
-    "-jar", cfg.signerJar,
-    "-a", lspatchedBase,
+  const alignedBase = path.join(root, "base-aligned.apk");
+  const finalBase = path.join(bundle, inputs.baseName);
+  await run(cfg.zipalign, ["-f", "-P", "16", "4", lspatchedBase, alignedBase]);
+  await run(cfg.apksigner, [
+    "sign",
+    "--v4-signing-enabled", "false",
+    "--alignment-preserved", "true",
     "--ks", cfg.keystore,
-    "--ksAlias", cfg.ksAlias,
-    "--ksPass", cfg.ksPass,
-    "--ksKeyPass", cfg.keyPass,
-    "--allowResign",
-    "--out", signedBase
+    "--ks-pass", `pass:${cfg.ksPass}`,
+    "--ks-key-alias", cfg.ksAlias,
+    "--key-pass", `pass:${cfg.keyPass}`,
+    "--out", finalBase,
+    alignedBase
   ]);
+  fs.rmSync(alignedBase, { force: true });
 
-  for (const split of inputs.splits) {
-    fs.copyFileSync(split, path.join(resignIn, path.basename(split)));
-  }
-  if (inputs.splits.length) {
-    await run("java", [
-      "-jar", cfg.signerJar,
-      "-a", resignIn,
+  for (let i = 0; i < inputs.splits.length; i += 1) {
+    const output = path.join(bundle, inputs.splitNames[i]);
+    await run(cfg.apksigner, [
+      "sign",
+      "--v4-signing-enabled", "false",
       "--ks", cfg.keystore,
-      "--ksAlias", cfg.ksAlias,
-      "--ksPass", cfg.ksPass,
-      "--ksKeyPass", cfg.keyPass,
-      "--allowResign",
-      "--out", signedSplits
+      "--ks-pass", `pass:${cfg.ksPass}`,
+      "--ks-key-alias", cfg.ksAlias,
+      "--key-pass", `pass:${cfg.keyPass}`,
+      "--out", output,
+      inputs.splits[i]
     ]);
   }
 
-  const baseSigned = newestApk(signedBase, "-aligned-signed.apk");
-  const finalBase = path.join(bundle, path.basename(inputs.base));
-  fs.copyFileSync(baseSigned, finalBase);
   await verifyLspatchConfig(finalBase);
-  for (const split of inputs.splits) {
-    const signedName = path.basename(split, ".apk") + "-aligned-signed.apk";
-    fs.copyFileSync(path.join(signedSplits, signedName), path.join(bundle, path.basename(split)));
+  for (const apkName of [inputs.baseName, ...inputs.splitNames]) {
+    await verifySigningIdentity(cfg.apksigner, path.join(bundle, apkName), cfg.hostCertSha256);
   }
-  if (fs.existsSync(inputs.manifest)) {
-    fs.copyFileSync(inputs.manifest, path.join(bundle, "manifest.json"));
-  }
+  fs.copyFileSync(inputs.manifest, path.join(bundle, "manifest.json"));
 
-  const bundleNames = fs.readdirSync(bundle).filter(name => name.endsWith(".apk") || name === "manifest.json");
-  await run("zip", ["-q", "-r", "-0", "-Z", "store", outFile, ...bundleNames], { cwd: bundle });
+  const bundleNames = [inputs.baseName, ...inputs.splitNames, "manifest.json"];
+  await run("zip", ["-q", "-0", outFile, ...bundleNames], { cwd: bundle });
 
   return { file: outFile, tempRoot: root, filename: path.basename(outFile), downloaded };
 }

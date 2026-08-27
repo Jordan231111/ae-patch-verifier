@@ -67,5 +67,8 @@ npm run check
 Real signing and packaging checks run in GitHub Actions because their credentials are not available
 to public checkouts. Both builders use retries, transfer fallbacks, archive validation,
 package/version/ABI checks, and post-signing certificate verification before publishing an asset.
-The legacy local rehearsal path also refuses any `LSPATCH_JAR` whose digest is not the pinned v1.2
-release and validates the runtime config in its patched base.
+The local rehearsal path uses Android SDK `zipalign`/`apksigner` too; it requires
+`LSPATCH_JAR`, `ASHFUR_KEYSTORE`, `ASHFUR_ALIAS`, `ASHFUR_STORE_PASS`, `ASHFUR_KEY_PASS`, and
+`AE_HOST_CERT_SHA256` (plus `ANDROID_HOME`, unless `APKSIGNER` and `ZIPALIGN` are supplied). It
+refuses any patcher digest other than the pinned v1.2 release and validates the runtime config and
+every output certificate.
