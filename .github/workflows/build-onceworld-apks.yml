@@ -71,11 +71,6 @@ jobs:
         with:
           python-version: '3.12'
 
-      - name: Set up Android signing tools
-        uses: android-actions/setup-android@v4.0.1
-        with:
-          packages: "platform-tools build-tools;35.0.0"
-
       - name: Prepare workspace and precompiled module
         env:
           MODULE_SHA: ${{ inputs.moduleSha }}

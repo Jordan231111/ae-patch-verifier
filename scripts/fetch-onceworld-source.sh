@@ -259,6 +259,11 @@ onceworld_commit_source() {
 onceworld_fetch_source_main() {
   SDK_ROOT=${ANDROID_HOME:-${ANDROID_SDK_ROOT:-/usr/local/lib/android/sdk}}
   AAPT="$SDK_ROOT/build-tools/35.0.0/aapt"
+  if [ ! -x "$AAPT" ] || [ ! -x "$SDK_ROOT/build-tools/35.0.0/apksigner" ]; then
+    SDKMANAGER="$SDK_ROOT/cmdline-tools/latest/bin/sdkmanager"
+    test -x "$SDKMANAGER"
+    "$SDKMANAGER" 'build-tools;35.0.0' >/dev/null
+  fi
   test -x "$AAPT"
 
   if onceworld_prepare_google_play; then
