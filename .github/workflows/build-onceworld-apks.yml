@@ -199,11 +199,26 @@ jobs:
           test -x "$APKSIGNER"
           test -x "$ZIPALIGN"
 
-          # Validate the optimized classic-API module before embedding it.
-          [ "$(unzip -p "$MODULE_APK" assets/xposed_init)" = 'com.owkit.core.LSPatchEntry' ]
-          unzip -p "$MODULE_APK" META-INF/xposed/module.prop | grep -q '^minApiVersion=93$'
-          ! unzip -Z1 "$MODULE_APK" | grep -q '^META-INF/xposed/java_init.list$'
-          MODULE_ID=$(unzip -p "$MODULE_APK" META-INF/xposed/module.prop | awk -F= '$1 == "id" { print $2; exit }')
+          # OnceWorld uses the same single modern module in Vector and LSPatch.
+          # Reject classic XposedBridge artifacts so the two delivery paths cannot diverge again.
+          MODULE_ENTRIES=$(unzip -Z1 "$MODULE_APK")
+          grep -Fxq 'META-INF/xposed/java_init.list' <<< "$MODULE_ENTRIES"
+          grep -Fxq 'META-INF/xposed/module.prop' <<< "$MODULE_ENTRIES"
+          grep -Fxq 'META-INF/xposed/scope.list' <<< "$MODULE_ENTRIES"
+          ! grep -Fxq 'assets/xposed_init' <<< "$MODULE_ENTRIES"
+          MODULE_PROP=$(unzip -p "$MODULE_APK" META-INF/xposed/module.prop)
+          grep -Fxq 'minApiVersion=102' <<< "$MODULE_PROP"
+          grep -Fxq 'targetApiVersion=102' <<< "$MODULE_PROP"
+          JAVA_ENTRY_COUNT=$(unzip -p "$MODULE_APK" META-INF/xposed/java_init.list \
+            | awk 'NF && $1 !~ /^#/ { count++ } END { print count + 0 }')
+          [ "$JAVA_ENTRY_COUNT" -eq 1 ]
+          JAVA_ENTRY=$(unzip -p "$MODULE_APK" META-INF/xposed/java_init.list \
+            | awk 'NF && $1 !~ /^#/ { print; exit }' | tr -d '\r')
+          [ "$JAVA_ENTRY" = 'com.owkit.core.ModuleEntry' ]
+          unzip -p "$MODULE_APK" classes.dex > "$WORK/module-classes.dex"
+          ! LC_ALL=C grep -aEq 'de[/\.]robv[/\.]android[/\.]xposed|LSPatchEntry' \
+            "$WORK/module-classes.dex"
+          MODULE_ID=$(awk -F= '$1 == "id" { print $2; exit }' <<< "$MODULE_PROP")
           [[ "$MODULE_ID" =~ ^[A-Za-z0-9._-]+$ ]]
           test -n "$(unzip -Z1 "$MODULE_APK" | grep '^lib/arm64-v8a/.*\.so$')"
           ! unzip -Z1 "$MODULE_APK" | grep -Eq '^lib/(armeabi-v7a|x86|x86_64)/'
