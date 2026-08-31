@@ -1,6 +1,6 @@
 name: Build LSPatched APKS
 
-run-name: AE ${{ inputs.region }} ${{ inputs.architecture }} ${{ inputs.expectedVersionName }} ${{ inputs.nonce }}
+run-name: AE ${{ inputs.region }} ${{ inputs.runtimeTarget }} ${{ inputs.expectedVersionName }} ${{ inputs.nonce }}
 
 on:
   workflow_dispatch:
@@ -28,10 +28,15 @@ on:
         description: Google Play package
         required: true
       architecture:
-        description: Google Play ABI
+        description: Google Play guest ABI
         required: true
         type: choice
-        options: [arm64-v8a, x86_64]
+        options: [arm64-v8a]
+      runtimeTarget:
+        description: Installation target
+        required: true
+        type: choice
+        options: [phone-arm64, houdini-x86_64]
       expectedVersionName:
         description: Google Play listing version
         required: true
@@ -78,6 +83,7 @@ jobs:
           REGION: ${{ inputs.region }}
           PACKAGE_NAME: ${{ inputs.packageName }}
           ARCHITECTURE: ${{ inputs.architecture }}
+          RUNTIME_TARGET: ${{ inputs.runtimeTarget }}
           EXPECTED_VERSION_NAME: ${{ inputs.expectedVersionName }}
           PLAY_LOCALE: ${{ inputs.playLocale }}
           PLAY_ACCOUNT_EMAIL: ${{ inputs.region == 'japan' && secrets.GPLAYDL_JAPAN_EMAIL || secrets.GPLAYDL_GLOBAL_EMAIL }}
@@ -90,7 +96,8 @@ jobs:
           set -Eeuo pipefail
           [[ "$REGION" == 'global' || "$REGION" == 'japan' ]]
           [[ "$PACKAGE_NAME" =~ ^[A-Za-z0-9._-]+$ ]]
-          [[ "$ARCHITECTURE" == 'arm64-v8a' || "$ARCHITECTURE" == 'x86_64' ]]
+          [[ "$ARCHITECTURE" == 'arm64-v8a' ]]
+          [[ "$RUNTIME_TARGET" == 'phone-arm64' || "$RUNTIME_TARGET" == 'houdini-x86_64' ]]
           [[ "$MODULE_SHA" =~ ^[0-9a-f]{40}$ ]]
           test -n "$EXPECTED_VERSION_NAME"
           test -n "$PLAY_ACCOUNT_EMAIL"
@@ -149,6 +156,7 @@ jobs:
             echo "WORK=$WORK"
             echo "PACKAGE_NAME=$PACKAGE_NAME"
             echo "ARCHITECTURE=$ARCHITECTURE"
+            echo "RUNTIME_TARGET=$RUNTIME_TARGET"
             echo "MODULE_SHA_SHORT=${MODULE_SHA:0:7}"
             echo "VERSION_CODE=$VERSION_CODE"
             echo "VERSION_NAME=$VERSION_NAME"
@@ -342,5 +350,5 @@ jobs:
           TAG="lspatch-${NONCE}"
           gh release create "$TAG" "$OUT#$(basename "$OUT")" \
             --repo "$GITHUB_REPOSITORY" \
-            --title "Another Eden ${VERSION_NAME} ${REGION} ${ARCHITECTURE}" \
-            --notes "Temporary Google Play LSPatch build for ${PACKAGE_NAME}. ABI ${ARCHITECTURE}. Module ${MODULE_SHA_SHORT}. Automatically removed by the lspatch janitor."
+            --title "Another Eden ${VERSION_NAME} ${REGION} ${RUNTIME_TARGET}" \
+            --notes "Temporary Google Play LSPatch build for ${PACKAGE_NAME}. Target ${RUNTIME_TARGET}, guest ABI ${ARCHITECTURE}. Module ${MODULE_SHA_SHORT}. Automatically removed by the lspatch janitor."

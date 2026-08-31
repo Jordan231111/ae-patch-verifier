@@ -27,8 +27,8 @@ const GAMES = {
 
 function targetFor(moduleSource) {
   return moduleSource === "houdini-x64-rewrite"
-    ? { architecture: "x86_64", label: "Emulator (x86_64)" }
-    : { architecture: "arm64-v8a", label: "Phone (ARM64)" };
+    ? { architecture: "arm64-v8a", runtimeTarget: "houdini-x86_64", label: "Emulator (x86_64/Houdini)" }
+    : { architecture: "arm64-v8a", runtimeTarget: "phone-arm64", label: "Phone (ARM64)" };
 }
 
 async function dispatchGithubBuild({ region, moduleVariant, moduleSource }) {
@@ -66,6 +66,7 @@ async function dispatchGithubBuild({ region, moduleVariant, moduleSource }) {
         moduleRef: moduleCommit.ref,
         packageName: game.packageName,
         architecture: target.architecture,
+        runtimeTarget: target.runtimeTarget,
         expectedVersionName: play.versionName,
         playLocale: game.playLocale,
         nonce
@@ -78,6 +79,7 @@ async function dispatchGithubBuild({ region, moduleVariant, moduleSource }) {
     filename,
     packageName: game.packageName,
     architecture: target.architecture,
+    runtimeTarget: target.runtimeTarget,
     targetLabel: target.label,
     versionName: play.versionName,
     source: "google-play",

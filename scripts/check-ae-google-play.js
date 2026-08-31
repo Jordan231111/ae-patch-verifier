@@ -22,7 +22,7 @@ for (const needle of [
   'packageName: "games.wfs.anothereden"',
   'packageName: "net.wrightflyer.anothereden"',
   'architecture: "arm64-v8a"',
-  'architecture: "x86_64"',
+  'runtimeTarget: "houdini-x86_64"',
   "resolveLatestPlayListing",
   "expectedVersionName",
   "moduleSource"
