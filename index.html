@@ -697,7 +697,7 @@
         <div>
           <span class="panel-kicker">Fast lane &middot; optimized defaults locked in</span>
           <h2>OnceWorld ARM64 release</h2>
-          <p class="builder-sub">No architecture, region, or debug choices are needed. The builder pairs the latest game source with the latest precompiled OWKit module.</p>
+          <p class="builder-sub">No architecture, region, or debug choices are needed. Google Play is tried first, with APKPure retained as a validated fallback, and the selected game source is paired with the latest precompiled OWKit module.</p>
         </div>
         <dl class="build-spec">
           <div>
@@ -1293,13 +1293,20 @@
     function normalizeOnceworldVersion(value) {
       if (!value || typeof value !== "object") return null;
       const versionName = typeof value.versionName === "string" ? value.versionName.trim() : "";
-      const versionCode = typeof value.versionCode === "number" ? value.versionCode : Number(value.versionCode);
-      if (!Number.isSafeInteger(versionCode) || versionCode < 1) return null;
+      const hasVersionCode = value.versionCode !== null && value.versionCode !== undefined && value.versionCode !== "";
+      const parsedVersionCode = hasVersionCode
+        ? (typeof value.versionCode === "number" ? value.versionCode : Number(value.versionCode))
+        : null;
+      const versionCode = Number.isSafeInteger(parsedVersionCode) && parsedVersionCode > 0
+        ? parsedVersionCode
+        : null;
+      if (!versionName && !versionCode) return null;
       return {
         versionName,
         versionCode,
         packageName: typeof value.packageName === "string" ? value.packageName : "",
-        architecture: typeof value.architecture === "string" ? value.architecture : ""
+        architecture: typeof value.architecture === "string" ? value.architecture : "",
+        source: typeof value.source === "string" ? value.source : ""
       };
     }
 
@@ -1309,15 +1316,19 @@
       latestOnceworldVersion = normalized;
       onceworldVersion.textContent = normalized.versionName ? `v${normalized.versionName}` : `code ${normalized.versionCode}`;
       onceworldVersion.className = "commit-chip ok";
-      const details = normalized.versionName ? [`code ${normalized.versionCode}`] : ["Version name unavailable"];
+      const details = [];
+      if (normalized.versionCode) details.push(`code ${normalized.versionCode}`);
+      if (normalized.source === "google-play") details.push("Google Play");
+      if (normalized.source === "apkpure") details.push("APKPure fallback metadata");
       if (normalized.architecture) details.push(normalized.architecture);
-      onceworldVersionMeta.textContent = details.join(" · ");
+      onceworldVersionMeta.textContent = details.length ? details.join(" · ") : "Latest release metadata";
       announceOnceworldReady();
       return normalized;
     }
 
     function onceworldVersionLabel(version) {
-      return version.versionName ? `v${version.versionName} (code ${version.versionCode})` : `version code ${version.versionCode}`;
+      if (version.versionName && version.versionCode) return `v${version.versionName} (code ${version.versionCode})`;
+      return version.versionName ? `v${version.versionName}` : `version code ${version.versionCode}`;
     }
 
     function syncOnceworldButtonAvailability() {
@@ -1451,7 +1462,10 @@
         const response = await fetch("/api/onceworld/build", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ versionCode: requestedVersion.versionCode })
+          body: JSON.stringify({
+            versionCode: requestedVersion.versionCode,
+            versionName: requestedVersion.versionName
+          })
         });
         const body = await readJsonSafe(response) || {};
 

@@ -2,17 +2,22 @@
 
 This repository hosts the verifier UI and the short-lived GitHub Actions builders used by
 [verify-ae-modmenu.vercel.app](https://verify-ae-modmenu.vercel.app). It supports Another Eden and
-the ARM64 OnceWorld APKPure release while keeping their build inputs, release tags, and signing
-identities separate.
+the ARM64 OnceWorld release while keeping their build inputs, release tags, and signing identities
+separate. OnceWorld resolves and downloads from Google Play first through an Aurora-compatible
+client; its established APKPure path remains a guarded fallback.
 
 ## Build flow
 
-1. The Vercel API resolves the current APKPure version and a pinned prebuilt module commit.
+1. The Vercel API resolves the current Google Play listing and a pinned prebuilt module commit. If
+   Play listing metadata is unavailable, this lookup alone falls back to APKPure.
 2. It dispatches the game-specific `workflow_dispatch` workflow with that immutable version and
    module selection.
-3. The workflow downloads and validates the XAPK, patches the base, signs the complete split set,
-   verifies the result, and publishes a short-lived release asset.
-4. The browser polls the same-origin status API and starts the download when the asset is ready.
+3. The OnceWorld workflow requests the complete ARM64 split set directly from Google Play. It
+   contacts APKPure only after Play authentication, delivery, or validation fails, and refuses a
+   stale APKPure fallback when the Play listing already advertised a newer release.
+4. The workflow normalizes either source into the same manifest contract, patches the base, signs
+   the complete split set, verifies the result, and publishes a short-lived release asset.
+5. The browser polls the same-origin status API and starts the download when the asset is ready.
 
 The janitor workflow removes temporary `lspatch-*` and `onceworld-lspatch-*` releases. Durable
 module releases live in their module repositories and are never removed by this janitor.
@@ -46,12 +51,15 @@ The workflows expect these GitHub secrets:
 - `AE_HOST_KEYSTORE_BASE64`, `AE_HOST_KEYSTORE_PASSWORD`, `AE_HOST_KEY_ALIAS`
 - `AE_MODULE_REPO`, `AE_MODULE_REPO_TOKEN`
 - `ONCEWORLD_MODULE_REPO`
+- `GPLAYDL_API_KEY` (a persistent key created once with `gplaydl link`; the short pairing code is
+  not used by CI)
 
 Public, non-secret identity checks use these GitHub variables:
 
 - `AE_HOST_CERT_SHA256`
 - `ONCEWORLD_HOST_CERT_SHA256`
 - `ONCEWORLD_MODULE_CERT_SHA256`
+- `ONCEWORLD_SOURCE_CERT_SHA256`
 
 The Vercel functions read repository, workflow, module, and API-token configuration from the
 environment. `.env*`, browser-test data, OS metadata, and `builder/signing/` are ignored to reduce
@@ -67,6 +75,8 @@ npm run check
 Real signing and packaging checks run in GitHub Actions because their credentials are not available
 to public checkouts. Both builders use retries, transfer fallbacks, archive validation,
 package/version/ABI checks, and post-signing certificate verification before publishing an asset.
+The OnceWorld Play credential must belong to a dedicated account without payment methods; it is
+stored only as an Actions secret and is never exposed to Vercel or browser code.
 The local rehearsal path uses Android SDK `zipalign`/`apksigner` too; it requires
 `LSPATCH_JAR`, `ASHFUR_KEYSTORE`, `ASHFUR_ALIAS`, `ASHFUR_STORE_PASS`, `ASHFUR_KEY_PASS`, and
 `AE_HOST_CERT_SHA256` (plus `ANDROID_HOME`, unless `APKSIGNER` and `ZIPALIGN` are supplied). It

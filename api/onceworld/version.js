@@ -1,5 +1,5 @@
-const { resolveLatestXapk } = require("../_shared/apkpure.js");
 const { onceworldConfig } = require("./_config.js");
+const { resolvePreferredVersion } = require("./_version-source.js");
 
 module.exports = async function handler(req, res) {
   if (req.method !== "GET") {
@@ -16,7 +16,7 @@ module.exports = async function handler(req, res) {
 
   try {
     const game = onceworldConfig();
-    const latest = await resolveLatestXapk(game.packageName);
+    const latest = await resolvePreferredVersion(game);
     res.statusCode = 200;
     res.end(JSON.stringify({
       ...latest,

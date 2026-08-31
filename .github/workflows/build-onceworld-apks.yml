@@ -1,6 +1,6 @@
 name: Build OnceWorld LSPatched APKS
 
-run-name: OnceWorld LSPatch ${{ inputs.versionName }} ${{ inputs.nonce }}
+run-name: OnceWorld LSPatch ${{ inputs.expectedVersionName }} ${{ inputs.nonce }}
 
 on:
   workflow_dispatch:
@@ -12,10 +12,16 @@ on:
         description: Server-resolved ABI
         required: true
       versionCode:
-        description: Server-resolved APKPure version code
+        description: APKPure fallback version code when already resolved
         required: true
       versionName:
-        description: Server-resolved APKPure version name
+        description: APKPure fallback version name when already resolved
+        required: true
+      expectedVersionName:
+        description: Server-resolved preferred release name
+        required: true
+      metadataSource:
+        description: Source used to resolve the preferred release metadata
         required: true
       moduleSha:
         description: Precompiled OWKit module commit
@@ -59,6 +65,11 @@ jobs:
         with:
           distribution: temurin
           java-version: '21'
+
+      - name: Set up Python
+        uses: actions/setup-python@v6.1.0
+        with:
+          python-version: '3.12'
 
       - name: Set up Android signing tools
         uses: android-actions/setup-android@v4.0.1
@@ -110,9 +121,13 @@ jobs:
         env:
           PACKAGE_NAME: ${{ inputs.packageName }}
           ARCHITECTURE: ${{ inputs.architecture }}
-          VERSION_CODE: ${{ inputs.versionCode }}
-          VERSION_NAME: ${{ inputs.versionName }}
+          FALLBACK_VERSION_CODE: ${{ inputs.versionCode }}
+          FALLBACK_VERSION_NAME: ${{ inputs.versionName }}
+          EXPECTED_VERSION_NAME: ${{ inputs.expectedVersionName }}
+          METADATA_SOURCE: ${{ inputs.metadataSource }}
+          GPLAYDL_API_KEY: ${{ secrets.GPLAYDL_API_KEY }}
           NONCE: ${{ inputs.nonce }}
+          EXPECTED_SOURCE_CERT: ${{ vars.ONCEWORLD_SOURCE_CERT_SHA256 }}
           EXPECTED_MODULE_CERT: ${{ vars.ONCEWORLD_MODULE_CERT_SHA256 }}
           EXPECTED_HOST_CERT: ${{ vars.ONCEWORLD_HOST_CERT_SHA256 }}
         run: |
@@ -120,7 +135,8 @@ jobs:
           trap 'status=$?; echo "Failed at workflow script line $LINENO: $BASH_COMMAND (exit $status)" >&2; exit $status' ERR
           [[ "$PACKAGE_NAME" =~ ^[A-Za-z0-9._-]+$ ]]
           [[ "$ARCHITECTURE" == 'arm64-v8a' ]]
-          [[ "$VERSION_CODE" =~ ^[0-9]+$ ]]
+          [[ "$FALLBACK_VERSION_CODE" =~ ^[0-9]+$ ]]
+          [[ "$METADATA_SOURCE" == 'google-play' || "$METADATA_SOURCE" == 'apkpure' ]]
           [[ "$NONCE" =~ ^[A-Za-z0-9._-]+$ ]]
 
           LSPATCH_JAR="$WORK/tools/lspatch.jar"
@@ -128,49 +144,10 @@ jobs:
           [ "$(sha256sum "$LSPATCH_JAR" | awk '{print $1}')" = "$LSPATCH_JAR_SHA256" ]
           unzip -tq "$LSPATCH_JAR" >/dev/null
 
-          # The dispatch pins the version resolved when the user clicked. A new
-          # APKPure release appearing while this job queues cannot silently change
-          # the file being assembled beneath them.
-          XAPK_URL="https://d.apkpure.net/b/XAPK/${PACKAGE_NAME}?versionCode=${VERSION_CODE}&nc=${ARCHITECTURE}"
-          XAPK_FILE="$WORK/source.xapk"
-          rm -f "$XAPK_FILE" "$XAPK_FILE.aria2"
-
-          attempt=0
-          until [ "$attempt" -ge 5 ]; do
-            attempt=$((attempt + 1))
-            echo "[xapk] attempt $attempt: version=$VERSION_NAME code=$VERSION_CODE abi=$ARCHITECTURE"
-            if command -v aria2c >/dev/null 2>&1; then
-              aria2c \
-                --console-log-level=warn \
-                --summary-interval=0 \
-                --max-connection-per-server=16 \
-                --split=16 \
-                --min-split-size=2M \
-                --file-allocation=none \
-                --max-tries=3 \
-                --retry-wait=2 \
-                --connect-timeout=20 \
-                --timeout=120 \
-                --allow-overwrite=true \
-                --auto-file-renaming=false \
-                --user-agent='Mozilla/5.0 LSPatch Workshop' \
-                --dir="$WORK" \
-                --out=source.xapk \
-                "$XAPK_URL" && break
-            else
-              curl -L --fail --silent --show-error \
-                --retry 3 --retry-all-errors --retry-delay 2 \
-                --connect-timeout 20 --max-time 600 \
-                -A 'Mozilla/5.0 LSPatch Workshop' \
-                -o "$XAPK_FILE" "$XAPK_URL" && break
-            fi
-            rm -f "$XAPK_FILE" "$XAPK_FILE.aria2"
-          done
-
-          test -s "$XAPK_FILE"
-          [ "$(head -c 4 "$XAPK_FILE" | od -An -tx1 | tr -d ' \n')" = '504b0304' ]
-          unzip -tq "$XAPK_FILE" >/dev/null
-          unzip -q -o "$XAPK_FILE" -d "$WORK/xapk"
+          # Google Play is the primary source. The sourced helper contacts APKPure
+          # only when Play authentication, delivery, or validation fails, then
+          # normalizes either result into the existing xapk/manifest.json contract.
+          source scripts/fetch-onceworld-source.sh
 
           MANIFEST="$WORK/xapk/manifest.json"
           test -s "$MANIFEST"
@@ -198,6 +175,28 @@ jobs:
           ZIPALIGN="$SDK_ROOT/build-tools/35.0.0/zipalign"
           test -x "$APKSIGNER"
           test -x "$ZIPALIGN"
+
+          test -n "$EXPECTED_SOURCE_CERT"
+          EXPECTED_SOURCE_CERT=$(printf '%s' "$EXPECTED_SOURCE_CERT" \
+            | tr -d ':' | tr '[:upper:]' '[:lower:]')
+          SOURCE_CERT=''
+          SOURCE_APKS=("$BASE_APK")
+          for split_name in "${SPLIT_NAMES[@]}"; do
+            SOURCE_APKS+=("$WORK/xapk/$split_name")
+          done
+          for source_apk in "${SOURCE_APKS[@]}"; do
+            SOURCE_CERT_OUTPUT="$WORK/$(basename "$source_apk").source-certificates.txt"
+            "$APKSIGNER" verify --print-certs "$source_apk" > "$SOURCE_CERT_OUTPUT"
+            CERT=$(awk -F': ' \
+              '/certificate SHA-256 digest:/ && !digest {digest=$NF} END {print digest}' \
+              "$SOURCE_CERT_OUTPUT" | tr -d ':' | tr '[:upper:]' '[:lower:]')
+            test -n "$CERT"
+            if [ -z "$SOURCE_CERT" ]; then
+              SOURCE_CERT=$CERT
+            fi
+            [ "$CERT" = "$SOURCE_CERT" ]
+          done
+          [ "$SOURCE_CERT" = "$EXPECTED_SOURCE_CERT" ]
 
           # OnceWorld uses the same single modern module in Vector and LSPatch.
           # Reject classic XposedBridge artifacts so the two delivery paths cannot diverge again.
@@ -357,4 +356,4 @@ jobs:
           gh release create "$TAG" "$OUT#$(basename "$OUT")" \
             --repo "$GITHUB_REPOSITORY" \
             --title "OnceWorld ${VERSION_LABEL} OWKit ${MODULE_SHA_SHORT}" \
-            --notes "Temporary private ARM64 OnceWorld build for ${PACKAGE_NAME}. Module ${MODULE_SHA_SHORT}. Automatically removed by the lspatch janitor."
+            --notes "Temporary private ARM64 OnceWorld build for ${PACKAGE_NAME}. Source ${SOURCE_KIND}. Module ${MODULE_SHA_SHORT}. Automatically removed by the lspatch janitor."

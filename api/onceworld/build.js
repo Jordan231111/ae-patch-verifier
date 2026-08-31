@@ -5,10 +5,10 @@ const {
   githubJson,
   resolveModuleCommit
 } = require("../_shared/github.js");
-const { resolveLatestXapk } = require("../_shared/apkpure.js");
 const { onceworldConfig } = require("./_config.js");
+const { resolvePreferredVersion } = require("./_version-source.js");
 
-async function dispatchGithubBuild(requestedVersionCode) {
+async function dispatchGithubBuild({ requestedVersionCode, requestedVersionName }) {
   const cfg = config();
   const game = onceworldConfig();
   if (!cfg.githubOwner || !cfg.githubRepo) {
@@ -24,8 +24,11 @@ async function dispatchGithubBuild(requestedVersionCode) {
     throw new Error("No precompiled OnceWorld release module is available yet");
   }
 
-  const latest = await resolveLatestXapk(game.packageName);
-  if (requestedVersionCode && String(requestedVersionCode) !== latest.versionCode) {
+  const latest = await resolvePreferredVersion(game);
+  const versionChanged = requestedVersionName
+    ? requestedVersionName !== latest.versionName
+    : requestedVersionCode && latest.versionCode && String(requestedVersionCode) !== String(latest.versionCode);
+  if (versionChanged) {
     const error = new Error(`OnceWorld updated to ${latest.versionName || `code ${latest.versionCode}`}; refresh and try again`);
     error.status = 409;
     error.latest = latest;
@@ -48,8 +51,10 @@ async function dispatchGithubBuild(requestedVersionCode) {
         moduleAsset: game.moduleAsset,
         packageName: game.packageName,
         architecture: game.architecture,
-        versionCode: latest.versionCode,
-        versionName: latest.versionName || "unknown",
+        versionCode: latest.versionCode ? String(latest.versionCode) : "0",
+        versionName: latest.source === "apkpure" ? (latest.versionName || "unknown") : "unknown",
+        expectedVersionName: latest.versionName || "unknown",
+        metadataSource: latest.source || "unknown",
         nonce
       }
     }
@@ -62,6 +67,7 @@ async function dispatchGithubBuild(requestedVersionCode) {
     moduleRef: moduleCommit.ref,
     versionCode: latest.versionCode,
     versionName: latest.versionName,
+    source: latest.source,
     packageName: game.packageName,
     architecture: game.architecture
   };
@@ -92,7 +98,10 @@ module.exports = async function handler(req, res) {
     const requestedVersionCode = /^[0-9]+$/.test(String(body.versionCode || ""))
       ? String(body.versionCode)
       : "";
-    const dispatched = await dispatchGithubBuild(requestedVersionCode);
+    const requestedVersionName = typeof body.versionName === "string"
+      ? body.versionName.trim().slice(0, 64)
+      : "";
+    const dispatched = await dispatchGithubBuild({ requestedVersionCode, requestedVersionName });
     res.statusCode = 202;
     res.end(JSON.stringify({
       mode: "github",
