@@ -168,6 +168,9 @@ jobs:
           SDK_ROOT="${ANDROID_HOME:-/usr/local/lib/android/sdk}"
           APKSIGNER="$SDK_ROOT/build-tools/35.0.0/apksigner"
           ZIPALIGN="$SDK_ROOT/build-tools/35.0.0/zipalign"
+          if [ ! -x "$APKSIGNER" ] || [ ! -x "$ZIPALIGN" ]; then
+            "$SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" 'build-tools;35.0.0' >/dev/null
+          fi
           test -x "$APKSIGNER"
           test -x "$ZIPALIGN"
 

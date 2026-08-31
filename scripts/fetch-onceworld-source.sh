@@ -25,134 +25,17 @@ onceworld_prepare_google_play() (
     return 1
   fi
 
-  local download_dir="$WORK/google-play-download"
   local ready_dir="$WORK/google-play-ready"
-  mkdir -p "$download_dir" "$ready_dir"
+  mkdir -p "$ready_dir"
 
-  echo "[source] trying Google Play first with an ARM64 Aurora-compatible device profile"
+  echo "[source] trying Google Play first with parallel compressed CDN transfers"
   python3 -m pip install --disable-pip-version-check --no-compile --quiet 'gplaydl==4.2.1'
-  gplaydl download "$PACKAGE_NAME" --arch arm64 --output "$download_dir"
-
-  if find "$download_dir" -maxdepth 1 -type f -name '*.obb' -print -quit | grep -q .; then
-    onceworld_source_error "Google Play returned an OBB that the current APKS delivery contract cannot carry"
-    return 1
-  fi
-
-  shopt -s nullglob
-  local apk_files=("$download_dir"/*.apk)
-  if [ "${#apk_files[@]}" -eq 0 ]; then
-    onceworld_source_error "Google Play returned no APK files"
-    return 1
-  fi
-
-  local base_source=""
-  local resolved_package=""
-  local resolved_code=""
-  local resolved_name=""
-  local split_map="$ready_dir/splits.tsv"
-  : > "$split_map"
-
-  local apk badging apk_package apk_code apk_name split
-  for apk in "${apk_files[@]}"; do
-    badging=$("$AAPT" dump badging "$apk")
-    apk_package=$(sed -n "s/^package: name='\([^']*\)'.*/\1/p" <<< "$badging")
-    apk_code=$(sed -n "s/^package: .*versionCode='\([^']*\)'.*/\1/p" <<< "$badging")
-    apk_name=$(sed -n "s/^package: .*versionName='\([^']*\)'.*/\1/p" <<< "$badging")
-    split=$(sed -n "s/^package: .* split='\([^']*\)'.*/\1/p" <<< "$badging")
-
-    [ "$apk_package" = "$PACKAGE_NAME" ] || {
-      onceworld_source_error "Google Play file $(basename "$apk") belongs to ${apk_package:-<unknown>}"
-      return 1
-    }
-    [[ "$apk_code" =~ ^[0-9]+$ ]] || {
-      onceworld_source_error "Google Play file $(basename "$apk") has an invalid version code"
-      return 1
-    }
-    if [ -z "$resolved_package" ]; then
-      resolved_package=$apk_package
-      resolved_code=$apk_code
-    elif [ "$apk_package" != "$resolved_package" ] \
-      || [ "$apk_code" != "$resolved_code" ]; then
-      onceworld_source_error "Google Play returned a mixed package/version split set"
-      return 1
-    fi
-    if [ -n "$apk_name" ]; then
-      if [ -z "$resolved_name" ]; then
-        resolved_name=$apk_name
-      elif [ "$apk_name" != "$resolved_name" ]; then
-        onceworld_source_error "Google Play returned inconsistent version names"
-        return 1
-      fi
-    fi
-
-    if [ -z "$split" ]; then
-      [ -z "$base_source" ] || {
-        onceworld_source_error "Google Play returned more than one base APK"
-        return 1
-      }
-      base_source=$apk
-    else
-      [[ "$split" =~ ^[A-Za-z0-9._-]+$ ]] || {
-        onceworld_source_error "Google Play returned unsafe split id: $split"
-        return 1
-      }
-      if awk -F '\t' -v id="$split" '$1 == id { found=1 } END { exit !found }' "$split_map"; then
-        onceworld_source_error "Google Play returned duplicate split id: $split"
-        return 1
-      fi
-      printf '%s\t%s\n' "$split" "$apk" >> "$split_map"
-    fi
-  done
-
-  [ -n "$base_source" ] || {
-    onceworld_source_error "Google Play split set has no base APK"
-    return 1
-  }
-  [ -n "$resolved_name" ] || {
-    onceworld_source_error "Google Play base APK has no version name"
-    return 1
-  }
-  [ -s "$split_map" ] || {
-    onceworld_source_error "Google Play split set has no configuration splits"
-    return 1
-  }
-  local expected_split="config.${ARCHITECTURE//-/_}"
-  awk -F '\t' -v id="$expected_split" '$1 == id { found=1 } END { exit !found }' "$split_map" || {
-    onceworld_source_error "Google Play split set is missing $expected_split"
-    return 1
-  }
-
-  if [ "$METADATA_SOURCE" = "google-play" ] \
-    && [ "$EXPECTED_VERSION_NAME" != "unknown" ] \
-    && [ "$resolved_name" != "$EXPECTED_VERSION_NAME" ]; then
-    onceworld_source_error "Google Play delivered $resolved_name but the listing advertised $EXPECTED_VERSION_NAME"
-    return 1
-  fi
-
-  cp "$base_source" "$ready_dir/base.apk"
-  jq -n \
-    --arg package "$resolved_package" \
-    --arg code "$resolved_code" \
-    --arg name "$resolved_name" \
-    '{package_name: $package, version_code: ($code | tonumber), version_name: $name,
-      split_apks: [{id: "base", file: "base.apk"}]}' \
-    > "$ready_dir/manifest.json"
-
-  local split_id split_source split_file manifest_tmp
-  while IFS=$'\t' read -r split_id split_source; do
-    split_file="${split_id}.apk"
-    cp "$split_source" "$ready_dir/$split_file"
-    manifest_tmp="$ready_dir/manifest.json.tmp"
-    jq --arg id "$split_id" --arg file "$split_file" \
-      '.split_apks += [{id: $id, file: $file}]' \
-      "$ready_dir/manifest.json" > "$manifest_tmp"
-    mv "$manifest_tmp" "$ready_dir/manifest.json"
-  done < <(LC_ALL=C sort "$split_map")
-  rm -f "$split_map"
-
-  printf 'VERSION_CODE=%q\nVERSION_NAME=%q\nSOURCE_KIND=%q\n' \
-    "$resolved_code" "$resolved_name" "google-play" \
-    > "$ready_dir/source.env"
+  python3 scripts/download-onceworld-play.py \
+    --package "$PACKAGE_NAME" \
+    --architecture "$ARCHITECTURE" \
+    --expected-version "$EXPECTED_VERSION_NAME" \
+    --metadata-source "$METADATA_SOURCE" \
+    --output "$ready_dir"
 )
 
 onceworld_prepare_apkpure() (
@@ -257,15 +140,6 @@ onceworld_commit_source() {
 }
 
 onceworld_fetch_source_main() {
-  SDK_ROOT=${ANDROID_HOME:-${ANDROID_SDK_ROOT:-/usr/local/lib/android/sdk}}
-  AAPT="$SDK_ROOT/build-tools/35.0.0/aapt"
-  if [ ! -x "$AAPT" ] || [ ! -x "$SDK_ROOT/build-tools/35.0.0/apksigner" ]; then
-    SDKMANAGER="$SDK_ROOT/cmdline-tools/latest/bin/sdkmanager"
-    test -x "$SDKMANAGER"
-    "$SDKMANAGER" 'build-tools;35.0.0' >/dev/null
-  fi
-  test -x "$AAPT"
-
   if onceworld_prepare_google_play; then
     onceworld_commit_source "$WORK/google-play-ready"
   else
