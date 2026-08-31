@@ -58,16 +58,27 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--package", required=True)
     parser.add_argument("--architecture", required=True)
+    parser.add_argument("--locale", default="en-US")
+    parser.add_argument("--account-email", default="")
     parser.add_argument("--expected-version", default="unknown")
     parser.add_argument("--metadata-source", required=True)
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
 
-    auth = ensure_auth(arch="arm64")
+    auth_arch = {"arm64-v8a": "arm64", "x86_64": "x86_64"}.get(args.architecture)
+    if not auth_arch:
+        raise RuntimeError(f"Unsupported Google Play architecture: {args.architecture}")
+    auth = ensure_auth(arch=auth_arch, email=args.account_email or None)
     if not auth:
         raise RuntimeError("Google Play authentication failed")
     app = get_details(args.package, auth)
-    delivery = get_delivery(args.package, app.version_code, auth, purchase(args.package, app.version_code, auth))
+    delivery = get_delivery(
+        args.package,
+        app.version_code,
+        auth,
+        purchase(args.package, app.version_code, auth),
+        locales=[args.locale],
+    )
     if delivery.additional_files:
         raise RuntimeError("Google Play returned OBB or asset files outside the APKS contract")
     if args.metadata_source == "google-play" and args.expected_version != "unknown" \

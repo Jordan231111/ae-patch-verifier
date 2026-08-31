@@ -4,7 +4,8 @@ This repository hosts the verifier UI and the short-lived GitHub Actions builder
 [verify-ae-modmenu.vercel.app](https://verify-ae-modmenu.vercel.app). It supports Another Eden and
 the ARM64 OnceWorld release while keeping their build inputs, release tags, and signing identities
 separate. OnceWorld resolves and downloads from Google Play first through an Aurora-compatible
-client; its established APKPure path remains a guarded fallback.
+client; its established APKPure path remains a guarded fallback. Another Eden uses Google Play
+exclusively for all four Global/Japan and ARM64/x86_64 targets.
 
 ## Build flow
 
@@ -18,6 +19,9 @@ client; its established APKPure path remains a guarded fallback.
 4. The workflow normalizes either source into the same manifest contract, patches the base, signs
    the complete split set, verifies the result, and publishes a short-lived release asset.
 5. The browser polls the same-origin status API and starts the download when the asset is ready.
+
+Another Eden follows the same parallel Play/module/patcher preparation but has no mirror fallback:
+if Google Play cannot authorize the selected package and ABI, that build fails explicitly.
 
 The janitor workflow removes temporary `lspatch-*` and `onceworld-lspatch-*` releases. Durable
 module releases live in their module repositories and are never removed by this janitor.
@@ -53,10 +57,14 @@ The workflows expect these GitHub secrets:
 - `ONCEWORLD_MODULE_REPO`
 - `GPLAYDL_API_KEY` (a persistent key created once with `gplaydl link`; the short pairing code is
   not used by CI)
+- `GPLAYDL_GLOBAL_EMAIL` (the dedicated Play account selected for Global/OnceWorld downloads)
+- `GPLAYDL_JAPAN_EMAIL` (a Play account that has acquired the Japan-region Another Eden package)
 
 Public, non-secret identity checks use these GitHub variables:
 
 - `AE_HOST_CERT_SHA256`
+- `AE_GLOBAL_SOURCE_CERT_SHA256`
+- `AE_JAPAN_SOURCE_CERT_SHA256`
 - `ONCEWORLD_HOST_CERT_SHA256`
 - `ONCEWORLD_SOURCE_CERT_SHA256`
 
@@ -76,8 +84,5 @@ to public checkouts. Both builders use retries, transfer fallbacks, archive vali
 package/version/ABI checks, and post-signing certificate verification before publishing an asset.
 The OnceWorld Play credential must belong to a dedicated account without payment methods; it is
 stored only as an Actions secret and is never exposed to Vercel or browser code.
-The local rehearsal path uses Android SDK `zipalign`/`apksigner` too; it requires
-`LSPATCH_JAR`, `ASHFUR_KEYSTORE`, `ASHFUR_ALIAS`, `ASHFUR_STORE_PASS`, `ASHFUR_KEY_PASS`, and
-`AE_HOST_CERT_SHA256` (plus `ANDROID_HOME`, unless `APKSIGNER` and `ZIPALIGN` are supplied). It
-refuses any patcher digest other than the pinned v1.2 release and validates the runtime config and
-every output certificate.
+Another Eden and OnceWorld production builds run only in GitHub Actions so Play credentials and
+signing material never enter Vercel or browser code.

@@ -80,6 +80,7 @@ jobs:
           EXPECTED_VERSION_NAME: ${{ inputs.expectedVersionName }}
           METADATA_SOURCE: ${{ inputs.metadataSource }}
           GPLAYDL_API_KEY: ${{ secrets.GPLAYDL_API_KEY }}
+          GPLAYDL_ACCOUNT_EMAIL: ${{ secrets.GPLAYDL_GLOBAL_EMAIL }}
           MODULE_SHA: ${{ inputs.moduleSha }}
           MODULE_ASSET: ${{ inputs.moduleAsset }}
           MODULE_REPO: ${{ secrets.ONCEWORLD_MODULE_REPO }}
@@ -98,7 +99,7 @@ jobs:
           WORK="$RUNNER_TEMP/onceworld-lspatch"
           mkdir -p "$WORK"/{tools,module,xapk,lspatch-out,bundle,signed-splits}
           export WORK PACKAGE_NAME ARCHITECTURE FALLBACK_VERSION_CODE FALLBACK_VERSION_NAME
-          export EXPECTED_VERSION_NAME METADATA_SOURCE GPLAYDL_API_KEY
+          export EXPECTED_VERSION_NAME METADATA_SOURCE GPLAYDL_API_KEY GPLAYDL_ACCOUNT_EMAIL
 
           (source scripts/fetch-onceworld-source.sh) &
           SOURCE_PID=$!

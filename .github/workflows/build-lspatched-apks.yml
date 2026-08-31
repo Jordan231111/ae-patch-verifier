@@ -1,6 +1,6 @@
 name: Build LSPatched APKS
 
-run-name: AE LSPatch ${{ inputs.region }} ${{ inputs.variant }} ${{ inputs.nonce }}
+run-name: AE ${{ inputs.region }} ${{ inputs.architecture }} ${{ inputs.expectedVersionName }} ${{ inputs.nonce }}
 
 on:
   workflow_dispatch:
@@ -9,23 +9,35 @@ on:
         description: Game region
         required: true
         type: choice
-        options:
-          - global
-          - japan
+        options: [global, japan]
       variant:
         description: Embedded module APK
         required: true
         type: choice
-        options:
-          - release
-          - debug
+        options: [release, debug]
+      moduleSource:
+        description: Module source contract
+        required: true
       moduleSha:
         description: Server-resolved module commit to embed
         required: true
       moduleRef:
         description: Branch the module commit was resolved from
-        required: false
-        default: main
+        required: true
+      packageName:
+        description: Google Play package
+        required: true
+      architecture:
+        description: Google Play ABI
+        required: true
+        type: choice
+        options: [arm64-v8a, x86_64]
+      expectedVersionName:
+        description: Google Play listing version
+        required: true
+      playLocale:
+        description: Google Play locale
+        required: true
       nonce:
         description: Request nonce from Vercel
         required: true
@@ -34,9 +46,9 @@ permissions:
   contents: write
 
 env:
-  LSPATCH_VERSION: "v1.2-487"
-  LSPATCH_JAR_URL: "https://github.com/JingMatrix/LSPatch/releases/download/v1.2/lspatch-v1.2-487-release.jar"
-  LSPATCH_JAR_SHA256: "d238fdc414d121b7fa454d8b4ccf420df3a8c97d563761861ff92bd9c5da2165"
+  LSPATCH_VERSION: v1.2-487
+  LSPATCH_JAR_URL: https://github.com/JingMatrix/LSPatch/releases/download/v1.2/lspatch-v1.2-487-release.jar
+  LSPATCH_JAR_SHA256: d238fdc414d121b7fa454d8b4ccf420df3a8c97d563761861ff92bd9c5da2165
 
 jobs:
   build:
@@ -49,454 +61,275 @@ jobs:
         with:
           fetch-depth: 1
 
-      # Resolve the module APK BEFORE any Android tooling. If the module repo already published a
-      # prebuilt APK for this commit (a durable module-<sha> release from its android.yml), download
-      # it (~2s) and skip the entire Android SDK + NDK + Gradle compile (~80s). If it's not there yet
-      # (e.g. the module was just pushed and its CI hasn't finished), fall back to compiling — so a
-      # build can never break, it just takes the old ~2-3 min that one time.
-      - name: Resolve module APK (prebuilt, else compile)
-        id: modapk
-        env:
-          MODULE_SHA: ${{ inputs.moduleSha }}
-          MODULE_REPO: ${{ secrets.AE_MODULE_REPO }}
-          GH_TOKEN: ${{ secrets.AE_MODULE_REPO_TOKEN }}
-          VARIANT: ${{ inputs.variant }}
-        run: |
-          set -euo pipefail
-          test -n "$MODULE_REPO"
-          test -n "$GH_TOKEN"
-          test -n "$MODULE_SHA"
-          WORK="$RUNNER_TEMP/ae-lspatch"
-          mkdir -p "$WORK"/{lspatch-out,bundle,xapk,prebuilt,module}
-          echo "WORK=$WORK" >> "$GITHUB_ENV"
-          echo "MODULE_SHA_SHORT=${MODULE_SHA:0:7}" >> "$GITHUB_ENV"
-          ASSET="app-${VARIANT}.apk"
-          if gh release download "module-${MODULE_SHA}" --repo "$MODULE_REPO" --pattern "$ASSET" --dir "$WORK/prebuilt" 2>/dev/null \
-             && [ -s "$WORK/prebuilt/$ASSET" ]; then
-            echo "MODULE_APK=$WORK/prebuilt/$ASSET" >> "$GITHUB_ENV"
-            echo "prebuilt=true" >> "$GITHUB_OUTPUT"
-            echo "[module] prebuilt $ASSET found for ${MODULE_SHA:0:7} -> skipping Android compile"
-          else
-            echo "prebuilt=false" >> "$GITHUB_OUTPUT"
-            echo "[module] no prebuilt for ${MODULE_SHA:0:7} -> compiling from source"
-          fi
-
       - name: Set up Java
         uses: actions/setup-java@v6.0.0
         with:
           distribution: temurin
-          java-version: "21"
+          java-version: '21'
 
-      - name: Set up Android signing tools
-        uses: android-actions/setup-android@v4.0.1
+      - name: Set up Python
+        uses: actions/setup-python@v6.1.0
         with:
-          packages: "platform-tools build-tools;35.0.0"
+          python-version: '3.12'
 
-      - name: Install module build dependencies
-        if: steps.modapk.outputs.prebuilt != 'true'
-        run: sdkmanager "platforms;android-35" "cmake;3.22.1" "ndk;25.2.9519653"
-
-      - name: Cache LSPatch
-        id: cache-tools
-        uses: actions/cache@v6.1.0
-        with:
-          path: tools-cache/lspatch.jar
-          key: lspatch-${{ env.LSPATCH_VERSION }}
-
-      - name: Download LSPatch (cache miss)
-        if: steps.cache-tools.outputs.cache-hit != 'true'
+      - name: Prepare Play source, module, and patcher in parallel
+        id: inputs
+        env:
+          REGION: ${{ inputs.region }}
+          PACKAGE_NAME: ${{ inputs.packageName }}
+          ARCHITECTURE: ${{ inputs.architecture }}
+          EXPECTED_VERSION_NAME: ${{ inputs.expectedVersionName }}
+          PLAY_LOCALE: ${{ inputs.playLocale }}
+          PLAY_ACCOUNT_EMAIL: ${{ inputs.region == 'japan' && secrets.GPLAYDL_JAPAN_EMAIL || secrets.GPLAYDL_GLOBAL_EMAIL }}
+          GPLAYDL_API_KEY: ${{ secrets.GPLAYDL_API_KEY }}
+          MODULE_SHA: ${{ inputs.moduleSha }}
+          MODULE_REPO: ${{ secrets.AE_MODULE_REPO }}
+          MODULE_ASSET: app-${{ inputs.variant }}.apk
+          GH_TOKEN: ${{ secrets.AE_MODULE_REPO_TOKEN }}
         run: |
-          set -euo pipefail
-          mkdir -p tools-cache
-          curl -L --fail --silent --show-error --connect-timeout 20 --max-time 120 \
-            -o tools-cache/lspatch.jar "$LSPATCH_JAR_URL"
+          set -Eeuo pipefail
+          [[ "$REGION" == 'global' || "$REGION" == 'japan' ]]
+          [[ "$PACKAGE_NAME" =~ ^[A-Za-z0-9._-]+$ ]]
+          [[ "$ARCHITECTURE" == 'arm64-v8a' || "$ARCHITECTURE" == 'x86_64' ]]
+          [[ "$MODULE_SHA" =~ ^[0-9a-f]{40}$ ]]
+          test -n "$EXPECTED_VERSION_NAME"
+          test -n "$PLAY_ACCOUNT_EMAIL"
+          test -n "$GPLAYDL_API_KEY"
+          test -n "$MODULE_REPO"
+          test -n "$GH_TOKEN"
 
-      - name: Prepare module source (shallow)
-        if: steps.modapk.outputs.prebuilt != 'true'
+          WORK="$RUNNER_TEMP/ae-lspatch"
+          mkdir -p "$WORK"/{bundle,lspatch-out,module,play,source,tools}
+
+          (
+            python3 -m pip install --disable-pip-version-check --no-compile --quiet 'gplaydl==4.2.1'
+            python3 scripts/download-play-apks.py \
+              --package "$PACKAGE_NAME" \
+              --architecture "$ARCHITECTURE" \
+              --locale "$PLAY_LOCALE" \
+              --account-email "$PLAY_ACCOUNT_EMAIL" \
+              --expected-version "$EXPECTED_VERSION_NAME" \
+              --metadata-source google-play \
+              --output "$WORK/source"
+          ) &
+          SOURCE_PID=$!
+
+          (
+            if gh release download "module-${MODULE_SHA}" \
+              --repo "$MODULE_REPO" \
+              --pattern "$MODULE_ASSET" \
+              --dir "$WORK/module" 2>/dev/null \
+              && [ -s "$WORK/module/$MODULE_ASSET" ]; then
+              printf '%s\n' "$WORK/module/$MODULE_ASSET" > "$WORK/module-apk.path"
+            fi
+          ) &
+          MODULE_PID=$!
+
+          curl -L --fail --silent --show-error \
+            --connect-timeout 20 --max-time 120 \
+            -o "$WORK/tools/lspatch.jar" "$LSPATCH_JAR_URL" &
+          PATCHER_PID=$!
+
+          wait "$SOURCE_PID"
+          wait "$MODULE_PID"
+          wait "$PATCHER_PID"
+          test -s "$WORK/source/manifest.json"
+          test -s "$WORK/tools/lspatch.jar"
+
+          if [ -s "$WORK/module-apk.path" ]; then
+            MODULE_APK=$(cat "$WORK/module-apk.path")
+            echo "MODULE_APK=$MODULE_APK" >> "$GITHUB_ENV"
+            echo "prebuilt=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "prebuilt=false" >> "$GITHUB_OUTPUT"
+          fi
+
+          source "$WORK/source/source.env"
+          {
+            echo "WORK=$WORK"
+            echo "PACKAGE_NAME=$PACKAGE_NAME"
+            echo "ARCHITECTURE=$ARCHITECTURE"
+            echo "MODULE_SHA_SHORT=${MODULE_SHA:0:7}"
+            echo "VERSION_CODE=$VERSION_CODE"
+            echo "VERSION_NAME=$VERSION_NAME"
+            echo "SOURCE_KIND=google-play"
+          } >> "$GITHUB_ENV"
+
+      - name: Compile module when no prebuilt exists
+        if: steps.inputs.outputs.prebuilt != 'true'
         env:
           MODULE_SHA: ${{ inputs.moduleSha }}
           MODULE_REF: ${{ inputs.moduleRef }}
           MODULE_REPO: ${{ secrets.AE_MODULE_REPO }}
           GH_TOKEN: ${{ secrets.AE_MODULE_REPO_TOKEN }}
+          VARIANT: ${{ inputs.variant }}
         run: |
-          set -euo pipefail
-
-          test -n "$MODULE_REPO"
-          test -n "$GH_TOKEN"
-          test -n "$MODULE_SHA"
-
-          WORK="$RUNNER_TEMP/ae-lspatch"
-          mkdir -p "$WORK"/{lspatch-out,bundle,xapk}
-
-          git init -q "$WORK/module"
-          git -C "$WORK/module" config core.fsmonitor false
-          git -C "$WORK/module" remote add origin "https://x-access-token:${GH_TOKEN}@github.com/${MODULE_REPO}.git"
-          # Fetch exactly the pinned commit at depth 1. GitHub lets us fetch any
-          # commit reachable from an advertised ref, so this works no matter which
-          # branch the commit lives on (main, houdini-x64-rewrite, ...) and pulls a
-          # single commit -- maximally cheap. If the direct SHA fetch is ever
-          # refused, shallow-fetch the source branch instead. Either path stays
-          # shallow; we never --unshallow (which would download the full history).
-          if ! git -C "$WORK/module" fetch --depth 1 origin "$MODULE_SHA"; then
-            git -C "$WORK/module" fetch --depth 50 origin "${MODULE_REF:-HEAD}"
+          set -Eeuo pipefail
+          SDKMANAGER="${ANDROID_HOME:-/usr/local/lib/android/sdk}/cmdline-tools/latest/bin/sdkmanager"
+          "$SDKMANAGER" 'platforms;android-35' 'build-tools;35.0.0' 'cmake;3.22.1' 'ndk;25.2.9519653' >/dev/null
+          git init -q "$WORK/module-src"
+          git -C "$WORK/module-src" remote add origin "https://x-access-token:${GH_TOKEN}@github.com/${MODULE_REPO}.git"
+          if ! git -C "$WORK/module-src" fetch --depth 1 origin "$MODULE_SHA"; then
+            git -C "$WORK/module-src" fetch --depth 50 origin "$MODULE_REF"
           fi
-          git -C "$WORK/module" checkout --detach "$MODULE_SHA"
+          git -C "$WORK/module-src" checkout --detach "$MODULE_SHA"
+          chmod +x "$WORK/module-src/gradlew"
+          case "$VARIANT" in
+            debug)
+              (cd "$WORK/module-src" && ./gradlew :app:assembleDebug -q)
+              MODULE_APK="$WORK/module-src/app/build/outputs/apk/debug/app-debug.apk"
+              ;;
+            *)
+              (cd "$WORK/module-src" && ./gradlew :app:assembleRelease -q)
+              MODULE_APK="$WORK/module-src/app/build/outputs/apk/release/app-release.apk"
+              ;;
+          esac
+          test -s "$MODULE_APK"
+          echo "MODULE_APK=$MODULE_APK" >> "$GITHUB_ENV"
 
-          MODULE_SHA_SHORT="$(git -C "$WORK/module" rev-parse --short=7 HEAD)"
-          chmod +x "$WORK/module/gradlew"
-
-          CACHE_KEY="$(find "$WORK/module" -maxdepth 3 -type f \( -name "*.gradle" -o -name "*.gradle.kts" -o -name "gradle-wrapper.properties" -o -name "libs.versions.toml" \) -print0 | sort -z | xargs -0 sha256sum | sha256sum | cut -d ' ' -f 1)"
-          echo "CACHE_KEY=$CACHE_KEY" >> "$GITHUB_ENV"
-          echo "WORK=$WORK" >> "$GITHUB_ENV"
-          echo "MODULE_SHA_SHORT=$MODULE_SHA_SHORT" >> "$GITHUB_ENV"
-
-      - name: Cache module Gradle files
-        if: steps.modapk.outputs.prebuilt != 'true'
-        uses: actions/cache@v6.1.0
-        with:
-          path: |
-            ~/.gradle/caches
-            ~/.gradle/wrapper
-            ${{ env.WORK }}/module/app/.cxx
-            ${{ env.WORK }}/module/.gradle
-            ${{ env.WORK }}/module/app/build/intermediates/cxx
-          key: ae-module-gradle-${{ runner.os }}-${{ inputs.variant }}-${{ env.CACHE_KEY }}
-          restore-keys: |
-            ae-module-gradle-${{ runner.os }}-${{ inputs.variant }}-
-            ae-module-gradle-${{ runner.os }}-
-
-      - name: Build APKS
+      - name: Patch, sign, and package
         env:
           REGION: ${{ inputs.region }}
           VARIANT: ${{ inputs.variant }}
+          MODULE_SOURCE: ${{ inputs.moduleSource }}
           NONCE: ${{ inputs.nonce }}
-          MODULE_REF: ${{ inputs.moduleRef }}
-          # AE intentionally uses the established Ashfur identity. OnceWorld uses LSPatch's
-          # default host identity in its own workflow; never substitute one key for the other.
+          EXPECTED_SOURCE_CERT: ${{ inputs.region == 'japan' && vars.AE_JAPAN_SOURCE_CERT_SHA256 || vars.AE_GLOBAL_SOURCE_CERT_SHA256 }}
           AE_HOST_KEYSTORE_BASE64: ${{ secrets.AE_HOST_KEYSTORE_BASE64 }}
           AE_HOST_KEYSTORE_PASSWORD: ${{ secrets.AE_HOST_KEYSTORE_PASSWORD }}
           AE_HOST_KEY_ALIAS: ${{ secrets.AE_HOST_KEY_ALIAS }}
-          AE_HOST_CERT_SHA256: ${{ vars.AE_HOST_CERT_SHA256 }}
-          GRADLE_OPTS: "-Dorg.gradle.daemon=false -Dorg.gradle.parallel=true -Dorg.gradle.caching=true -Dorg.gradle.configureondemand=true"
+          EXPECTED_HOST_CERT: ${{ vars.AE_HOST_CERT_SHA256 }}
         run: |
-          set -euo pipefail
-
+          set -Eeuo pipefail
+          trap 'status=$?; echo "Failed at workflow script line $LINENO: $BASH_COMMAND (exit $status)" >&2; exit $status' ERR
+          test -s "$MODULE_APK"
           test -n "$AE_HOST_KEYSTORE_BASE64"
           test -n "$AE_HOST_KEYSTORE_PASSWORD"
           test -n "$AE_HOST_KEY_ALIAS"
-          test -n "$AE_HOST_CERT_SHA256"
-          # Recreate the encrypted repository secret only inside this disposable runner.
+          test -n "$EXPECTED_SOURCE_CERT"
+          test -n "$EXPECTED_HOST_CERT"
+
+          case "$REGION" in
+            japan) DEFAULT_NAME=AnotherEden_Japan ;;
+            *) DEFAULT_NAME=AnotherEden_Global ;;
+          esac
+          case "$ARCHITECTURE" in
+            x86_64) TARGET_SUFFIX=_emulator-x86_64 ;;
+            *) TARGET_SUFFIX='' ;;
+          esac
+
           KEYSTORE="$RUNNER_TEMP/ae-host-signing.jks"
           printf '%s' "$AE_HOST_KEYSTORE_BASE64" | base64 --decode > "$KEYSTORE"
           chmod 600 "$KEYSTORE"
           test -s "$KEYSTORE"
-          ACTUAL_HOST_CERT_SHA256="$(keytool -list -v \
-            -keystore "$KEYSTORE" \
-            -storepass "$AE_HOST_KEYSTORE_PASSWORD" \
-            -alias "$AE_HOST_KEY_ALIAS" 2>/dev/null \
-            | awk -F': ' '/SHA256:/{gsub(":", "", $2); print tolower($2); exit}')"
-          if [ "$ACTUAL_HOST_CERT_SHA256" != "$AE_HOST_CERT_SHA256" ]; then
-            echo "::error::AE host signing certificate does not match the established identity."
-            exit 1
-          fi
 
-          case "$REGION" in
-            japan)
-              PACKAGE_NAME="net.wrightflyer.anothereden"
-              DEFAULT_NAME="AnotherEden_Japan"
-              ;;
-            global|*)
-              PACKAGE_NAME="games.wfs.anothereden"
-              DEFAULT_NAME="AnotherEden_Global"
-              ;;
-          esac
-
-          # APKPure recently re-enabled the 32-bit armeabi-v7a variant, and `?version=latest` now
-          # resolves to that 32-bit build. A 32-bit XAPK won't install on arm64-only emulators
-          # (INSTALL_FAILED_NO_MATCHING_ABIS) and makes LSPatch's ShadowHook init fail on real
-          # arm64 devices, so we must pin arm64-v8a. APKPure ignores the `nc` arch filter whenever
-          # `version=latest` is used, so resolve the latest versionCode first, then pin the ABI.
-          # (The `version=latest` 302 points at a CDN file whose LAST path segment, before the `?`,
-          # is base64url("<pkg>_<versionCode>_<hash>"). The host/path is NOT stable -- it has moved
-          # from d.apkpure.net/b/XAPK/<token> to data.winudf.com/XAPK/<token> -- so we extract the
-          # token as "last path segment" with shell expansion, never a fixed-path regex.)
-          # No `sv` (device SDK) param on purpose: APKPure rejects an sv below the app's minSdk, so
-          # hardcoding it would break if the game raises minSdk; omitting it serves arm64 regardless.
-          APKPURE_ABI="arm64-v8a"
-          echo "[xapk] resolving latest versionCode for $PACKAGE_NAME ..."
-          # Resolve in a short retry loop. This single request previously had no retry, so a
-          # transient 5xx/timeout from the redirect endpoint failed the entire build; the actual
-          # file download (below) already retries, this just brings the resolve step up to parity.
-          VERSION_CODE=""
-          LATEST_LOC=""
-          XAPK_TOKEN=""
-          XAPK_DECODED=""
-          rattempt=0
-          until [ "$rattempt" -ge 5 ]; do
-            rattempt=$((rattempt + 1))
-            LATEST_LOC="$(curl -sS -m 30 -A "Mozilla/5.0 AE Patch Builder" -o /dev/null -D - \
-              "https://d.apkpure.net/b/XAPK/$PACKAGE_NAME?version=latest" \
-              | tr -d '\r' | awk 'tolower($1)=="location:"{print $2; exit}' || true)"
-            # Token = last path segment before the query string, via shell expansion (not a fixed
-            # path regex) so it survives APKPure moving the file between hosts/paths.
-            XAPK_TOKEN="${LATEST_LOC%%\?*}"
-            XAPK_TOKEN="${XAPK_TOKEN##*/}"
-            XAPK_B64="$(printf '%s' "$XAPK_TOKEN" | sed 'y#-_#+/#')"
-            while [ $(( ${#XAPK_B64} % 4 )) -ne 0 ]; do XAPK_B64="${XAPK_B64}="; done
-            XAPK_DECODED="$(printf '%s' "$XAPK_B64" | base64 -d 2>/dev/null || true)"
-            CANDIDATE="$(printf '%s' "$XAPK_DECODED" | awk -F_ '{print $(NF-1)}')"
-            case "$CANDIDATE" in
-              ''|*[!0-9]*)
-                echo "[xapk] resolve attempt $rattempt did not yield a versionCode (loc='$LATEST_LOC'); retrying in 3s..."
-                sleep 3
-                ;;
-              *)
-                VERSION_CODE="$CANDIDATE"
-                break
-                ;;
-            esac
+          MANIFEST="$WORK/source/manifest.json"
+          jq -e --arg package "$PACKAGE_NAME" --arg code "$VERSION_CODE" \
+            '.package_name == $package and (.version_code | tostring) == $code' "$MANIFEST" >/dev/null
+          EXPECTED_SPLIT="config.${ARCHITECTURE//-/_}"
+          jq -e --arg split "$EXPECTED_SPLIT" 'any(.split_apks[]; .id == $split)' "$MANIFEST" >/dev/null
+          BASE_NAME=$(jq -r '.split_apks[] | select(.id == "base") | .file' "$MANIFEST")
+          [[ "$BASE_NAME" =~ ^[A-Za-z0-9._-]+\.apk$ ]]
+          BASE_APK="$WORK/source/$BASE_NAME"
+          test -s "$BASE_APK"
+          mapfile -t SPLIT_NAMES < <(jq -r '.split_apks[] | select(.id != "base") | .file' "$MANIFEST")
+          [ "${#SPLIT_NAMES[@]}" -gt 0 ]
+          for split_name in "${SPLIT_NAMES[@]}"; do
+            [[ "$split_name" =~ ^[A-Za-z0-9._-]+\.apk$ ]]
+            test -s "$WORK/source/$split_name"
           done
-          if [ -z "$VERSION_CODE" ]; then
-            echo "::error::Could not resolve latest versionCode from APKPure after $rattempt attempts (token='$XAPK_TOKEN' decoded='$XAPK_DECODED' loc='$LATEST_LOC')"
-            exit 1
+
+          SDK_ROOT="${ANDROID_HOME:-/usr/local/lib/android/sdk}"
+          APKSIGNER="$SDK_ROOT/build-tools/35.0.0/apksigner"
+          ZIPALIGN="$SDK_ROOT/build-tools/35.0.0/zipalign"
+          if [ ! -x "$APKSIGNER" ] || [ ! -x "$ZIPALIGN" ]; then
+            "$SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" 'build-tools;35.0.0' >/dev/null
           fi
-          XAPK_URL="https://d.apkpure.net/b/XAPK/$PACKAGE_NAME?versionCode=$VERSION_CODE&nc=$APKPURE_ABI"
-          echo "[xapk] latest versionCode=$VERSION_CODE, pinned ABI=$APKPURE_ABI"
-          echo "[xapk] url=$XAPK_URL"
+          test -x "$APKSIGNER"
+          test -x "$ZIPALIGN"
 
-          test -n "$WORK"
-
-          # Start the XAPK download in the background of THIS shell so we can
-          # genuinely wait for it later. The previous design used a separate step
-          # and lost the child PID across the shell boundary.
-          #
-          # APKPure throttles single connections to ~750 KB/s. aria2c with 16
-          # parallel connections + 4 MB splits typically gets 4-8x speedup.
-          XAPK_FILE="$WORK/source.xapk"
-          XAPK_DIR="$(dirname "$XAPK_FILE")"
-          XAPK_NAME="$(basename "$XAPK_FILE")"
-          rm -f "$XAPK_FILE" "$XAPK_FILE.aria2"
-          (
-            set +e
-            attempt=0
-            until [ "$attempt" -ge 5 ]; do
-              attempt=$((attempt + 1))
-              echo "[xapk] attempt $attempt -> $XAPK_URL"
-              if command -v aria2c >/dev/null 2>&1; then
-                if aria2c \
-                    --console-log-level=warn \
-                    --summary-interval=0 \
-                    --max-connection-per-server=16 \
-                    --split=16 \
-                    --min-split-size=2M \
-                    --file-allocation=none \
-                    --max-tries=3 \
-                    --retry-wait=3 \
-                    --connect-timeout=30 \
-                    --timeout=120 \
-                    --allow-overwrite=true \
-                    --auto-file-renaming=false \
-                    --user-agent="Mozilla/5.0 AE Patch Builder" \
-                    --dir="$XAPK_DIR" \
-                    --out="$XAPK_NAME" \
-                    "$XAPK_URL"; then
-                  echo "[xapk] attempt $attempt succeeded (aria2c)"
-                  exit 0
-                fi
-              else
-                if curl -L --fail --silent --show-error \
-                     --connect-timeout 30 --max-time 600 \
-                     -A "Mozilla/5.0 AE Patch Builder" \
-                     -o "$XAPK_FILE" \
-                     "$XAPK_URL"; then
-                  echo "[xapk] attempt $attempt succeeded (curl)"
-                  exit 0
-                fi
-              fi
-              rm -f "$XAPK_FILE" "$XAPK_FILE.aria2"
-              echo "[xapk] attempt $attempt failed, retrying after 5s..."
-              sleep 5
-            done
-            echo "[xapk] all attempts failed" >&2
-            exit 1
-          ) &
-          XAPK_PID=$!
-
-          # MODULE_APK is already set (via $GITHUB_ENV) when a prebuilt was downloaded; only
-          # compile from source on the fallback path.
-          if [ -z "${MODULE_APK:-}" ]; then
-            case "$VARIANT" in
-              debug)
-                (cd "$WORK/module" && ./gradlew :app:assembleDebug -q)
-                MODULE_APK="$WORK/module/app/build/outputs/apk/debug/app-debug.apk"
-                ;;
-              release|*)
-                (cd "$WORK/module" && ./gradlew :app:assembleRelease -q)
-                MODULE_APK="$WORK/module/app/build/outputs/apk/release/app-release.apk"
-                ;;
-            esac
-          fi
-          test -f "$MODULE_APK"
-          echo "Using module APK: $MODULE_APK"
-          echo "Using module commit: $MODULE_SHA_SHORT"
-          sha256sum "$MODULE_APK"
+          SOURCE_CERT_OUTPUT="$WORK/source-certificates.txt"
+          "$APKSIGNER" verify --print-certs "$BASE_APK" > "$SOURCE_CERT_OUTPUT"
+          SOURCE_CERT=$(awk -F': ' \
+            '/certificate SHA-256 digest:/ && !digest {digest=$NF} END {print digest}' \
+            "$SOURCE_CERT_OUTPUT" | tr -d ':' | tr '[:upper:]' '[:lower:]')
+          EXPECTED_SOURCE_CERT=$(printf '%s' "$EXPECTED_SOURCE_CERT" | tr -d ':' | tr '[:upper:]' '[:lower:]')
+          [ "$SOURCE_CERT" = "$EXPECTED_SOURCE_CERT" ]
 
           MODULE_PROP=$(unzip -p "$MODULE_APK" META-INF/xposed/module.prop)
           MODULE_ID=$(awk -F= '$1 == "id" { print $2; exit }' <<< "$MODULE_PROP")
           [[ "$MODULE_ID" =~ ^[A-Za-z0-9._-]+$ ]]
-          if [ "$MODULE_REF" = "main" ]; then
-            # `main` is API-102-only. Keep the separate emulator branch backward compatible.
+          test -n "$(unzip -Z1 "$MODULE_APK" | grep "^lib/${ARCHITECTURE}/.*\.so$")"
+          if [ "$MODULE_SOURCE" = main ]; then
             MODULE_ENTRIES=$(unzip -Z1 "$MODULE_APK")
             grep -Fxq 'META-INF/xposed/java_init.list' <<< "$MODULE_ENTRIES"
             grep -Fxq 'META-INF/xposed/scope.list' <<< "$MODULE_ENTRIES"
             ! grep -Fxq 'assets/xposed_init' <<< "$MODULE_ENTRIES"
             grep -Fxq 'minApiVersion=102' <<< "$MODULE_PROP"
             grep -Fxq 'targetApiVersion=102' <<< "$MODULE_PROP"
-            JAVA_ENTRY_COUNT=$(unzip -p "$MODULE_APK" META-INF/xposed/java_init.list \
-              | awk 'NF && $1 !~ /^#/ { count++ } END { print count + 0 }')
-            [ "$JAVA_ENTRY_COUNT" -eq 1 ]
-            JAVA_ENTRY=$(unzip -p "$MODULE_APK" META-INF/xposed/java_init.list \
-              | awk 'NF && $1 !~ /^#/ { print; exit }' | tr -d '\r')
-            unzip -p "$MODULE_APK" 'classes*.dex' > "$WORK/module-dex.bin"
-            ENTRY_PATH=${JAVA_ENTRY//./\/}
-            LC_ALL=C grep -aFq "$ENTRY_PATH" "$WORK/module-dex.bin"
-            if LC_ALL=C grep -aEq 'de[/\.]robv[/\.]android[/\.]xposed' "$WORK/module-dex.bin"; then
-              echo "::error::Modern main module contains a legacy XposedBridge reference."
-              exit 1
-            fi
           fi
 
-          # Wait for the parallel XAPK download (same shell, so this works).
-          echo "Waiting for XAPK download (pid $XAPK_PID)..."
-          if ! wait "$XAPK_PID"; then
-            echo "::error::APKPure XAPK download failed after 5 attempts."
-            exit 1
-          fi
-
-          # Archive integrity and the manifest contract are reliable checks; an arbitrary size
-          # floor would only make a future smaller distribution fail for no safety benefit.
-          test -s "$XAPK_FILE" || { echo "::error::source.xapk is empty"; exit 1; }
-          SIGN="$(head -c 4 "$XAPK_FILE" | od -An -tx1 | tr -d ' \n')"
-          if [ "$SIGN" != "504b0304" ]; then
-            echo "::error::source.xapk does not have a ZIP signature (got $SIGN)."
-            exit 1
-          fi
-          unzip -tq "$XAPK_FILE" >/dev/null
-          unzip -q -o "$XAPK_FILE" -d "$WORK/xapk"
-
-          # Select base/splits from APKPure's manifest rather than guessing from filenames. This
-          # tolerates future asset-pack additions and renamed split files without misidentifying
-          # one of them as the host base.
-          MANIFEST="$WORK/xapk/manifest.json"
-          test -s "$MANIFEST"
-          jq -e --arg package "$PACKAGE_NAME" --arg code "$VERSION_CODE" \
-            '.package_name == $package and (.version_code | tostring) == $code' "$MANIFEST" >/dev/null
-          jq -e 'any(.split_apks[]; .id == "config.arm64_v8a")' "$MANIFEST" >/dev/null
-          BASE_NAME=$(jq -r '.split_apks[] | select(.id == "base") | .file' "$MANIFEST")
-          [[ "$BASE_NAME" =~ ^[A-Za-z0-9._-]+\.apk$ ]]
-          BASE_APK="$WORK/xapk/$BASE_NAME"
-          test -s "$BASE_APK"
-          mapfile -t SPLIT_NAMES < <(jq -r '.split_apks[] | select(.id != "base") | .file' "$MANIFEST")
-          [ "${#SPLIT_NAMES[@]}" -gt 0 ]
-          for split_name in "${SPLIT_NAMES[@]}"; do
-            [[ "$split_name" =~ ^[A-Za-z0-9._-]+\.apk$ ]]
-            test -s "$WORK/xapk/$split_name"
-          done
-
-          LSPATCH_JAR="$PWD/tools-cache/lspatch.jar"
-          test -s "$LSPATCH_JAR"
+          LSPATCH_JAR="$WORK/tools/lspatch.jar"
           [ "$(sha256sum "$LSPATCH_JAR" | awk '{print $1}')" = "$LSPATCH_JAR_SHA256" ]
           unzip -tq "$LSPATCH_JAR" >/dev/null
-          SDK_ROOT="${ANDROID_HOME:-/usr/local/lib/android/sdk}"
-          APKSIGNER="$SDK_ROOT/build-tools/35.0.0/apksigner"
-          ZIPALIGN="$SDK_ROOT/build-tools/35.0.0/zipalign"
-          test -x "$APKSIGNER"
-          test -x "$ZIPALIGN"
-
           java -jar "$LSPATCH_JAR" \
             -m "$MODULE_APK" \
             -k "$KEYSTORE" "$AE_HOST_KEYSTORE_PASSWORD" "$AE_HOST_KEY_ALIAS" "$AE_HOST_KEYSTORE_PASSWORD" \
-            -l 2 \
-            -f \
-            -o "$WORK/lspatch-out" \
-            "$BASE_APK"
+            -l 2 -f -o "$WORK/lspatch-out" "$BASE_APK"
 
-          mapfile -t PATCHED_BASES < <(find "$WORK/lspatch-out" -maxdepth 1 -type f -name "*-lspatched.apk")
+          mapfile -t PATCHED_BASES < <(find "$WORK/lspatch-out" -maxdepth 1 -type f -name '*-lspatched.apk')
           [ "${#PATCHED_BASES[@]}" -eq 1 ]
-          LSPATCHED_BASE="${PATCHED_BASES[0]}"
-
-          # Android 15+ may enforce 16 KiB native-library alignment. Align before the final
-          # signature, then use only the SDK signer for both base and splits.
           ALIGNED_BASE="$WORK/base-aligned.apk"
           FINAL_BASE="$WORK/bundle/$BASE_NAME"
-          "$ZIPALIGN" -f -P 16 4 "$LSPATCHED_BASE" "$ALIGNED_BASE"
+          "$ZIPALIGN" -f -P 16 4 "${PATCHED_BASES[0]}" "$ALIGNED_BASE"
           "$APKSIGNER" sign \
-            --v4-signing-enabled false \
-            --alignment-preserved true \
-            --ks "$KEYSTORE" \
-            --ks-pass "pass:$AE_HOST_KEYSTORE_PASSWORD" \
-            --ks-key-alias "$AE_HOST_KEY_ALIAS" \
-            --key-pass "pass:$AE_HOST_KEYSTORE_PASSWORD" \
-            --out "$FINAL_BASE" \
-            "$ALIGNED_BASE"
+            --v4-signing-enabled false --alignment-preserved true \
+            --ks "$KEYSTORE" --ks-pass "pass:$AE_HOST_KEYSTORE_PASSWORD" \
+            --ks-key-alias "$AE_HOST_KEY_ALIAS" --key-pass "pass:$AE_HOST_KEYSTORE_PASSWORD" \
+            --out "$FINAL_BASE" "$ALIGNED_BASE"
           rm -f "$ALIGNED_BASE"
 
           FINAL_ENTRIES=("$BASE_NAME")
           for split_name in "${SPLIT_NAMES[@]}"; do
             "$APKSIGNER" sign \
               --v4-signing-enabled false \
-              --ks "$KEYSTORE" \
-              --ks-pass "pass:$AE_HOST_KEYSTORE_PASSWORD" \
-              --ks-key-alias "$AE_HOST_KEY_ALIAS" \
-              --key-pass "pass:$AE_HOST_KEYSTORE_PASSWORD" \
-              --out "$WORK/bundle/$split_name" \
-              "$WORK/xapk/$split_name"
+              --ks "$KEYSTORE" --ks-pass "pass:$AE_HOST_KEYSTORE_PASSWORD" \
+              --ks-key-alias "$AE_HOST_KEY_ALIAS" --key-pass "pass:$AE_HOST_KEYSTORE_PASSWORD" \
+              --out "$WORK/bundle/$split_name" "$WORK/source/$split_name"
             FINAL_ENTRIES+=("$split_name")
           done
           cp "$MANIFEST" "$WORK/bundle/manifest.json"
 
-          # Every installable split must retain the established host identity.
-          for apk_name in "${FINAL_ENTRIES[@]}"; do
-            CERT_OUTPUT="$WORK/${apk_name}.certificates.txt"
-            "$APKSIGNER" verify --print-certs "$WORK/bundle/$apk_name" > "$CERT_OUTPUT"
-            CERT=$(awk -F': ' \
-              '/certificate SHA-256 digest:/ && !digest {digest=$NF} END {print digest}' \
-              "$CERT_OUTPUT" | tr -d ':' | tr '[:upper:]' '[:lower:]')
-            [ "$CERT" = "$ACTUAL_HOST_CERT_SHA256" ]
-          done
+          FINAL_CERT_OUTPUT="$WORK/final-certificates.txt"
+          "$APKSIGNER" verify --print-certs "$FINAL_BASE" > "$FINAL_CERT_OUTPUT"
+          FINAL_CERT=$(awk -F': ' \
+            '/certificate SHA-256 digest:/ && !digest {digest=$NF} END {print digest}' \
+            "$FINAL_CERT_OUTPUT" | tr -d ':' | tr '[:upper:]' '[:lower:]')
+          EXPECTED_HOST_CERT=$(printf '%s' "$EXPECTED_HOST_CERT" | tr -d ':' | tr '[:upper:]' '[:lower:]')
+          [ "$FINAL_CERT" = "$EXPECTED_HOST_CERT" ]
 
-          # Prove that v1.2/Vector embedded the exact module and untouched origin we selected.
           LSPATCH_CONFIG=$(unzip -p "$FINAL_BASE" assets/lspatch/config.json)
           jq -e '.useManager == false and .sigBypassLevel == 2
             and .lspConfig.API_CODE == 102
             and .lspConfig.VERSION_CODE == 487
             and .lspConfig.VERSION_NAME == "1.2"' <<< "$LSPATCH_CONFIG" >/dev/null
-          MODULE_SHA=$(sha256sum "$MODULE_APK" | awk '{print $1}')
-          EMBEDDED_MODULE_SHA=$(unzip -p "$FINAL_BASE" \
-            "assets/lspatch/modules/${MODULE_ID}.apk" | sha256sum | awk '{print $1}')
-          SOURCE_BASE_SHA=$(sha256sum "$BASE_APK" | awk '{print $1}')
-          EMBEDDED_ORIGIN_SHA=$(unzip -p "$FINAL_BASE" \
-            assets/lspatch/origin.apk | sha256sum | awk '{print $1}')
-          [ "$MODULE_SHA" = "$EMBEDDED_MODULE_SHA" ]
-          [ "$SOURCE_BASE_SHA" = "$EMBEDDED_ORIGIN_SHA" ]
-          FINAL_BASE_ENTRIES=$(unzip -Z1 "$FINAL_BASE")
-          grep -Fxq 'assets/lspatch/so/arm64-v8a/liblspatch.so' <<< "$FINAL_BASE_ENTRIES"
 
           for split_name in "${SPLIT_NAMES[@]}"; do
             "$ZIPALIGN" -c -P 16 -v 4 "$WORK/bundle/$split_name" >/dev/null
           done
           BASE_ALIGNMENT="$WORK/base-alignment.txt"
           "$ZIPALIGN" -c -P 16 -v 4 "$FINAL_BASE" > "$BASE_ALIGNMENT" 2>&1 || true
-          grep -Eq 'assets/lspatch/so/arm64-v8a/liblspatch\.so \(OK\)' "$BASE_ALIGNMENT"
-          UNEXPECTED_BAD=$(grep 'BAD' "$BASE_ALIGNMENT" \
-            | grep -Ev 'assets/lspatch/so/(armeabi-v7a|x86|x86_64)/liblspatch\.so \(BAD - ' || true)
+          grep -Fq "assets/lspatch/so/${ARCHITECTURE}/liblspatch.so (OK)" "$BASE_ALIGNMENT"
+          UNEXPECTED_BAD=$(grep 'BAD' "$BASE_ALIGNMENT" | grep -v 'assets/lspatch/so/' || true)
           test -z "$UNEXPECTED_BAD"
 
-          OUT="$PWD/${DEFAULT_NAME}_LSPatched_Ashfur_${VARIANT}_${MODULE_SHA_SHORT}_${NONCE}.apks"
+          OUT="$PWD/${DEFAULT_NAME}_${VERSION_NAME}_LSPatched_Ashfur${TARGET_SUFFIX}_${VARIANT}_${MODULE_SHA_SHORT}_${NONCE}.apks"
           (cd "$WORK/bundle" && zip -q -0 "$OUT" "${FINAL_ENTRIES[@]}" manifest.json)
-          echo "OUT=$OUT" >> "$GITHUB_ENV"
-          echo "PACKAGE_NAME=$PACKAGE_NAME" >> "$GITHUB_ENV"
-          echo "MODULE_SHA_SHORT=$MODULE_SHA_SHORT" >> "$GITHUB_ENV"
+          unzip -tq "$OUT" >/dev/null
+          {
+            echo "OUT=$OUT"
+            echo "DEFAULT_NAME=$DEFAULT_NAME"
+            echo "TARGET_SUFFIX=$TARGET_SUFFIX"
+          } >> "$GITHUB_ENV"
 
       - name: Publish short-lived release
         env:
@@ -509,5 +342,5 @@ jobs:
           TAG="lspatch-${NONCE}"
           gh release create "$TAG" "$OUT#$(basename "$OUT")" \
             --repo "$GITHUB_REPOSITORY" \
-            --title "LSPatched APKS ${REGION} ${VARIANT} ${NONCE}" \
-            --notes "Temporary personal LSPatch build for ${PACKAGE_NAME}. Module commit: ${MODULE_SHA_SHORT}. The lspatch-janitor workflow purges this within ~30 minutes."
+            --title "Another Eden ${VERSION_NAME} ${REGION} ${ARCHITECTURE}" \
+            --notes "Temporary Google Play LSPatch build for ${PACKAGE_NAME}. ABI ${ARCHITECTURE}. Module ${MODULE_SHA_SHORT}. Automatically removed by the lspatch janitor."

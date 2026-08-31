@@ -26,13 +26,19 @@ onceworld_prepare_google_play() (
   fi
 
   local ready_dir="$WORK/google-play-ready"
+  local account_args=()
   mkdir -p "$ready_dir"
+  if [ -n "${GPLAYDL_ACCOUNT_EMAIL:-}" ]; then
+    account_args=(--account-email "$GPLAYDL_ACCOUNT_EMAIL")
+  fi
 
   echo "[source] trying Google Play first with parallel compressed CDN transfers"
   python3 -m pip install --disable-pip-version-check --no-compile --quiet 'gplaydl==4.2.1'
-  python3 scripts/download-onceworld-play.py \
+  python3 scripts/download-play-apks.py \
     --package "$PACKAGE_NAME" \
     --architecture "$ARCHITECTURE" \
+    --locale en-US \
+    "${account_args[@]}" \
     --expected-version "$EXPECTED_VERSION_NAME" \
     --metadata-source "$METADATA_SOURCE" \
     --output "$ready_dir"

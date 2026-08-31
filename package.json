@@ -6,7 +6,7 @@
     "serve": "vercel dev",
     "check": "npm run check:syntax && npm run check:sources && npm run check:contracts",
     "check:syntax": "find api scripts -name '*.js' -type f -print0 | xargs -0 -n1 node --check",
-    "check:sources": "bash -n scripts/fetch-onceworld-source.sh && python3 -c \"compile(open('scripts/download-onceworld-play.py').read(), 'scripts/download-onceworld-play.py', 'exec')\"",
-    "check:contracts": "node scripts/check-modern-onceworld.js"
+    "check:sources": "bash -n scripts/fetch-onceworld-source.sh && python3 -c \"compile(open('scripts/download-play-apks.py').read(), 'scripts/download-play-apks.py', 'exec')\"",
+    "check:contracts": "node scripts/check-modern-onceworld.js && node scripts/check-ae-google-play.js"
   }
 }
