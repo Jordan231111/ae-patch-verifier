@@ -4,8 +4,8 @@ This repository hosts the verifier UI and the short-lived GitHub Actions builder
 [verify-ae-modmenu.vercel.app](https://verify-ae-modmenu.vercel.app). It supports Another Eden and
 the ARM64 OnceWorld release while keeping their build inputs, release tags, and signing identities
 separate. OnceWorld resolves and downloads from Google Play first through an Aurora-compatible
-client; its established APKPure path remains a guarded fallback. Another Eden uses Google Play
-exclusively for all four Global/Japan and ARM64/x86_64 targets.
+client; its established APKPure path remains a guarded fallback. Another Eden Global uses Google
+Play directly, while the region-gated Japan package uses the optimized APKPure XAPK source.
 
 ## Build flow
 
@@ -20,8 +20,8 @@ exclusively for all four Global/Japan and ARM64/x86_64 targets.
    the complete split set, verifies the result, and publishes a short-lived release asset.
 5. The browser polls the same-origin status API and starts the download when the asset is ready.
 
-Another Eden follows the same parallel Play/module/patcher preparation but has no mirror fallback:
-if Google Play cannot authorize the selected package and ABI, that build fails explicitly.
+Another Eden Global follows the same parallel Play/module/patcher preparation with no mirror
+fallback. Japan explicitly selects APKPure because Google Play requires a Japan-entitled account.
 
 The janitor workflow removes temporary `lspatch-*` and `onceworld-lspatch-*` releases. Durable
 module releases live in their module repositories and are never removed by this janitor.
@@ -58,7 +58,6 @@ The workflows expect these GitHub secrets:
 - `GPLAYDL_API_KEY` (a persistent key created once with `gplaydl link`; the short pairing code is
   not used by CI)
 - `GPLAYDL_GLOBAL_EMAIL` (the dedicated Play account selected for Global/OnceWorld downloads)
-- `GPLAYDL_JAPAN_EMAIL` (a Play account that has acquired the Japan-region Another Eden package)
 
 Public, non-secret identity checks use these GitHub variables:
 

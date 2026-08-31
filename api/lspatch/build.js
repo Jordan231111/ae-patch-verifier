@@ -7,6 +7,7 @@ const {
   resolveModuleCommit
 } = require("../_shared/github.js");
 const { resolveLatestPlayListing } = require("../_shared/googleplay.js");
+const { resolveLatestXapk } = require("../_shared/apkpure.js");
 
 const GAMES = {
   global: {
@@ -14,14 +15,16 @@ const GAMES = {
     defaultName: "AnotherEden_Global",
     playCountry: "us",
     playLanguage: "en",
-    playLocale: "en-US"
+    playLocale: "en-US",
+    source: "google-play"
   },
   japan: {
     packageName: "net.wrightflyer.anothereden",
     defaultName: "AnotherEden_Japan",
     playCountry: "jp",
     playLanguage: "ja",
-    playLocale: "ja-JP"
+    playLocale: "ja-JP",
+    source: "apkpure"
   }
 };
 
@@ -39,19 +42,22 @@ async function dispatchGithubBuild({ region, moduleVariant, moduleSource }) {
 
   const game = GAMES[region] || GAMES.global;
   const target = targetFor(moduleSource);
-  const [moduleCommit, play] = await Promise.all([
+  const releaseLookup = game.source === "apkpure"
+    ? resolveLatestXapk(game.packageName)
+    : resolveLatestPlayListing(game.packageName, {
+        country: game.playCountry,
+        language: game.playLanguage
+      });
+  const [moduleCommit, release] = await Promise.all([
     resolveModuleCommit(cfg, moduleSource, {
       preferPrebuilt: true,
       requireAsset: `app-${moduleVariant}.apk`
     }),
-    resolveLatestPlayListing(game.packageName, {
-      country: game.playCountry,
-      language: game.playLanguage
-    })
+    releaseLookup
   ]);
 
   const nonce = `${Date.now()}-${crypto.randomBytes(4).toString("hex")}`;
-  const filename = `${game.defaultName}_${play.versionName}_LSPatched_Ashfur${moduleFilenamePart(moduleSource)}_${moduleVariant}_${moduleCommit.shortSha}.apks`;
+  const filename = `${game.defaultName}_${release.versionName}_LSPatched_Ashfur${moduleFilenamePart(moduleSource)}_${moduleVariant}_${moduleCommit.shortSha}.apks`;
   await githubJson(
     cfg,
     "POST",
@@ -67,7 +73,9 @@ async function dispatchGithubBuild({ region, moduleVariant, moduleSource }) {
         packageName: game.packageName,
         architecture: target.architecture,
         runtimeTarget: target.runtimeTarget,
-        expectedVersionName: play.versionName,
+        sourceKind: game.source,
+        expectedVersionCode: release.versionCode ? String(release.versionCode) : "0",
+        expectedVersionName: release.versionName,
         playLocale: game.playLocale,
         nonce
       }
@@ -81,8 +89,9 @@ async function dispatchGithubBuild({ region, moduleVariant, moduleSource }) {
     architecture: target.architecture,
     runtimeTarget: target.runtimeTarget,
     targetLabel: target.label,
-    versionName: play.versionName,
-    source: "google-play",
+    versionCode: release.versionCode,
+    versionName: release.versionName,
+    source: game.source,
     moduleSource,
     moduleShortSha: moduleCommit.shortSha,
     moduleRef: moduleCommit.ref,

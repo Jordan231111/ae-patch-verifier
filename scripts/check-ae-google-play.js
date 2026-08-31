@@ -6,17 +6,10 @@ const read = relative => fs.readFileSync(path.join(root, relative), "utf8");
 const requireText = (text, needle, message) => {
   if (!text.includes(needle)) throw new Error(message);
 };
-const forbidPattern = (text, pattern, message) => {
-  if (pattern.test(text)) throw new Error(message);
-};
-
 const route = read("api/lspatch/build.js");
 const workflow = read(".github/workflows/build-lspatched-apks.yml");
 const downloader = read("scripts/download-play-apks.py");
 const frontend = read("index.html");
-
-forbidPattern(route, /apkpure/i, "Another Eden API must not reference APKPure");
-forbidPattern(workflow, /apkpure/i, "Another Eden workflow must not reference APKPure");
 
 for (const needle of [
   'packageName: "games.wfs.anothereden"',
@@ -29,11 +22,13 @@ for (const needle of [
 ]) {
   requireText(route, needle, `Another Eden route contract missing: ${needle}`);
 }
+requireText(route, 'source: "google-play"', "Global Another Eden must use Google Play");
+requireText(route, 'source: "apkpure"', "Japan Another Eden must use the explicit APKPure source");
 
 for (const needle of [
   "download-play-apks.py",
+  "download-apkpure-xapk.sh",
   "GPLAYDL_GLOBAL_EMAIL",
-  "GPLAYDL_JAPAN_EMAIL",
   "AE_GLOBAL_SOURCE_CERT_SHA256",
   "AE_JAPAN_SOURCE_CERT_SHA256",
   "SOURCE_PID",
@@ -55,5 +50,6 @@ for (const needle of [
   requireText(downloader, needle, `Google Play downloader contract missing: ${needle}`);
 }
 
-requireText(frontend, "Direct from Google Play", "Another Eden UI must identify Google Play as its source");
-console.log("PASS: all four Another Eden region/runtime targets use direct Google Play with no APKPure runtime path.");
+requireText(frontend, "Direct from Google Play", "Global Another Eden UI must identify Google Play as its source");
+requireText(frontend, "APKPure", "Japan Another Eden UI must identify its explicit fallback source");
+console.log("PASS: Global AE uses Google Play and JP AE uses only the explicitly selected optimized APKPure path.");

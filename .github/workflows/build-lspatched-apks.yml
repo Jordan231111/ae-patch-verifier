@@ -1,6 +1,6 @@
 name: Build LSPatched APKS
 
-run-name: AE ${{ inputs.region }} ${{ inputs.runtimeTarget }} ${{ inputs.expectedVersionName }} ${{ inputs.nonce }}
+run-name: AE ${{ inputs.region }} ${{ inputs.runtimeTarget }} ${{ inputs.sourceKind }} ${{ inputs.expectedVersionName }} ${{ inputs.nonce }}
 
 on:
   workflow_dispatch:
@@ -37,6 +37,14 @@ on:
         required: true
         type: choice
         options: [phone-arm64, houdini-x86_64]
+      sourceKind:
+        description: Game package source
+        required: true
+        type: choice
+        options: [google-play, apkpure]
+      expectedVersionCode:
+        description: Source version code when available
+        required: true
       expectedVersionName:
         description: Google Play listing version
         required: true
@@ -84,9 +92,11 @@ jobs:
           PACKAGE_NAME: ${{ inputs.packageName }}
           ARCHITECTURE: ${{ inputs.architecture }}
           RUNTIME_TARGET: ${{ inputs.runtimeTarget }}
+          SOURCE_KIND: ${{ inputs.sourceKind }}
+          EXPECTED_VERSION_CODE: ${{ inputs.expectedVersionCode }}
           EXPECTED_VERSION_NAME: ${{ inputs.expectedVersionName }}
           PLAY_LOCALE: ${{ inputs.playLocale }}
-          PLAY_ACCOUNT_EMAIL: ${{ inputs.region == 'japan' && secrets.GPLAYDL_JAPAN_EMAIL || secrets.GPLAYDL_GLOBAL_EMAIL }}
+          PLAY_ACCOUNT_EMAIL: ${{ secrets.GPLAYDL_GLOBAL_EMAIL }}
           GPLAYDL_API_KEY: ${{ secrets.GPLAYDL_API_KEY }}
           MODULE_SHA: ${{ inputs.moduleSha }}
           MODULE_REPO: ${{ secrets.AE_MODULE_REPO }}
@@ -98,10 +108,14 @@ jobs:
           [[ "$PACKAGE_NAME" =~ ^[A-Za-z0-9._-]+$ ]]
           [[ "$ARCHITECTURE" == 'arm64-v8a' ]]
           [[ "$RUNTIME_TARGET" == 'phone-arm64' || "$RUNTIME_TARGET" == 'houdini-x86_64' ]]
+          [[ "$SOURCE_KIND" == 'google-play' || "$SOURCE_KIND" == 'apkpure' ]]
+          [[ "$EXPECTED_VERSION_CODE" =~ ^[0-9]+$ ]]
           [[ "$MODULE_SHA" =~ ^[0-9a-f]{40}$ ]]
           test -n "$EXPECTED_VERSION_NAME"
-          test -n "$PLAY_ACCOUNT_EMAIL"
-          test -n "$GPLAYDL_API_KEY"
+          if [ "$SOURCE_KIND" = google-play ]; then
+            test -n "$GPLAYDL_API_KEY"
+            test -n "$PLAY_ACCOUNT_EMAIL"
+          fi
           test -n "$MODULE_REPO"
           test -n "$GH_TOKEN"
 
@@ -109,15 +123,21 @@ jobs:
           mkdir -p "$WORK"/{bundle,lspatch-out,module,play,source,tools}
 
           (
-            python3 -m pip install --disable-pip-version-check --no-compile --quiet 'gplaydl==4.2.1'
-            python3 scripts/download-play-apks.py \
-              --package "$PACKAGE_NAME" \
-              --architecture "$ARCHITECTURE" \
-              --locale "$PLAY_LOCALE" \
-              --account-email "$PLAY_ACCOUNT_EMAIL" \
-              --expected-version "$EXPECTED_VERSION_NAME" \
-              --metadata-source google-play \
-              --output "$WORK/source"
+            if [ "$SOURCE_KIND" = google-play ]; then
+              python3 -m pip install --disable-pip-version-check --no-compile --quiet 'gplaydl==4.2.1'
+              python3 scripts/download-play-apks.py \
+                --package "$PACKAGE_NAME" \
+                --architecture "$ARCHITECTURE" \
+                --locale "$PLAY_LOCALE" \
+                --account-email "$PLAY_ACCOUNT_EMAIL" \
+                --expected-version "$EXPECTED_VERSION_NAME" \
+                --metadata-source google-play \
+                --output "$WORK/source"
+            else
+              bash scripts/download-apkpure-xapk.sh \
+                "$PACKAGE_NAME" "$ARCHITECTURE" "$EXPECTED_VERSION_CODE" \
+                "$EXPECTED_VERSION_NAME" "$WORK/source"
+            fi
           ) &
           SOURCE_PID=$!
 
@@ -160,7 +180,7 @@ jobs:
             echo "MODULE_SHA_SHORT=${MODULE_SHA:0:7}"
             echo "VERSION_CODE=$VERSION_CODE"
             echo "VERSION_NAME=$VERSION_NAME"
-            echo "SOURCE_KIND=google-play"
+            echo "SOURCE_KIND=$SOURCE_KIND"
           } >> "$GITHUB_ENV"
 
       - name: Compile module when no prebuilt exists
@@ -351,4 +371,4 @@ jobs:
           gh release create "$TAG" "$OUT#$(basename "$OUT")" \
             --repo "$GITHUB_REPOSITORY" \
             --title "Another Eden ${VERSION_NAME} ${REGION} ${RUNTIME_TARGET}" \
-            --notes "Temporary Google Play LSPatch build for ${PACKAGE_NAME}. Target ${RUNTIME_TARGET}, guest ABI ${ARCHITECTURE}. Module ${MODULE_SHA_SHORT}. Automatically removed by the lspatch janitor."
+            --notes "Temporary ${SOURCE_KIND} LSPatch build for ${PACKAGE_NAME}. Target ${RUNTIME_TARGET}, guest ABI ${ARCHITECTURE}. Module ${MODULE_SHA_SHORT}. Automatically removed by the lspatch janitor."
