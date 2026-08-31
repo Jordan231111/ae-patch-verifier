@@ -60,11 +60,13 @@ for (const needle of [
   "LSPATCH_VERSION: v1.2-487",
   "d238fdc414d121b7fa454d8b4ccf420df3a8c97d563761861ff92bd9c5da2165",
   "gh release download",
-  "actions/cache@",
   "actions/setup-python@",
   "GPLAYDL_API_KEY",
   "ONCEWORLD_SOURCE_CERT_SHA256",
   "source scripts/fetch-onceworld-source.sh",
+  "SOURCE_PID",
+  "MODULE_PID",
+  "PATCHER_PID",
   "META-INF/xposed/java_init.list",
   "minApiVersion=102",
   "targetApiVersion=102",
@@ -80,4 +82,4 @@ forbidText(workflow, "app-lspatch-release.apk", "workflow still names the classi
 forbidText(workflow, "minApiVersion=93", "workflow still accepts API 93");
 requireText(frontend, "Google Play is tried first", "OnceWorld UI must describe the source order");
 
-console.log("PASS: OnceWorld uses Google Play first, a guarded APKPure fallback, cached LSPatch v1.2, and a prebuilt modern API-102 module.");
+console.log("PASS: OnceWorld fetches Play, the prebuilt module, and pinned LSPatch in parallel with a guarded APKPure fallback.");

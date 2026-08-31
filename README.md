@@ -58,7 +58,6 @@ Public, non-secret identity checks use these GitHub variables:
 
 - `AE_HOST_CERT_SHA256`
 - `ONCEWORLD_HOST_CERT_SHA256`
-- `ONCEWORLD_MODULE_CERT_SHA256`
 - `ONCEWORLD_SOURCE_CERT_SHA256`
 
 The Vercel functions read repository, workflow, module, and API-token configuration from the
