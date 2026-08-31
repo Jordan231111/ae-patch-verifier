@@ -44,6 +44,7 @@ for (const needle of [
 ]) {
   requireText(workflow, needle, `Another Eden workflow contract missing: ${needle}`);
 }
+requireText(workflow, "houdini-x86_64) TARGET_SUFFIX=_emulator-x86_64", "Houdini outputs must retain their emulator filename suffix");
 
 for (const needle of [
   '"--max-connection-per-server=16"',
@@ -55,4 +56,4 @@ for (const needle of [
 }
 
 requireText(frontend, "Direct from Google Play", "Another Eden UI must identify Google Play as its source");
-console.log("PASS: all four Another Eden region/ABI targets use direct Google Play with no APKPure runtime path.");
+console.log("PASS: all four Another Eden region/runtime targets use direct Google Play with no APKPure runtime path.");

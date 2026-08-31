@@ -220,8 +220,8 @@ jobs:
             japan) DEFAULT_NAME=AnotherEden_Japan ;;
             *) DEFAULT_NAME=AnotherEden_Global ;;
           esac
-          case "$ARCHITECTURE" in
-            x86_64) TARGET_SUFFIX=_emulator-x86_64 ;;
+          case "$RUNTIME_TARGET" in
+            houdini-x86_64) TARGET_SUFFIX=_emulator-x86_64 ;;
             *) TARGET_SUFFIX='' ;;
           esac
 
