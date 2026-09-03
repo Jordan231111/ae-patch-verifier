@@ -22,6 +22,9 @@ Play directly, while the region-gated Japan package uses the optimized APKPure X
 
 Another Eden Global follows the same parallel Play/module/patcher preparation with no mirror
 fallback. Japan explicitly selects APKPure because Google Play requires a Japan-entitled account.
+Japan builds preflight the exact ARM64 APKPure variant before dispatch; when APKPure has only
+published its 32-bit variant, the API reports that temporary upstream condition instead of
+spending a runner or producing an incompatible package.
 
 The janitor workflow removes temporary `lspatch-*` and `onceworld-lspatch-*` releases. Durable
 module releases live in their module repositories and are never removed by this janitor.

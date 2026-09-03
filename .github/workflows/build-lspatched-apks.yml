@@ -85,7 +85,7 @@ jobs:
         with:
           python-version: '3.12'
 
-      - name: Prepare Play source, module, and patcher in parallel
+      - name: Prepare app source, module, and patcher in parallel
         id: inputs
         env:
           REGION: ${{ inputs.region }}
@@ -157,9 +157,16 @@ jobs:
             -o "$WORK/tools/lspatch.jar" "$LSPATCH_JAR_URL" &
           PATCHER_PID=$!
 
-          wait "$SOURCE_PID"
-          wait "$MODULE_PID"
-          wait "$PATCHER_PID"
+          SOURCE_STATUS=0
+          MODULE_STATUS=0
+          PATCHER_STATUS=0
+          wait "$SOURCE_PID" || SOURCE_STATUS=$?
+          wait "$MODULE_PID" || MODULE_STATUS=$?
+          wait "$PATCHER_PID" || PATCHER_STATUS=$?
+          if [ "$SOURCE_STATUS" -ne 0 ] || [ "$MODULE_STATUS" -ne 0 ] || [ "$PATCHER_STATUS" -ne 0 ]; then
+            echo "::error::Input preparation failed (source=$SOURCE_STATUS module=$MODULE_STATUS patcher=$PATCHER_STATUS)"
+            exit 1
+          fi
           test -s "$WORK/source/manifest.json"
           test -s "$WORK/tools/lspatch.jar"
 

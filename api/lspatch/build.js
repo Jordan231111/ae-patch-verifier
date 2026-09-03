@@ -7,7 +7,10 @@ const {
   resolveModuleCommit
 } = require("../_shared/github.js");
 const { resolveLatestPlayListing } = require("../_shared/googleplay.js");
-const { resolveLatestXapk } = require("../_shared/apkpure.js");
+const {
+  resolveLatestXapk,
+  resolveXapkVariant
+} = require("../_shared/apkpure.js");
 
 const GAMES = {
   global: {
@@ -43,7 +46,18 @@ async function dispatchGithubBuild({ region, moduleVariant, moduleSource }) {
   const game = GAMES[region] || GAMES.global;
   const target = targetFor(moduleSource);
   const releaseLookup = game.source === "apkpure"
-    ? resolveLatestXapk(game.packageName)
+    ? resolveLatestXapk(game.packageName).then(async release => {
+        // `version=latest` can point at APKPure's 32-bit default even when this
+        // builder requires ARM64. Confirm the exact ABI exists before spending
+        // a GitHub runner on a build that cannot produce an installable APKS.
+        await resolveXapkVariant(
+          game.packageName,
+          release.versionCode,
+          target.architecture,
+          release.versionName
+        );
+        return release;
+      })
     : resolveLatestPlayListing(game.packageName, {
         country: game.playCountry,
         language: game.playLanguage
@@ -133,7 +147,9 @@ module.exports = async function handler(req, res) {
       downloadUrl: `/api/lspatch/download?nonce=${encodeURIComponent(dispatched.nonce)}`
     }));
   } catch (error) {
-    res.statusCode = 500;
+    const statusCode = Number.isInteger(error.statusCode) ? error.statusCode : 500;
+    if (statusCode === 503) res.setHeader("retry-after", "300");
+    res.statusCode = statusCode;
     res.end(JSON.stringify({ message: error.message }));
   }
 };

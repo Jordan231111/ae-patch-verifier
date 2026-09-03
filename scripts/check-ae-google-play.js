@@ -17,6 +17,7 @@ for (const needle of [
   'architecture: "arm64-v8a"',
   'runtimeTarget: "houdini-x86_64"',
   "resolveLatestPlayListing",
+  "resolveXapkVariant",
   "expectedVersionName",
   "moduleSource"
 ]) {
