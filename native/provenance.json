@@ -18,13 +18,14 @@
     "tools/test_item_injection_queue.cpp": "99366cf1c3f6d2073c8d402abeb2111541900e53f50e827536f28dbfa4cd5bac"
   },
   "generatedFiles": {
-    "engine.cpp": "1ab2dc0b13f6f9a007a9dd8506c815e70d0848262ffc051144dc10beaad578f8",
+    "engine.cpp": "70676d19f28558f3f80552a0a5a697154955a5e531b748d7c431ef00422a46b6",
+    "byte-scan.h": "440a928b2871bf559930214fafed6394575713d9d0f3cdf03dbb085792b6ea86",
     "item_catalog_signatures.h": "78c05a7d0b081337ca20f06cc4e25cff5f5f42b2c46fd7b9d2ffb9ee527138aa",
     "item_injection_contracts.h": "885f1adcb9e85b42838a8491fd5042fa616a5050756093bb17b7bdac863acc47",
     "item_injection_queue.h": "627ddacc3a65bd472cc215e4c6054b37b69a94315f276cbf81f690aeb8884241",
     "item_injection_resolver.h": "6a2ae3fa17a46e23a7ef74f963ba0f01d9a9ffeeba395f5ca6c534b5f2cc8b2d",
     "item_injection_queue_test.h": "1c7c1d7a9b4b757d02547c3b47b5c027a5220303ac4273d83ce3308c004ade18",
-    "coverage.js": "7f1c5050630daa45c128b89b988d7ade8fa59a9fef950ac31d147834f9202ff5"
+    "coverage.js": "30f77c57aff4ded0c7e323e1fd9b1055da90b42a9834828445d9737466489602"
   },
   "verifierNativeFiles": {
     "elf-abi.h": "f1b3b63688407bad5fb510f4904db4c86fb74cb715d5d1e0609c0672d36aa2c7",

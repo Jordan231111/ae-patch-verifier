@@ -29,5 +29,11 @@ try {
   assert.equal(compile.status, 0, compile.stderr);
   const run = spawnSync(binary, [], { encoding: 'utf8' });
   assert.equal(run.status, 0, run.stderr);
+  const scanner = path.join(temp, 'scanner');
+  const scanBuild = spawnSync(process.env.CXX || 'c++', ['-std=c++20', '-Wall', '-Wextra', '-Werror', '-I', native,
+    path.join(root, 'test/byte-scan.cpp'), '-o', scanner], { encoding: 'utf8' });
+  assert.equal(scanBuild.status, 0, scanBuild.stderr);
+  const scanRun = spawnSync(scanner, [], { encoding: 'utf8' });
+  assert.equal(scanRun.status, 0, scanRun.stderr);
 } finally { fs.rmSync(temp, { recursive: true, force: true }); }
-console.log('Committed production inputs, generated-file integrity and queue contracts verified.');
+console.log('Production provenance, queue contracts and 4000 byte-matcher equivalence cases verified.');

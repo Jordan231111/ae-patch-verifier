@@ -9,18 +9,22 @@ const { prepareElfImage } = require('../native/elf-image.js');
 const { nativeReport } = require('../native/report.js');
 
 async function verify(filename) {
+  const started = performance.now();
   const input = fs.readFileSync(filename);
   const files = prepareElfImage(input);
   const lines = [];
-  const engine = await require('../native/engine.js')({ noInitialRun: true,
+  const engine = await require(process.env.AE_NATIVE_ENGINE ? path.resolve(process.env.AE_NATIVE_ENGINE) : '../native/engine.js')({ noInitialRun: true,
     print: line => lines.push(line), printErr: line => lines.push(line) });
   engine.FS.mkdir('/input');
   for (const [name, contents] of Object.entries(files)) engine.FS.writeFile('/input/' + name, contents);
+  const nativeStarted = performance.now();
   const exitCode = engine.callMain(['/input']);
+  const nativeMs = Math.round(performance.now() - nativeStarted);
   const rows = nativeReport(lines);
   const failures = rows.filter(row => row.status === 'FAIL');
   const result = { version: path.basename(path.dirname(filename)),
     sha256: crypto.createHash('sha256').update(input).digest('hex'), exitCode,
+    elapsedMs: Math.round(performance.now() - started), nativeMs,
     passes: rows.filter(row => row.status === 'PASS').length,
     runtime: rows.filter(row => row.status === 'RUNTIME').length,
     optional: rows.filter(row => row.status === 'N/A').length, failures,

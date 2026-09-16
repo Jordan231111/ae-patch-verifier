@@ -58,3 +58,34 @@ test('ambiguous optional bindings remain failures, and required targets cannot c
   const required = [...lines.map(line => line.startsWith('RESULT lua.changeItemAmount ') ? 'RESULT lua.changeItemAmount 0x0' : line), 'OPTIONAL_ABSENT lua.changeItemAmount'];
   assert.equal(failures(nativeReport(required)).length, 1);
 });
+
+function withWrites(change) {
+  const roundtrip = lines.find(line => line.startsWith('ROUNDTRIP '));
+  const applied = Number(/applyWrites=(\d+)/.exec(roundtrip)[1]);
+  const writes = lines.filter(line => line.startsWith('WRITE '));
+  const batches = { apply: writes.slice(0, applied), undo: writes.slice(applied) };
+  change(batches);
+  return [...lines.filter(line => !/^(WRITE |ROUNDTRIP )/.test(line)), ...batches.apply, ...batches.undo,
+    `ROUNDTRIP item=1 applyWrites=${batches.apply.length} undoWrites=${batches.undo.length} restored=1`];
+}
+
+test('patch safety derives ownership from actual writes instead of a fixed operation count', () => {
+  const extra = withWrites(({ apply, undo }) => {
+    apply.push('WRITE 0x123000 size=8'); undo.push('WRITE 0x123000 size=8');
+  });
+  assert.deepEqual(failures(nativeReport(extra)), []);
+});
+
+test('equivalent restoration with a different write granularity is accepted', () => {
+  const split = withWrites(({ undo }) => {
+    const match = /^WRITE (0x[0-9a-f]+) size=(\d+)$/.exec(undo[0]);
+    const at = BigInt(match[1]), size = Number(match[2]);
+    undo.splice(0, 1, `WRITE 0x${at.toString(16)} size=1`, `WRITE 0x${(at + 1n).toString(16)} size=${size - 1}`);
+  });
+  assert.deepEqual(failures(nativeReport(split)), []);
+});
+
+test('balanced counts with restoration outside the owned ranges still fail', () => {
+  const wrong = withWrites(({ undo }) => { undo[0] = 'WRITE 0x123000 size=4'; });
+  assert.ok(failures(nativeReport(wrong)).some(row => row.feature === 'Patch safety'));
+});

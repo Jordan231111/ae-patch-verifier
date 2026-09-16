@@ -89,5 +89,44 @@
     "lua.getShowTalkSkipButtonTime",
     "lua.resetPlaySpeedAndAutoText",
     "lua.isTalking"
+  ],
+  "bytePatches": [
+    {
+      "feature": "battle.mp.cost",
+      "variants": [
+        "battle.mp.cost"
+      ]
+    },
+    {
+      "feature": "battle.mp.delta",
+      "variants": [
+        "battle.mp.delta"
+      ]
+    },
+    {
+      "feature": "battle.mp.current",
+      "variants": [
+        "battle.mp.current"
+      ]
+    },
+    {
+      "feature": "battle.mp.max",
+      "variants": [
+        "battle.mp.max"
+      ]
+    },
+    {
+      "feature": "damage.x524288",
+      "variants": [
+        "damage.x524288"
+      ]
+    },
+    {
+      "feature": "dungeon.skip",
+      "variants": [
+        "dungeon.skip",
+        "dungeon.skip.v316"
+      ]
+    }
   ]
 };s.AENativeCoverage=value;if(typeof module!=="undefined")module.exports=value;})(globalThis);

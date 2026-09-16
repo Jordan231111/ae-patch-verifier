@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "moduleCommit": "958b80b7697366bca4373925f6cf8108177058a4",
-  "engineSourceSha256": "1ab2dc0b13f6f9a007a9dd8506c815e70d0848262ffc051144dc10beaad578f8",
+  "engineSourceSha256": "70676d19f28558f3f80552a0a5a697154955a5e531b748d7c431ef00422a46b6",
   "method": "Website ELF loader + deployable WASM + website report parser. Game code is never executed.",
   "fixtures": [
     {

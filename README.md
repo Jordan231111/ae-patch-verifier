@@ -177,3 +177,26 @@ The module metadata endpoint returns the full selected commit and requires the c
 or debug APK asset; a debug-only release cannot stand in for a release build. The LSPatch builder
 already pins that full commit and downloads its durable `module-<sha>` asset. It does not use
 bundled APKs from this website repository.
+
+### Compatibility boundaries and performance
+
+Addresses and private game-field offsets are decoded rather than taken from a version table.
+The recognizers still require supported ARM64 instruction shapes, anchors and C++/ELF ABI
+contracts. Compiler register allocation, inlining, removed strings, engine rewrites or changed
+inventory/save behavior can require a resolver update. Historical static passes are evidence
+of compatibility, not proof of future runtime semantics.
+
+The website checks a **pinned module implementation**. A new game library can be checked against
+that implementation immediately; changing the module implementation requires regenerating and
+deploying the verifier sources. Provenance checks detect inconsistent imports; they do not
+automatically redesign a resolver for a future module or game.
+
+The production byte-mask matcher is imported verbatim and checked against 4,000 independent
+reference cases. Byte-patch names and version alternatives come from the production descriptors.
+Round-trip validation checks the actual union of owned write ranges and byte-for-byte restoration,
+without fixing the number of writes or requiring identical write granularity during undo.
+
+Verification runs in a Web Worker and retains a private image for reliable apply/undo checks.
+On the development machine, the full 3.17.0 check took about 7 seconds, including about 6.7 seconds
+in the native engine. Alternative scanners were benchmarked and rejected because they were slower.
+This is a measured sample, not a speed guarantee on other devices or files.

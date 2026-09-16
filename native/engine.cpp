@@ -119,8 +119,9 @@ void append_u32(std::vector<uint8_t> &bytes, uint32_t value) {
     bytes.push_back(static_cast<uint8_t>((value >> 24) & 0xFF));
 }
 
-std::vector<uintptr_t> find_pattern(const std::vector<MemoryRange>& rs,const uint8_t*p,size_t n){std::vector<uintptr_t> h;for(auto r:rs){auto b=(const uint8_t*)r.start,e=(const uint8_t*)r.end;while(b+n<=e){auto q=std::search(b,e,p,p+n);if(q==e)break;h.push_back((uintptr_t)q);b=q+1;}}return h;}
-std::vector<uintptr_t> find_masked_pattern(const std::vector<MemoryRange>& rs,const uint8_t*p,const uint8_t*m,size_t n){std::vector<uintptr_t> h;for(auto r:rs)for(uintptr_t a=r.start;a+n<=r.end;++a)if((!m[0]||*(uint8_t*)a==p[0])&&memory_matches_mask(a,p,m,n))h.push_back(a);return h;}
+std::vector<uintptr_t> find_pattern(const std::vector<MemoryRange>& rs,const uint8_t*p,size_t n){std::vector<uintptr_t> h;if(!p||!n)return h;for(auto r:rs){auto b=(const uint8_t*)r.start,e=(const uint8_t*)r.end;while(b+n<=e){auto q=std::search(b,e,p,p+n);if(q==e)break;h.push_back((uintptr_t)q);b=q+1;}}return h;}
+
+#include "byte-scan.h"
 
 std::vector<uint8_t> code_pattern_mask(const uint8_t *pattern, size_t len, const uint8_t *mask) {
     std::vector<uint8_t> result(len, 0xFF);

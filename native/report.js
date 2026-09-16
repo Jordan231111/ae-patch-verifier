@@ -62,11 +62,10 @@
       row(check.startsWith('dialogue.') ? 'Dialogue · static' : 'Item Injection · static', injectionLabels[check.slice(10)] || check, 0, 'Required check was not emitted exactly once.');
     for (const marker of ['LAYOUT layout_resolved ', 'LAYOUT object_layouts ', 'LAYOUT live_shop_layout '])
       if (!lines.some(line => line.startsWith(marker))) row('Layout coverage', marker.trim(), 0, 'Required production layout report is missing.');
-    const byteNames = ['battle.mp.cost', 'battle.mp.delta', 'battle.mp.current', 'battle.mp.max', 'damage.x524288', 'dungeon.skip'];
-    for (const name of byteNames) {
+    for (const { feature: name, variants } of coverage.bytePatches) {
       for (const enable of [1, 0]) {
-        const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-        const re = new RegExp('AE_TRACE byte patch ' + escaped + (name === 'dungeon.skip' ? '(?:\\.v316)?' : '') + ' enable=' + enable + ' addr=(0x[0-9a-f]+) ok=1');
+        const escaped = variants.map(value => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|');
+        const re = new RegExp('AE_TRACE byte patch (?:' + escaped + ') enable=' + enable + ' addr=(0x[0-9a-f]+) ok=1');
         const hits = new Set(lines.flatMap(line => { const m = re.exec(line); return m ? [m[1]] : []; }));
         row(name, enable ? 'Apply: unique site' : 'Undo: same owned site', hits.size, 'Uses the module matcher; undo restores captured original bytes.');
       }
@@ -85,8 +84,26 @@
     const repeat = lines.some(line => line === 'IDEMPOTENT on=1 off=1 owned=1');
     row('Patch safety', 'Repeated apply / undo make no extra writes', repeat ? 1 : 0, 'Second apply and second undo must both be no-ops.');
     const result = lines.map(line => /^ROUNDTRIP item=(\d+) applyWrites=(\d+) undoWrites=(\d+) restored=(\d+)$/.exec(line)).find(Boolean);
-    const exact = Boolean(result && result[1] === '1' && result[2] === '15' && result[3] === '15' && result[4] === '1');
-    row('Patch safety', 'Complete image restored byte-for-byte', exact ? 1 : 0, result ? `${result[2]} apply writes / ${result[3]} undo writes; restored=${result[4]}` : 'Native verification did not complete.');
+    const events = lines.flatMap(line => {
+      const write = /^WRITE (0x[0-9a-f]+) size=(\d+)$/.exec(line);
+      return write ? [{ start: BigInt(write[1]), size: BigInt(write[2]) }] : [];
+    });
+    const applied = result ? Number(result[2]) : 0, undone = result ? Number(result[3]) : 0;
+    const ownedRanges = writes => {
+      const sorted = writes.map(w => [w.start, w.start + w.size]).sort((a, b) => a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0);
+      const merged = [];
+      for (const [start, end] of sorted) {
+        const previous = merged[merged.length - 1];
+        if (previous && start <= previous[1]) previous[1] = end > previous[1] ? end : previous[1];
+        else merged.push([start, end]);
+      }
+      return merged.map(([start, end]) => start.toString(16) + ':' + end.toString(16)).join(',');
+    };
+    const sameOwnedWrites = applied > 0 && undone > 0 && events.every(w => w.size > 0n) &&
+      events.length === applied + undone && ownedRanges(events.slice(0, applied)) === ownedRanges(events.slice(applied));
+    const exact = Boolean(result && result[1] === '1' && result[4] === '1' && sameOwnedWrites);
+    row('Patch safety', 'Complete image restored byte-for-byte', exact ? 1 : 0,
+      result ? `${applied} apply writes / ${undone} undo writes; same owned ranges=${sameOwnedWrites}; restored=${result[4]}` : 'Native verification did not complete.');
     if (!rows.some(r => r.feature === 'Item dump')) row('Item dump', 'Catalog resolver', 0, 'The full catalog/name contract did not resolve.');
     for (const [check, detail] of runtimeChecks)
       rows.push({ feature: 'Item Injection · runtime', check, count: '—', detail, status: 'RUNTIME', klass: 'warn' });

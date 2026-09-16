@@ -92,9 +92,10 @@ bool patch_memory(uintptr_t a,const void *p,size_t n){++writes;printf("WRITE 0x%
 struct RuntimeConfig {bool enabled=true,speedy=true,battle_mp=true,all_damage=true,dungeon_skip=true,team_god_mode=true,ad_bypass=true,encounter_freeze=true,encounter_force=false;};
 ''']
 for n in ['checked_address_end','range_contains','push_unique','read_u32','decode_branch_target','memory_matches_mask','memory_equals','encode_branch','encode_cbz_w','append_u32']:parts.append(fn(n))
-parts.append('''std::vector<uintptr_t> find_pattern(const std::vector<MemoryRange>& rs,const uint8_t*p,size_t n){std::vector<uintptr_t> h;for(auto r:rs){auto b=(const uint8_t*)r.start,e=(const uint8_t*)r.end;while(b+n<=e){auto q=std::search(b,e,p,p+n);if(q==e)break;h.push_back((uintptr_t)q);b=q+1;}}return h;}
-std::vector<uintptr_t> find_masked_pattern(const std::vector<MemoryRange>& rs,const uint8_t*p,const uint8_t*m,size_t n){std::vector<uintptr_t> h;for(auto r:rs)for(uintptr_t a=r.start;a+n<=r.end;++a)if((!m[0]||*(uint8_t*)a==p[0])&&memory_matches_mask(a,p,m,n))h.push_back(a);return h;}
+parts.append('''std::vector<uintptr_t> find_pattern(const std::vector<MemoryRange>& rs,const uint8_t*p,size_t n){std::vector<uintptr_t> h;if(!p||!n)return h;for(auto r:rs){auto b=(const uint8_t*)r.start,e=(const uint8_t*)r.end;while(b+n<=e){auto q=std::search(b,e,p,p+n);if(q==e)break;h.push_back((uintptr_t)q);b=q+1;}}return h;}
 ''')
+(out/'byte-scan.h').write_text('// Generated verbatim from the production byte-mask scanner.\n#pragma once\n'+fn('find_masked_pattern'))
+parts.append('#include "byte-scan.h"\n')
 for n in ['code_pattern_mask','find_code_pattern']:parts.append(fn(n))
 for m in re.finditer(r'^(?:static )?constexpr uint8_t (?:sig_|mask_)\w*\[\]\s*=\s*\{.*?\};',s,re.S|re.M):parts.append(m[0])
 for l in s.splitlines():
@@ -169,10 +170,19 @@ target_names += ['battle.addPCExp.patch','catScratch.total','catScratch.namedCou
                  'achievement.get','achievement.dispatch','userdata.push','dialogue.renderChecker','mass.ownedCount']
 checks = list(dict.fromkeys(re.findall(r'(?:check|target)\("([^"]+)"', (out/'injection-audit.h').read_text())))
 checks.append('dialogue.layout_fields')
+byte_groups = {}
+for body in re.findall(r'const BytePatch \w+(?:\[\])?\s*=\s*\{(.*?)\};', s, re.S):
+ for name in re.findall(r'(?:^|\{)\s*"([^"]+)"', body):
+  # Group the module's explicitly named version alternatives, not game versions.
+  feature = re.sub(r'\.v\d+$', '', name)
+  byte_groups.setdefault(feature, []).append(name)
+if not byte_groups:
+ raise SystemExit('No production byte-patch descriptors found; refusing incomplete coverage')
 coverage = {'schemaVersion':2,'targets':target_names,'checks':checks,
-            'optionalTargets':['lua.'+name for name, optional in lua_bindings.items() if optional]}
+            'optionalTargets':['lua.'+name for name, optional in lua_bindings.items() if optional],
+            'bytePatches':[{'feature':name,'variants':list(dict.fromkeys(variants))} for name,variants in byte_groups.items()]}
 (out/'coverage.js').write_text('(function(s){const value='+json.dumps(coverage,indent=2)+';s.AENativeCoverage=value;if(typeof module!=="undefined")module.exports=value;})(globalThis);\n')
-generated_names = ['engine.cpp','item_catalog_signatures.h','item_injection_contracts.h',
+generated_names = ['engine.cpp','byte-scan.h','item_catalog_signatures.h','item_injection_contracts.h',
                    'item_injection_queue.h','item_injection_resolver.h','item_injection_queue_test.h','coverage.js']
 provenance={"schemaVersion":2,"uncommittedSource":dirty,"moduleCommit":subprocess.check_output(['git','-C',str(root),'rev-parse','HEAD'],text=True).strip(),"sourceSha256":hashlib.sha256(source.read_bytes()).hexdigest(),"contractsSha256":hashlib.sha256(header.read_bytes()).hexdigest(),
  "productionFiles":{path:hashlib.sha256((root/path).read_bytes()).hexdigest() for path in production_paths},
