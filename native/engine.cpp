@@ -14,11 +14,17 @@
 #include <string>
 #include <unordered_map>
 #include <sys/types.h>
+#include "elf-abi.h"
+#include "item_injection_contracts.h"
+#include "item_injection_queue_test.h"
 #include "item_catalog_signatures.h"
 #define ALOGI(...) do { printf(__VA_ARGS__); puts(""); } while(0)
 #define ALOGW(...) ALOGI(__VA_ARGS__)
 struct MemoryRange {uintptr_t start,end;bool executable,writable;};
 uintptr_t audit_base=0;size_t writes=0;std::vector<MemoryRange> audit_ranges;
+constexpr const char *kTargetLib="libapp.so";
+uintptr_t find_module_base(const char *){return audit_base;}
+uintptr_t decode_adrp_ldr_global(uintptr_t,uintptr_t);
 std::unordered_map<std::string,uintptr_t> audit_symbols;
 void *resolve_app_symbol(const char *n){return (void*)audit_symbols[n];}
 std::vector<MemoryRange> app_exec_ranges(){return audit_ranges;}
@@ -1369,6 +1375,8 @@ bool resolve_lua_registered_function(const std::vector<MemoryRange> &readable_ra
     return true;
 }
 
+#include "item_injection_resolver.h"
+
 uintptr_t resolve_named_integer_setter(const std::vector<MemoryRange> &readable,
                                         const std::vector<MemoryRange> &ranges, const char *key) {
     std::vector<uintptr_t> hits;
@@ -2703,10 +2711,13 @@ void apply_runtime_byte_patches(const RuntimeConfig &cfg) {
     apply_ad_bypass_patch(ranges, cfg.enabled && cfg.ad_bypass);
 }
 
+#include "injection-audit.h"
+
 int main(int argc,char**argv){std::string dir=argv[1];std::ifstream in(dir+"/image.bin",std::ios::binary);std::vector<char> raw((std::istreambuf_iterator<char>(in)),{});void *mem=nullptr;posix_memalign(&mem,4096,raw.size());memcpy(mem,raw.data(),raw.size());uintptr_t base=(uintptr_t)mem;audit_base=base;
 std::ifstream rel(dir+"/relocs.txt");uint64_t o,v;while(rel>>o>>v){uintptr_t p=base+v;memcpy((void*)(base+o),&p,8);}
 std::ifstream symbols(dir+"/symbols.txt");std::string name;while(symbols>>name>>v)audit_symbols[name]=base+v;
 std::vector<MemoryRange> ranges,readable_ranges;std::ifstream segs(dir+"/segments.txt");uint64_t a,z,fl;while(segs>>a>>z>>fl){readable_ranges.push_back({base+a,base+a+z,bool(fl&1),bool(fl&2)});if(fl&1)ranges.push_back(readable_ranges.back());}audit_ranges=ranges;
+printf("AUDIT_VERSION 2\n");
 auto report=[&](const char*n,uintptr_t a){printf("RESULT %s 0x%llx\n",n,(unsigned long long)(a?a-base:0));};
 
 uintptr_t item_writer_addr=resolve_masked_pattern_hook_address(
@@ -2750,21 +2761,49 @@ uintptr_t on_end_in_addr=resolve_masked_pattern_hook_address(
                 ranges, "dialogue.FieldTalkBaseNode.onEndInAnimation.trace",
                 sig_field_talk_on_end_in_animation, mask_field_talk_on_end_in_animation,
                 sizeof(sig_field_talk_on_end_in_animation));report("dialogue.FieldTalkBaseNode.onEndInAnimation.trace",on_end_in_addr);
-uintptr_t lua_getGlobalFlag=0;resolve_lua_registered_function(readable_ranges,ranges,"getGlobalFlag",false,&lua_getGlobalFlag);report("lua.getGlobalFlag",lua_getGlobalFlag);
-uintptr_t lua_setGlobalFlag=0;resolve_lua_registered_function(readable_ranges,ranges,"setGlobalFlag",false,&lua_setGlobalFlag);report("lua.setGlobalFlag",lua_setGlobalFlag);
-uintptr_t lua_fireAchievementTrigger=0;resolve_lua_registered_function(readable_ranges,ranges,"fireAchievementTrigger",false,&lua_fireAchievementTrigger);report("lua.fireAchievementTrigger",lua_fireAchievementTrigger);
-uintptr_t lua_isAchievementCompleted=0;resolve_lua_registered_function(readable_ranges,ranges,"isAchievementCompleted",false,&lua_isAchievementCompleted);report("lua.isAchievementCompleted",lua_isAchievementCompleted);
-uintptr_t lua_changeReservedItemAmount=0;resolve_lua_registered_function(readable_ranges,ranges,"changeReservedItemAmount",false,&lua_changeReservedItemAmount);report("lua.changeReservedItemAmount",lua_changeReservedItemAmount);
-uintptr_t lua_changeGimmickItemAmount=0;resolve_lua_registered_function(readable_ranges,ranges,"changeGimmickItemAmount",false,&lua_changeGimmickItemAmount);report("lua.changeGimmickItemAmount",lua_changeGimmickItemAmount);
-uintptr_t lua_setMysteryItemAmount=0;resolve_lua_registered_function(readable_ranges,ranges,"setMysteryItemAmount",false,&lua_setMysteryItemAmount);report("lua.setMysteryItemAmount",lua_setMysteryItemAmount);
-uintptr_t lua_helixChangeItemAmount=0;resolve_lua_registered_function(readable_ranges,ranges,"helixChangeItemAmount",false,&lua_helixChangeItemAmount);report("lua.helixChangeItemAmount",lua_helixChangeItemAmount);
-uintptr_t lua_setAutoFeedMode=0;resolve_lua_registered_function(readable_ranges,ranges,"setAutoFeedMode",false,&lua_setAutoFeedMode);report("lua.setAutoFeedMode",lua_setAutoFeedMode);
-uintptr_t lua_getAutoFeedMode=0;resolve_lua_registered_function(readable_ranges,ranges,"getAutoFeedMode",false,&lua_getAutoFeedMode);report("lua.getAutoFeedMode",lua_getAutoFeedMode);
-uintptr_t lua_setAutoFeedWaitTimeLetter=0;resolve_lua_registered_function(readable_ranges,ranges,"setAutoFeedWaitTimeLetter",false,&lua_setAutoFeedWaitTimeLetter);report("lua.setAutoFeedWaitTimeLetter",lua_setAutoFeedWaitTimeLetter);
-uintptr_t lua_setAutoFeedWaitTimeMinimum=0;resolve_lua_registered_function(readable_ranges,ranges,"setAutoFeedWaitTimeMinimum",false,&lua_setAutoFeedWaitTimeMinimum);report("lua.setAutoFeedWaitTimeMinimum",lua_setAutoFeedWaitTimeMinimum);
-uintptr_t lua_getShowTalkSkipButtonTime=0;resolve_lua_registered_function(readable_ranges,ranges,"getShowTalkSkipButtonTime",false,&lua_getShowTalkSkipButtonTime);report("lua.getShowTalkSkipButtonTime",lua_getShowTalkSkipButtonTime);
-uintptr_t lua_resetPlaySpeedAndAutoText=0;resolve_lua_registered_function(readable_ranges,ranges,"resetPlaySpeedAndAutoText",false,&lua_resetPlaySpeedAndAutoText);report("lua.resetPlaySpeedAndAutoText",lua_resetPlaySpeedAndAutoText);
-uintptr_t lua_isTalking=0;resolve_lua_registered_function(readable_ranges,ranges,"isTalking",false,&lua_isTalking);report("lua.isTalking",lua_isTalking);
+uintptr_t lua_getGlobalFlag=0;bool lua_ok_getGlobalFlag=resolve_lua_registered_function(readable_ranges,ranges,"getGlobalFlag",false,&lua_getGlobalFlag);
+report("lua.getGlobalFlag",lua_getGlobalFlag);
+uintptr_t lua_setGlobalFlag=0;bool lua_ok_setGlobalFlag=resolve_lua_registered_function(readable_ranges,ranges,"setGlobalFlag",false,&lua_setGlobalFlag);
+report("lua.setGlobalFlag",lua_setGlobalFlag);
+uintptr_t lua_fireAchievementTrigger=0;bool lua_ok_fireAchievementTrigger=resolve_lua_registered_function(readable_ranges,ranges,"fireAchievementTrigger",true,&lua_fireAchievementTrigger);
+if(lua_ok_fireAchievementTrigger && !lua_fireAchievementTrigger) printf("OPTIONAL_ABSENT lua.fireAchievementTrigger\n");
+report("lua.fireAchievementTrigger",lua_fireAchievementTrigger);
+uintptr_t lua_isAchievementCompleted=0;bool lua_ok_isAchievementCompleted=resolve_lua_registered_function(readable_ranges,ranges,"isAchievementCompleted",true,&lua_isAchievementCompleted);
+if(lua_ok_isAchievementCompleted && !lua_isAchievementCompleted) printf("OPTIONAL_ABSENT lua.isAchievementCompleted\n");
+report("lua.isAchievementCompleted",lua_isAchievementCompleted);
+uintptr_t lua_changeReservedItemAmount=0;bool lua_ok_changeReservedItemAmount=resolve_lua_registered_function(readable_ranges,ranges,"changeReservedItemAmount",false,&lua_changeReservedItemAmount);
+report("lua.changeReservedItemAmount",lua_changeReservedItemAmount);
+uintptr_t lua_changeGimmickItemAmount=0;bool lua_ok_changeGimmickItemAmount=resolve_lua_registered_function(readable_ranges,ranges,"changeGimmickItemAmount",false,&lua_changeGimmickItemAmount);
+report("lua.changeGimmickItemAmount",lua_changeGimmickItemAmount);
+uintptr_t lua_setMysteryItemAmount=0;bool lua_ok_setMysteryItemAmount=resolve_lua_registered_function(readable_ranges,ranges,"setMysteryItemAmount",true,&lua_setMysteryItemAmount);
+if(lua_ok_setMysteryItemAmount && !lua_setMysteryItemAmount) printf("OPTIONAL_ABSENT lua.setMysteryItemAmount\n");
+report("lua.setMysteryItemAmount",lua_setMysteryItemAmount);
+uintptr_t lua_helixChangeItemAmount=0;bool lua_ok_helixChangeItemAmount=resolve_lua_registered_function(readable_ranges,ranges,"helixChangeItemAmount",true,&lua_helixChangeItemAmount);
+if(lua_ok_helixChangeItemAmount && !lua_helixChangeItemAmount) printf("OPTIONAL_ABSENT lua.helixChangeItemAmount\n");
+report("lua.helixChangeItemAmount",lua_helixChangeItemAmount);
+uintptr_t lua_setAutoFeedMode=0;bool lua_ok_setAutoFeedMode=resolve_lua_registered_function(readable_ranges,ranges,"setAutoFeedMode",true,&lua_setAutoFeedMode);
+if(lua_ok_setAutoFeedMode && !lua_setAutoFeedMode) printf("OPTIONAL_ABSENT lua.setAutoFeedMode\n");
+report("lua.setAutoFeedMode",lua_setAutoFeedMode);
+uintptr_t lua_getAutoFeedMode=0;bool lua_ok_getAutoFeedMode=resolve_lua_registered_function(readable_ranges,ranges,"getAutoFeedMode",true,&lua_getAutoFeedMode);
+if(lua_ok_getAutoFeedMode && !lua_getAutoFeedMode) printf("OPTIONAL_ABSENT lua.getAutoFeedMode\n");
+report("lua.getAutoFeedMode",lua_getAutoFeedMode);
+uintptr_t lua_setAutoFeedWaitTimeLetter=0;bool lua_ok_setAutoFeedWaitTimeLetter=resolve_lua_registered_function(readable_ranges,ranges,"setAutoFeedWaitTimeLetter",true,&lua_setAutoFeedWaitTimeLetter);
+if(lua_ok_setAutoFeedWaitTimeLetter && !lua_setAutoFeedWaitTimeLetter) printf("OPTIONAL_ABSENT lua.setAutoFeedWaitTimeLetter\n");
+report("lua.setAutoFeedWaitTimeLetter",lua_setAutoFeedWaitTimeLetter);
+uintptr_t lua_setAutoFeedWaitTimeMinimum=0;bool lua_ok_setAutoFeedWaitTimeMinimum=resolve_lua_registered_function(readable_ranges,ranges,"setAutoFeedWaitTimeMinimum",true,&lua_setAutoFeedWaitTimeMinimum);
+if(lua_ok_setAutoFeedWaitTimeMinimum && !lua_setAutoFeedWaitTimeMinimum) printf("OPTIONAL_ABSENT lua.setAutoFeedWaitTimeMinimum\n");
+report("lua.setAutoFeedWaitTimeMinimum",lua_setAutoFeedWaitTimeMinimum);
+uintptr_t lua_getShowTalkSkipButtonTime=0;bool lua_ok_getShowTalkSkipButtonTime=resolve_lua_registered_function(readable_ranges,ranges,"getShowTalkSkipButtonTime",true,&lua_getShowTalkSkipButtonTime);
+if(lua_ok_getShowTalkSkipButtonTime && !lua_getShowTalkSkipButtonTime) printf("OPTIONAL_ABSENT lua.getShowTalkSkipButtonTime\n");
+report("lua.getShowTalkSkipButtonTime",lua_getShowTalkSkipButtonTime);
+uintptr_t lua_resetPlaySpeedAndAutoText=0;bool lua_ok_resetPlaySpeedAndAutoText=resolve_lua_registered_function(readable_ranges,ranges,"resetPlaySpeedAndAutoText",true,&lua_resetPlaySpeedAndAutoText);
+if(lua_ok_resetPlaySpeedAndAutoText && !lua_resetPlaySpeedAndAutoText) printf("OPTIONAL_ABSENT lua.resetPlaySpeedAndAutoText\n");
+report("lua.resetPlaySpeedAndAutoText",lua_resetPlaySpeedAndAutoText);
+uintptr_t lua_isTalking=0;bool lua_ok_isTalking=resolve_lua_registered_function(readable_ranges,ranges,"isTalking",true,&lua_isTalking);
+if(lua_ok_isTalking && !lua_isTalking) printf("OPTIONAL_ABSENT lua.isTalking\n");
+report("lua.isTalking",lua_isTalking);
+uintptr_t lua_changeItemAmount=0;bool lua_ok_changeItemAmount=resolve_lua_registered_function(readable_ranges,ranges,"changeItemAmount",false,&lua_changeItemAmount);
+report("lua.changeItemAmount",lua_changeItemAmount);
 uintptr_t add_pc_exp_addr=resolve_add_pc_exp(readable_ranges,ranges);report("battle.addPCExp.patch",add_pc_exp_addr);
 uintptr_t cat_scratch_total_addr=resolve_named_integer_setter(readable_ranges,ranges,"stampTotal");report("catScratch.total",cat_scratch_total_addr);
 report("catScratch.namedCount",resolve_named_integer_setter(readable_ranges,ranges,"stampCount"));
@@ -2772,7 +2811,21 @@ item_catalog::Layout il{};bool item_ok=resolve_item_catalog_layout(readable_rang
 uintptr_t ag=resolve_domain_achievement_repository_get(readable_ranges,ranges);report("achievement.get",ag);report("achievement.dispatch",resolve_achievement_fire_event_dispatch(readable_ranges,ranges));
 uintptr_t up=resolve_userdata_push_from_contract(readable_ranges,ranges);report("userdata.push",up);
 resolve_object_layouts(ranges,item_writer_addr,up,domain_token_shop_set_total_addr,token_shop_purchase_addr,appraisal_exchange_shop_purchase_addr,ag,lua_fireAchievementTrigger);
+// Production initialization publishes the catalog layout before resolving injection.
+g_item_layout=il;g_item_layout_ready.store(item_ok);
+bool injection_ok=audit_item_injection(readable_ranges,ranges,token_shop_purchase_addr,item_writer_addr);
 auto dg=resolve_dialogue_native_hooks(ranges);report("dialogue.renderChecker",dg.rendering_checker);
+report("dialogue.native.page_jump_delay",dg.page_jump_delay);
+report("dialogue.native.talk_layer_run_auto_touch",dg.talk_layer_run_auto_touch);
+report("dialogue.native.still_talk_layer_run_auto_touch",dg.still_talk_layer_run_auto_touch);
+report("dialogue.native.get_auto_feed_mode",dg.get_auto_feed_mode);
+report("dialogue.native.get_auto_feed_wait_time_letter",dg.get_auto_feed_wait_time_letter);
+report("dialogue.native.get_auto_feed_wait_time_minimum",dg.get_auto_feed_wait_time_minimum);
+report("dialogue.native.action_timer_value",dg.action_timer_value);
+report("dialogue.native.talk_ui_process_wait",dg.talk_ui_process_wait);
+report("dialogue.native.talk_layer_touch_handler",dg.talk_layer_touch_handler);
+report("dialogue.native.rendering_checker",dg.rendering_checker);
+printf("CHECK dialogue.layout_fields %d page_jump_unlocked_offset=%zu talk_ui_state_talk_layer_offset=%zu talk_layer_main_window_offset=%zu talk_main_window_rendering_flag_offset=%zu talk_main_window_ready_offset=%zu talk_main_window_started_offset=%zu talk_main_window_aux_offset=%zu\n",dg.page_jump_unlocked_offset!=0 && dg.talk_ui_state_talk_layer_offset!=0 && dg.talk_layer_main_window_offset!=0 && dg.talk_main_window_rendering_flag_offset!=0 && dg.talk_main_window_ready_offset!=0 && dg.talk_main_window_started_offset!=0 && dg.talk_main_window_aux_offset!=0,static_cast<size_t>(dg.page_jump_unlocked_offset),static_cast<size_t>(dg.talk_ui_state_talk_layer_offset),static_cast<size_t>(dg.talk_layer_main_window_offset),static_cast<size_t>(dg.talk_main_window_rendering_flag_offset),static_cast<size_t>(dg.talk_main_window_ready_offset),static_cast<size_t>(dg.talk_main_window_started_offset),static_cast<size_t>(dg.talk_main_window_aux_offset));
 std::vector<char> before((char*)mem,(char*)mem+raw.size());RuntimeConfig cfg;
 uint32_t ow[std::size(item_catalog::owned_count_read)]{};
 auto oa=scoped_layout_contract(ranges,token_shop_purchase_addr,item_catalog::owned_count_read,ow);report("mass.ownedCount",oa);g_token_purchase_owned_count_address.store(oa);
@@ -2782,4 +2835,4 @@ cfg.enabled=false;apply_runtime_byte_patches(cfg);apply_token_purchase_owned_cou
 apply_runtime_byte_patches(cfg);apply_token_purchase_owned_count_zero_patch(false,"repeat-audit");bool repeat_off=writes==undone;
 printf("IDEMPOTENT on=%d off=%d owned=%d\n",repeat_on,repeat_off,oa!=0);
 bool restored=memcmp(before.data(),mem,raw.size())==0;printf("ROUNDTRIP item=%d applyWrites=%zu undoWrites=%zu restored=%d\n",item_ok,apply_writes,writes-apply_writes,restored);
-free(mem);return restored&&item_ok&&repeat_on&&repeat_off&&oa!=0?0:1;}
+free(mem);return restored&&item_ok&&injection_ok&&repeat_on&&repeat_off&&oa!=0?0:1;}

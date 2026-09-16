@@ -77,8 +77,8 @@ the chance of accidentally committing local credentials or PII.
 ## Local checks
 
 ```sh
-npm ci
 npm run check
+npm run build
 ```
 
 Real signing and packaging checks run in GitHub Actions because their credentials are not available
@@ -97,16 +97,83 @@ instructions are never executed or sent to the server. The report checks resolve
 unique apply/undo sites, repeated-operation idempotence, and byte-for-byte image restoration.
 A static pass verifies compatibility of the code contracts, not the state of a running shop.
 
-`native/provenance.json` records the imported module commit and SHA-256 of its source and
-instruction contracts. To import a reviewed module checkout and rebuild the browser engine:
+`native/provenance.json` records the imported module commit, hashes of every Item Injection
+production input (including the Android integration), and hashes of the generated native files.
+Imports reject uncommitted production inputs unless explicitly requested with `--allow-dirty`;
+the normal checks reject dirty provenance. To import a reviewed module checkout and rebuild:
 
 ```sh
 python3 scripts/build-native-engine.py /path/to/ae-pcd-stamp-tracer
 npm run check
 ```
 
-Commit `native/engine.cpp`, `native/item_catalog_signatures.h`, and the provenance record with
-the verifier changes. Vercel runs `scripts/build-web-engine.sh` (also `npm run build`) with pinned
+Commit the generated C++/headers, `native/coverage.js`, and provenance together.
+`npm run check` verifies their integrity, compiles/runs the production queue tests, and checks
+the API, ELF loader and report's missing/duplicate/truncated-output behavior. GitHub Actions
+also performs these checks and compiles the deployable WASM engine on pushes and pull requests.
+Vercel runs `scripts/build-web-engine.sh` (also `npm run build`) with pinned
 Emscripten 6.0.9 to regenerate `native/engine.js` and `native/engine.wasm`. These compiled
 assets are ignored by Git. The SDK checkout is pinned by commit in the build script.
 Game binaries, downloaded APKs, and local regression fixtures are not deployment inputs.
+
+### Item Injection coverage
+
+The browser imports the module's actual pure resolver and queue code. It does not invoke
+uploaded ARM64 instructions, attach to a game or perform a grant. The 25 added checks cover:
+
+- Token repository, classification and assignment; ordinary grants and key/ticket history.
+- Real metadata getters, dynamic-cast operands and the instruction-derived grant virtual slot.
+- Both resource predicates, pool members, low-water marks and inventory amount ceiling.
+- All three initial-equipment eligibility predicates and their shared member.
+- Unidentified-equipment factory, embedded ID member and secure-copy agreement.
+- Save-manager/call-site consensus and the synchronization function.
+- Actual production parsing/queue tests: 20,000 IDs, per-ID quantities, duplicate aggregation,
+  overflow rejection, partial progress, cancellation, conflicting deltas and no terminal replay.
+
+All native dialogue targets and field contracts are also reported, alongside the existing
+catalog, shop, achievement, reward, battle and exact patch round-trip checks. The generated
+coverage manifest makes omitted checks fail; old engine output cannot silently pass.
+Optional Lua APIs are N/A only when the production resolver explicitly reports genuine
+absence. An ambiguous optional binding remains a failure.
+
+Five **RUNTIME** rows explicitly cover what a file cannot prove: live objects/ABI calls,
+actual counts and special types, adaptive timing/memory/resource supply, networking/save
+acknowledgement/persistence, and Android scheduling/storage/feature isolation. These rows
+are never counted as static passes. The module's runtime test scope is documented in
+[its Item Injection report](https://github.com/Jordan231111/ae-pcd-stamp-tracer/blob/main/docs/ITEM_INJECTION.md).
+
+### Historical regression results
+
+[native/validation.json](native/validation.json) records hashes and outcomes for all 13 retained
+libraries, using the website's real ELF loader, compiled WASM and report parser:
+
+```sh
+npm run check:fixtures -- /path/to/ae-pcd-stamp-tracer/fixtures/libapp/arm64-v8a
+```
+
+All 25 Item Injection checks pass on **13/13** versions from 3.10.70 through 3.17.0.
+The current 3.17.0 library has **105 static passes, zero failures and five runtime-only rows**.
+Some older libraries still expose genuine ambiguity in pre-existing dialogue bindings:
+
+| Libraries | Existing ambiguous binding |
+| --- | --- |
+| 3.15.50, 3.15.60 | lua.resetPlaySpeedAndAutoText |
+| 3.16.60, 3.16.70, 3.16.71 | lua.setAutoFeedWaitTimeMinimum |
+
+Those bindings have two candidate functions. They remain visible as FAIL, and the full
+fixture command therefore exits nonzero for those files; they are not Item Injection failures
+and are not hidden behind an N/A label. Other genuine optional absences remain N/A.
+No historical game binaries are committed or deployed. Field-movement and contradictory-call
+tests operate only on disposable copies of the library.
+
+### Deployment and prebuilt freshness
+
+Every deployment generates `native/build.json` with the **verifier commit**, imported **module
+commit**, and compiled asset hashes. The Worker checks matching provenance and verifies the
+engine JS/WASM SHA-256 before loading, so mixed deployment assets fail rather than producing
+an apparently clean result. The page displays both site and module revisions.
+
+The module metadata endpoint returns the full selected commit and requires the chosen release
+or debug APK asset; a debug-only release cannot stand in for a release build. The LSPatch builder
+already pins that full commit and downloads its durable `module-<sha>` asset. It does not use
+bundled APKs from this website repository.

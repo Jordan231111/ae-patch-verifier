@@ -11,6 +11,7 @@ module.exports = async function handler(req, res) {
   const cfg = config();
   const requestUrl = new URL(req.url || "/", "http://localhost");
   const moduleSource = normalizeModuleSource(requestUrl.searchParams.get("moduleSource"));
+  const variant = requestUrl.searchParams.get("variant") === "debug" ? "debug" : "release";
 
   res.setHeader("content-type", "application/json");
   // Edge-cache for 60s and let stale results serve another 5 min while revalidating.
@@ -23,10 +24,13 @@ module.exports = async function handler(req, res) {
     if (!cfg.moduleOwner || !cfg.moduleRepo) {
       throw new Error("Module commit source is not configured");
     }
-    const commit = await resolveModuleCommit(cfg, moduleSource);
+    const commit = await resolveModuleCommit(cfg, moduleSource, { requireAsset: `app-${variant}.apk` });
     res.statusCode = 200;
     res.end(JSON.stringify({
       shortSha: commit.shortSha,
+      sha: commit.sha,
+      prebuilt: commit.prebuilt,
+      asset: `app-${variant}.apk`,
       moduleSource,
       ref: moduleSourceRef(cfg, moduleSource)
     }));

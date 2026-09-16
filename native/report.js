@@ -1,13 +1,51 @@
 (function (scope) {
-  const optionalLua = new Set(['lua.setMysteryItemAmount', 'lua.helixChangeItemAmount', 'lua.getShowTalkSkipButtonTime']);
+  const coverage = typeof module !== 'undefined' ? require('./coverage.js') : scope.AENativeCoverage;
+  const optionalLua = new Set(coverage.optionalTargets);
+  const injectionLabels = {
+    resolver: 'Complete production grant resolver', token_repository: 'Token repository',
+    token_assign: 'Token assignment', token_kind: 'Item token classification', base_change: 'Shared amount change',
+    ticket_writer: 'Key / ticket history wrapper', dynamic_cast: 'Game dynamic_cast',
+    master_getter: 'Item master getter', type_getter: 'Semantic item type getter',
+    resource_gate: 'Resource replenishment predicate', other_resources: 'Additional resource repository',
+    sync_manager: 'Save manager consensus', sync: 'Save / synchronization function',
+    initial_weapon: 'First initial-equipment predicate', initial_armor: 'Second initial-equipment predicate',
+    initial_equipment: 'Third initial-equipment predicate', unknown_factory: 'Unidentified-equipment factory',
+    rtti: 'Item and ticket RTTI operands', change_slot: 'Instruction-derived grant virtual slot',
+    token_pool: 'Token pool member and low-water mark', other_pool: 'Additional resource field and low-water mark',
+    amount_max: 'Instruction-derived inventory ceiling', equipment_master: 'Equipment eligibility member consensus',
+    embedded_id: 'Embedded item ID / secure-copy agreement', queue: 'Production input and queue contract tests'
+  };
+  const runtimeChecks = [
+    ['Live item objects', 'Object lifetime, type metadata and actual ABI calls require the running game.'],
+    ['Exact grants and special types', 'Real inventory deltas, keys, equipment instances and rollback cannot be established from a .so.'],
+    ['Adaptive batching', 'Token supply, instance cost, timing and memory pressure are runtime state; decoded thresholds are checked above.'],
+    ['Network and saving', 'Replenishment, reconnection, server acknowledgement and persistence require runtime verification.'],
+    ['Android integration', 'GL-thread scheduling, focus, input persistence and existing-feature isolation require the installed module.']
+  ];
   function nativeReport(lines) {
     const rows = [];
     const row = (feature, check, count, detail, pass = count === 1) => rows.push({ feature, check, count, detail, status: pass ? 'PASS' : 'FAIL', klass: pass ? 'ok' : 'fail' });
+    const targetCounts = new Map(), checkCounts = new Map();
+    const absent = new Set(lines.flatMap(line => /^OPTIONAL_ABSENT (\S+)$/.exec(line)?.slice(1) || []));
+    row('Verifier coverage', 'Current engine protocol', lines.filter(line => line === 'AUDIT_VERSION 2').length,
+      'Requires the engine version that includes Item Injection; stale or incomplete output cannot pass.');
     for (const line of lines) {
       const r = /^RESULT (\S+) (0x[0-9a-f]+)$/i.exec(line);
       if (r) {
-        if (r[2] === '0x0' && optionalLua.has(r[1])) rows.push({ feature: r[1], check: 'Optional Lua API', count: 0, detail: 'Not present in this game version.', status: 'N/A', klass: 'ok' });
-        else row(r[1], 'Production resolver: one validated target', r[2] === '0x0' ? 0 : 1, 'RVA ' + r[2]);
+        targetCounts.set(r[1], (targetCounts.get(r[1]) || 0) + 1);
+        if (r[2] === '0x0' && optionalLua.has(r[1]) && absent.has(r[1])) rows.push({ feature: r[1], check: 'Optional Lua API', count: 0, detail: 'Not present in this game version; the module skips this optional API.', status: 'N/A', klass: 'warn' });
+        else {
+          const diagnostic = r[2] === '0x0' && r[1].startsWith('lua.')
+            ? lines.find(line => line.startsWith('AE_TRACE lua registration ' + r[1].slice(4) + ' skipped ')) : null;
+          row(r[1], 'Production resolver: one validated target', r[2] === '0x0' ? 0 : 1,
+            diagnostic ? diagnostic.replace('AE_TRACE ', '') : 'RVA ' + r[2]);
+        }
+      }
+      const check = /^CHECK ((?:injection|dialogue)\.\w+) ([01])(?: (.*))?$/.exec(line);
+      if (check) {
+        checkCounts.set(check[1], (checkCounts.get(check[1]) || 0) + 1);
+        row(check[1].startsWith('dialogue.') ? 'Dialogue · static' : check[1] === 'injection.queue' ? 'Item Injection · module logic' : 'Item Injection · static',
+          injectionLabels[check[1].slice(10)] || check[1], Number(check[2]), check[3] || '');
       }
       if (line.startsWith('LAYOUT layout_resolved ')) row('Item dump', 'Instruction-derived catalog and name ABI', 1, line.slice(23));
       if (line.startsWith('LAYOUT object_layouts ')) {
@@ -18,6 +56,12 @@
       }
       if (line.startsWith('LAYOUT live_shop_layout ')) row('Mass Purchase', 'Selected-item getters and refresh agree', Number(/valid=(\d+)/.exec(line)?.[1] || 0), line.slice(24));
     }
+    for (const target of coverage.targets) if (targetCounts.get(target) !== 1)
+      row(target, 'Required resolver coverage', 0, 'Missing or duplicate production resolver output.');
+    for (const check of coverage.checks) if (checkCounts.get(check) !== 1)
+      row(check.startsWith('dialogue.') ? 'Dialogue · static' : 'Item Injection · static', injectionLabels[check.slice(10)] || check, 0, 'Required check was not emitted exactly once.');
+    for (const marker of ['LAYOUT layout_resolved ', 'LAYOUT object_layouts ', 'LAYOUT live_shop_layout '])
+      if (!lines.some(line => line.startsWith(marker))) row('Layout coverage', marker.trim(), 0, 'Required production layout report is missing.');
     const byteNames = ['battle.mp.cost', 'battle.mp.delta', 'battle.mp.current', 'battle.mp.max', 'damage.x524288', 'dungeon.skip'];
     for (const name of byteNames) {
       for (const enable of [1, 0]) {
@@ -44,6 +88,8 @@
     const exact = Boolean(result && result[1] === '1' && result[2] === '15' && result[3] === '15' && result[4] === '1');
     row('Patch safety', 'Complete image restored byte-for-byte', exact ? 1 : 0, result ? `${result[2]} apply writes / ${result[3]} undo writes; restored=${result[4]}` : 'Native verification did not complete.');
     if (!rows.some(r => r.feature === 'Item dump')) row('Item dump', 'Catalog resolver', 0, 'The full catalog/name contract did not resolve.');
+    for (const [check, detail] of runtimeChecks)
+      rows.push({ feature: 'Item Injection · runtime', check, count: '—', detail, status: 'RUNTIME', klass: 'warn' });
     return rows;
   }
   function verifyNative(data) {
@@ -64,10 +110,15 @@
     fetch('./native/provenance.json', { cache: 'no-store' }).then(response => {
       if (!response.ok) throw new Error('provenance unavailable');
       return response.json();
-    }).then(info => {
+    }).then(async info => {
       const label = document.getElementById('verifierRevision');
-      if (label) label.textContent = 'Verifier source: module ' + info.moduleCommit.slice(0, 7) +
-        (info.uncommittedSource ? ' (local changes)' : '') + ' · code SHA-256 ' + info.sourceSha256.slice(0, 12);
+      const build = await fetch('./native/build.json', { cache: 'no-store' })
+        .then(response => response.ok ? response.json() : null).catch(() => null);
+      if (label) label.textContent = 'ARM64 verifier source: module ' + info.moduleCommit.slice(0, 7) +
+        (info.uncommittedSource ? ' (local changes)' : '') + ' · code SHA-256 ' + info.sourceSha256.slice(0, 12) +
+        (build?.verifierCommit ? ' · site ' + build.verifierCommit.slice(0, 7) : '');
+      if (label && build && build.moduleCommit !== info.moduleCommit)
+        label.textContent = 'Verifier asset versions disagree. Reload before relying on these checks.';
     }).catch(() => {
       const label = document.getElementById('verifierRevision');
       if (label) label.textContent = 'Verifier source metadata unavailable';

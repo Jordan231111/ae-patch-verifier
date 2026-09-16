@@ -816,7 +816,7 @@
       <header class="verifier-head">
         <div class="label">
           <h2>Verify an Another Eden libapp.so (optional)</h2>
-          <p>Run the module’s production resolver and apply/undo checks locally on your ARM64 library.</p>
+          <p>Check the ARM64 module’s native targets, Item Injection grant paths and batching contracts, plus patch apply/undo safety.</p>
         </div>
       </header>
       <div class="verifier-body">
@@ -829,6 +829,7 @@
         </div>
         <input id="fileInput" type="file" accept=".apk,.xapk,.so,application/zip">
         <p id="verifierRevision" class="muted">Loading verifier source…</p>
+        <p class="muted">Your file stays in this browser. Static passes establish code compatibility; live inventory, network recovery and saving are marked RUNTIME and require the running game.</p>
       <div id="status">Waiting for file.</div>
         <div id="summary" class="summary hidden"></div>
         <div id="results"></div>
@@ -837,11 +838,12 @@
 
     <div class="foot">
       <span>Game-specific signing identities &middot; LSPatch 1.2 / Vector API 102</span>
-      <a href="https://github.com/[removed-private-value]" target="_blank" rel="noopener">Source on GitHub</a>
+      <a href="https://github.com/Jordan231111/ae-patch-verifier" target="_blank" rel="noopener">Source on GitHub</a>
     </div>
   </main>
 
   <script src="./jszip.min.js"></script>
+  <script src="./native/coverage.js"></script>
   <script src="./native/report.js"></script>
   <script>
     const statusEl = document.getElementById("status");
@@ -931,6 +933,7 @@
       });
     });
     moduleSourceInputs.forEach(input => input.addEventListener("change", () => refreshModuleCommit()));
+    document.getElementById("moduleVariant").addEventListener("change", () => refreshModuleCommit());
     pickInputs.forEach(input => input.addEventListener("change", syncPickSelection));
 
     syncPickSelection();
@@ -1239,9 +1242,10 @@
 
     async function refreshModuleCommit() {
       const source = selectedModuleSource();
+      const variant = document.getElementById("moduleVariant").value;
       const requestSequence = ++moduleRefreshSequence;
       try {
-        const response = await fetch(`/api/module/latest?moduleSource=${encodeURIComponent(source)}`, { cache: "no-store" });
+        const response = await fetch(`/api/module/latest?moduleSource=${encodeURIComponent(source)}&variant=${encodeURIComponent(variant)}`, { cache: "no-store" });
         const body = await readJsonSafe(response);
         if (!response.ok) throw new Error((body && body.message) || ("HTTP " + response.status));
         if (!body || !body.shortSha) throw new Error("missing SHA");
@@ -1249,7 +1253,9 @@
         latestModuleCommit = body;
         moduleCommit.textContent = body.shortSha;
         moduleCommit.className = "commit-chip ok";
-        moduleCommitMeta.textContent = `Latest ${sourceLabel(source)} source`;
+        moduleCommitMeta.textContent = body.prebuilt
+          ? `Latest prebuilt ${sourceLabel(source)} · ${variant}`
+          : `Latest ${sourceLabel(source)} source · build required`;
         return body;
       } catch (error) {
         if (requestSequence !== moduleRefreshSequence || source !== selectedModuleSource()) return null;
@@ -1457,12 +1463,13 @@
         const tbody = document.createElement("tbody");
         for (const row of rows) {
           const tr = document.createElement("tr");
-          tr.innerHTML =
-            `<td class="result ${row.klass}">${row.status}</td>` +
-            `<td>${row.feature}</td>` +
-            `<td>${row.check}</td>` +
-            `<td>${row.count}</td>` +
-            `<td class="detail">${row.detail || ""}</td>`;
+          for (const [value, klass] of [[row.status, `result ${row.klass}`], [row.feature, ''],
+            [row.check, ''], [row.count, ''], [row.detail || '', 'detail']]) {
+            const cell = document.createElement('td');
+            cell.className = klass;
+            cell.textContent = String(value);
+            tr.appendChild(cell);
+          }
           tbody.appendChild(tr);
         }
         table.appendChild(tbody);
@@ -1474,8 +1481,8 @@
       summaryEl.innerHTML =
         `<span class="pill ok">PASS ${pass}</span>` +
         `<span class="pill fail">FAIL ${fail}</span>` +
-        `<span class="pill warn">SKIPPED/WARN ${warn}</span>`;
-      setStatus(fail === 0 ? "Verification complete: every mod-menu target resolved." : "Verification complete: review failed checks.", fail === 0 ? "ok" : "fail");
+        `<span class="pill warn">RUNTIME / N/A ${warn}</span>`;
+      setStatus(fail === 0 ? "Static checks passed. Runtime checks still require the game." : "Verification complete: review failed checks.", fail === 0 ? "ok" : "fail");
     }
 
     async function handleFile(file) {

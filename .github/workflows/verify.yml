@@ -1,0 +1,19 @@
+name: Verify website and native engine
+on:
+  push:
+    branches: [main]
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: actions/setup-node@v6.0.0
+        with:
+          node-version: '24'
+      - name: Check API contracts, report completeness and production provenance
+        run: npm run check
+      - name: Compile the deployable WebAssembly engine
+        run: npm run build

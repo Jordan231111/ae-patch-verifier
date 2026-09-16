@@ -1,0 +1,159 @@
+AUDIT_VERSION 2
+RESULT final.itemWriter.patch 0x376d7fc
+RESULT final.rewardWriter.patch 0x3308c88
+RESULT quest.rewardGrant.patch 0x37b8dcc
+RESULT domainItem.setAmount.patch 0x3797594
+RESULT tokenShop.purchase.trace 0x27cc9e8
+RESULT appraisalExchange.purchase.trace 0x27e6ee4
+RESULT tokenShop.tradeComplete.trace 0x27cacb0
+RESULT domainTokenShopCommodity.setTotal.trace 0x374e704
+RESULT domainTokenShopCommodity.resetTotal.trace 0x374eb14
+RESULT dialogue.FieldTalkBaseNode.startInAnimation.trace 0x2cdceac
+RESULT dialogue.FieldTalkBaseNode.startOutAnimation.trace 0x2cdd0c8
+RESULT dialogue.FieldTalkBaseNode.onEndInAnimation.trace 0x2cddabc
+AE_TRACE lua registration getGlobalFlag resolved addr=0x3201994 stringHits=1 directRefs=1 indirectRefs=0
+RESULT lua.getGlobalFlag 0x31e5994
+AE_TRACE lua registration setGlobalFlag resolved addr=0x3201b1c stringHits=1 directRefs=1 indirectRefs=0
+RESULT lua.setGlobalFlag 0x31e5b1c
+AE_TRACE lua registration fireAchievementTrigger resolved addr=0x3267138 stringHits=1 directRefs=1 indirectRefs=0
+RESULT lua.fireAchievementTrigger 0x324b138
+AE_TRACE lua registration isAchievementCompleted resolved addr=0x32675a8 stringHits=1 directRefs=1 indirectRefs=0
+RESULT lua.isAchievementCompleted 0x324b5a8
+AE_TRACE lua registration changeReservedItemAmount resolved addr=0x324ddb8 stringHits=1 directRefs=1 indirectRefs=0
+RESULT lua.changeReservedItemAmount 0x3231db8
+AE_TRACE lua registration changeGimmickItemAmount resolved addr=0x3262080 stringHits=1 directRefs=1 indirectRefs=0
+RESULT lua.changeGimmickItemAmount 0x3246080
+AE_TRACE lua registration setMysteryItemAmount resolved addr=0x32ac44c stringHits=1 directRefs=1 indirectRefs=0
+RESULT lua.setMysteryItemAmount 0x329044c
+AE_TRACE lua registration helixChangeItemAmount resolved addr=0x32ae4b4 stringHits=1 directRefs=1 indirectRefs=0
+RESULT lua.helixChangeItemAmount 0x32924b4
+AE_TRACE lua registration setAutoFeedMode resolved addr=0x328eb24 stringHits=1 directRefs=1 indirectRefs=0
+RESULT lua.setAutoFeedMode 0x3272b24
+AE_TRACE lua registration getAutoFeedMode resolved addr=0x328eba0 stringHits=1 directRefs=1 indirectRefs=0
+RESULT lua.getAutoFeedMode 0x3272ba0
+AE_TRACE lua registration setAutoFeedWaitTimeLetter resolved addr=0x328ebd0 stringHits=1 directRefs=1 indirectRefs=0
+RESULT lua.setAutoFeedWaitTimeLetter 0x3272bd0
+AE_TRACE lua registration setAutoFeedWaitTimeMinimum resolved addr=0x328ec48 stringHits=1 directRefs=1 indirectRefs=0
+RESULT lua.setAutoFeedWaitTimeMinimum 0x3272c48
+AE_TRACE lua registration getShowTalkSkipButtonTime resolved addr=0x3203c78 stringHits=1 directRefs=1 indirectRefs=0
+RESULT lua.getShowTalkSkipButtonTime 0x31e7c78
+AE_TRACE lua registration resetPlaySpeedAndAutoText resolved addr=0x3272d68 stringHits=1 directRefs=1 indirectRefs=0
+RESULT lua.resetPlaySpeedAndAutoText 0x3256d68
+AE_TRACE lua registration isTalking resolved addr=0x32438e0 stringHits=1 directRefs=1 indirectRefs=0
+RESULT lua.isTalking 0x32278e0
+AE_TRACE lua registration changeItemAmount resolved addr=0x324d9ac stringHits=1 directRefs=1 indirectRefs=0
+RESULT lua.changeItemAmount 0x32319ac
+AE_TRACE lua registration addPCExp resolved addr=0x3268b68 stringHits=1 directRefs=1 indirectRefs=0
+RESULT battle.addPCExp.patch 0x34af5ec
+RESULT catScratch.total 0x3aaf820
+RESULT catScratch.namedCount 0x3aaf74c
+LAYOUT layout_resolved instruction-derived root=32 left=0 right=8 key=32 item=40 nameSlot=40 nodeBytes=56 allocation=120 stringPairGap=24
+RESULT item.global 0x48c5b80
+AE_TRACE achievement repository get resolved addr=0x35df7d8 notFoundHits=1 endAssertHits=1 refs=2
+RESULT achievement.get 0x35c37d8
+AE_TRACE achievement dispatcher resolved addr=0x32674a8 typeStringHits=1 prefixStringHits=1 typeRefs=2
+RESULT achievement.dispatch 0x324b4a8
+RESULT userdata.push 0x3b08ed0
+LAYOUT object_layouts secure=1 shop=1 amount=1 achievementMap=1 event=1 userId=48 userTotal=88 userDirty=184 vector=5000 map=5048 userdataDirty=16568 amountSlot=64
+LAYOUT live_shop_layout valid=1 item=1016 control=1024 currency=1032 quantity=1048 marker=1056
+AE_TRACE lua registration changeItemAmount resolved addr=0x324d9ac stringHits=1 directRefs=1 indirectRefs=0
+AE_INJECTION resolved changeSlot=80 poolBegin=0 equipment=1 lowWatermark=25 amountMax=999999999
+CHECK injection.resolver 1 Production resolver and cross-call consistency
+CHECK injection.token_repository 1 RVA=0x391202c
+CHECK injection.token_assign 1 RVA=0x3912784
+CHECK injection.token_kind 1 RVA=0x27cf1f4
+CHECK injection.base_change 1 RVA=0x37979c0
+CHECK injection.ticket_writer 1 RVA=0x376d7fc
+CHECK injection.dynamic_cast 1 RVA=0x42c03d0
+CHECK injection.master_getter 1 RVA=0x22978dc
+CHECK injection.type_getter 1 RVA=0x3713640
+CHECK injection.resource_gate 1 RVA=0x30129ac
+CHECK injection.other_resources 1 RVA=0x3880dfc
+CHECK injection.sync_manager 1 RVA=0x30c45d0
+CHECK injection.sync 1 RVA=0x30c7868
+CHECK injection.initial_weapon 1 RVA=0x3564188
+CHECK injection.initial_armor 1 RVA=0x35641d0
+CHECK injection.initial_equipment 1 RVA=0x3564218
+CHECK injection.unknown_factory 1 RVA=0x35293f8
+CHECK injection.rtti 1 RTTI operands recovered from the game's cast call
+CHECK injection.change_slot 1 slot=80
+CHECK injection.token_pool 1 begin=0 low-water=25
+CHECK injection.other_pool 1 count-field=40 low-water=25
+CHECK injection.amount_max 1 inventory-maximum=999999999
+CHECK injection.equipment_master 1 field=80
+CHECK injection.embedded_id 1 field=8
+CHECK injection.queue 1 Production parser and queue contracts, including 20000 IDs
+AE_TRACE dialogue pageJumpDelay resolved addr=0x2ff4aa0 unlockedOffset=0x2f8 candidates=2 afterTalkUi=1
+AE_TRACE dialogue runAutoTouch resolved talk=0x2fe3b24 still=0x2676964 totalCandidates=2
+AE_TRACE dialogue window fields ready=936 started=937 aux=938 (open/update/getter agree)
+AE_TRACE dialogue native resolver page=0x2ff4aa0 talkRun=0x2fe3b24 stillRun=0x2676964 autoMode=0x32f65bc waitLetter=0x32f65c8 waitMinimum=0x32f65d4 actionTimer=0x33136bc processWait=0x2fecec4 touch=0x2cf2fa4 offsets page=0x2f8 uiTalk=0x3f0 mainWindow=0x348 renderingFlag=0x3ab
+RESULT dialogue.renderChecker 0x2fc7c7c
+RESULT dialogue.native.page_jump_delay 0x2fd8aa0
+RESULT dialogue.native.talk_layer_run_auto_touch 0x2fc7b24
+RESULT dialogue.native.still_talk_layer_run_auto_touch 0x265a964
+RESULT dialogue.native.get_auto_feed_mode 0x32da5bc
+RESULT dialogue.native.get_auto_feed_wait_time_letter 0x32da5c8
+RESULT dialogue.native.get_auto_feed_wait_time_minimum 0x32da5d4
+RESULT dialogue.native.action_timer_value 0x32f76bc
+RESULT dialogue.native.talk_ui_process_wait 0x2fd0ec4
+RESULT dialogue.native.talk_layer_touch_handler 0x2cd6fa4
+RESULT dialogue.native.rendering_checker 0x2fc7c7c
+CHECK dialogue.layout_fields 1 page_jump_unlocked_offset=760 talk_ui_state_talk_layer_offset=1008 talk_layer_main_window_offset=840 talk_main_window_rendering_flag_offset=939 talk_main_window_ready_offset=936 talk_main_window_started_offset=937 talk_main_window_aux_offset=938
+RESULT mass.ownedCount 0x27cca8c
+WRITE 0x221a528 size=4
+AE_TRACE byte patch battle.mp.cost enable=1 addr=0x2236528 ok=1
+WRITE 0x22a213c size=4
+AE_TRACE byte patch battle.mp.delta enable=1 addr=0x22be13c ok=1
+WRITE 0x34c4ccc size=8
+AE_TRACE byte patch battle.mp.current enable=1 addr=0x34e0ccc ok=1
+WRITE 0x34c199c size=8
+AE_TRACE byte patch battle.mp.max enable=1 addr=0x34dd99c ok=1
+WRITE 0x2359854 size=4
+AE_TRACE byte patch damage.x524288 enable=1 addr=0x2375854 ok=1
+WRITE 0x3669acc size=12
+AE_TRACE byte patch dungeon.skip.v316 enable=1 addr=0x3685acc ok=1
+WRITE 0x33dbe24 size=8
+AE_TRACE encounter judge patch desired=1 previous=0 addr=0x33f7e24 ok=1
+WRITE 0x14e8064 size=4
+AE_TRACE speed constant enable=1 addr=0x1504064 ok=1
+WRITE 0x410ede0 size=80
+WRITE 0x22a265c size=4
+AE_TRACE team god enable=1 cave=0x412ade0 branch=0x22be65c modelSlot=96 actorTypeSlot=408 ok=1
+WRITE 0x410fb20 size=80
+WRITE 0x30e431c size=4
+WRITE 0x30e4850 size=4
+WRITE 0x27a0144 size=4
+AE_TRACE ad bypass enable availability=0x3100850 sdk=0x310031c state=0x27bc144 cave=0x412bb20 ok=1
+WRITE 0x27cca8c size=12
+AE_MPTRACE TOKEN_PURCHASE_OWNED_COUNT_PATCH trigger=audit enable=1 addr=0x27e8a8c ok=1
+AE_TRACE speed constant enable=1 addr=0x1504064 ok=1
+AE_TRACE team god enable=1 cave=0x412ade0 branch=0x22be65c modelSlot=96 actorTypeSlot=408 ok=1
+WRITE 0x221a528 size=4
+AE_TRACE byte patch battle.mp.cost enable=0 addr=0x2236528 ok=1
+WRITE 0x22a213c size=4
+AE_TRACE byte patch battle.mp.delta enable=0 addr=0x22be13c ok=1
+WRITE 0x34c4ccc size=8
+AE_TRACE byte patch battle.mp.current enable=0 addr=0x34e0ccc ok=1
+WRITE 0x34c199c size=8
+AE_TRACE byte patch battle.mp.max enable=0 addr=0x34dd99c ok=1
+WRITE 0x2359854 size=4
+AE_TRACE byte patch damage.x524288 enable=0 addr=0x2375854 ok=1
+WRITE 0x3669acc size=12
+AE_TRACE byte patch dungeon.skip.v316 enable=0 addr=0x3685acc ok=1
+WRITE 0x33dbe24 size=8
+AE_TRACE encounter judge patch desired=0 previous=1 addr=0x33f7e24 ok=1
+WRITE 0x14e8064 size=4
+AE_TRACE speed constant enable=0 addr=0x1504064 ok=1
+WRITE 0x22a265c size=4
+WRITE 0x410ede0 size=80
+AE_TRACE team god enable=0 cave=0x412ade0 branch=0x22be65c modelSlot=96 actorTypeSlot=408 ok=1
+WRITE 0x27a0144 size=4
+WRITE 0x30e431c size=4
+WRITE 0x30e4850 size=4
+WRITE 0x410fb20 size=80
+AE_TRACE ad bypass disable availability=0x3100850 sdk=0x310031c state=0x27bc144 cave=0x412bb20 ok=1
+WRITE 0x27cca8c size=12
+AE_MPTRACE TOKEN_PURCHASE_OWNED_COUNT_PATCH trigger=audit enable=0 addr=0x27e8a8c ok=1
+AE_TRACE team god enable=0 cave=0x412ade0 branch=0x22be65c modelSlot=96 actorTypeSlot=408 ok=1
+IDEMPOTENT on=1 off=1 owned=1
+ROUNDTRIP item=1 applyWrites=15 undoWrites=15 restored=1

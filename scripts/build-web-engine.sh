@@ -19,3 +19,4 @@ em++ -std=c++20 -O3 -msimd128 -fno-exceptions -fno-rtti \
   -sMODULARIZE=1 -sEXPORT_NAME=createAENative -sINVOKE_RUN=0 -sEXIT_RUNTIME=0 \
   '-sEXPORTED_RUNTIME_METHODS=["FS","callMain"]' \
   -o "$repo_dir/native/engine.js"
+node "$repo_dir/scripts/write-build-info.js"

@@ -11,6 +11,9 @@ builder/signing/
 # Compiled browser assets, produced during deployment.
 native/engine.js
 native/engine.wasm
+native/build.json
+__pycache__/
+*.pyc
 
 # Downloaded source bundles and local module builds are disposable.
 *.apk
