@@ -88,3 +88,25 @@ The OnceWorld Play credential must belong to a dedicated account without payment
 stored only as an Actions secret and is never exposed to Vercel or browser code.
 Another Eden and OnceWorld production builds run only in GitHub Actions so Play credentials and
 signing material never enter Vercel or browser code.
+
+## Native verifier provenance
+
+Another Eden verification runs the module's production C++ resolvers and patch functions in a
+Web Worker. The ARM64 ELF is mapped and relocated into a private byte image; uploaded game
+instructions are never executed or sent to the server. The report checks resolved layouts,
+unique apply/undo sites, repeated-operation idempotence, and byte-for-byte image restoration.
+A static pass verifies compatibility of the code contracts, not the state of a running shop.
+
+`native/provenance.json` records the imported module commit and SHA-256 of its source and
+instruction contracts. To import a reviewed module checkout and rebuild the browser engine:
+
+```sh
+python3 scripts/build-native-engine.py /path/to/ae-pcd-stamp-tracer
+npm run check
+```
+
+Commit `native/engine.cpp`, `native/item_catalog_signatures.h`, and the provenance record with
+the verifier changes. Vercel runs `scripts/build-web-engine.sh` (also `npm run build`) with pinned
+Emscripten 6.0.9 to regenerate `native/engine.js` and `native/engine.wasm`. These compiled
+assets are ignored by Git. The SDK checkout is pinned by commit in the build script.
+Game binaries, downloaded APKs, and local regression fixtures are not deployment inputs.

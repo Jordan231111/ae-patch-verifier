@@ -7,3 +7,7 @@ node_modules/
 .env.*
 !.env.example
 builder/signing/
+
+# Compiled browser assets, produced during deployment.
+native/engine.js
+native/engine.wasm
