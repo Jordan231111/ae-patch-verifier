@@ -116,8 +116,15 @@
       const finish = () => { clearTimeout(timer); worker.terminate(); };
       worker.onerror = event => { finish(); reject(new Error(event.message || 'Native verifier failed')); };
       worker.onmessage = ({ data: result }) => {
-        finish();
-        if (result.error) reject(new Error(result.error)); else resolve(nativeReport(result.lines));
+        try {
+          if (result.error) throw new Error(result.error);
+          const rows = nativeReport(result.lines);
+          finish();
+          resolve(rows);
+        } catch (error) {
+          finish();
+          reject(error);
+        }
       };
       const copy = data.slice();
       worker.postMessage(copy.buffer, [copy.buffer]);
