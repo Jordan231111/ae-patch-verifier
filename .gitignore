@@ -11,3 +11,9 @@ builder/signing/
 # Compiled browser assets, produced during deployment.
 native/engine.js
 native/engine.wasm
+
+# Downloaded source bundles and local module builds are disposable.
+*.apk
+*.xapk
+*.apks
+*.apkm
