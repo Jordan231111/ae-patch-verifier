@@ -70,6 +70,12 @@ async function dispatchGithubBuild({ region, moduleVariant, moduleSource }) {
     releaseLookup
   ]);
 
+  if (!moduleCommit.prebuilt) {
+    const error = new Error("The precompiled module is not ready yet. Retry after module CI finishes.");
+    error.statusCode = 503;
+    throw error;
+  }
+
   const nonce = `${Date.now()}-${crypto.randomBytes(4).toString("hex")}`;
   const filename = `${game.defaultName}_${release.versionName}_LSPatched_Ashfur${moduleFilenamePart(moduleSource)}_${moduleVariant}_${moduleCommit.shortSha}.apks`;
   await githubJson(

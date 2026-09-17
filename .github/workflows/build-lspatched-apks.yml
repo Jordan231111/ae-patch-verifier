@@ -142,13 +142,10 @@ jobs:
           SOURCE_PID=$!
 
           (
-            if gh release download "module-${MODULE_SHA}" \
-              --repo "$MODULE_REPO" \
-              --pattern "$MODULE_ASSET" \
-              --dir "$WORK/module" 2>/dev/null \
-              && [ -s "$WORK/module/$MODULE_ASSET" ]; then
-              printf '%s\n' "$WORK/module/$MODULE_ASSET" > "$WORK/module-apk.path"
-            fi
+            gh release download "module-${MODULE_SHA}" \
+              --repo "$MODULE_REPO" --pattern "$MODULE_ASSET" --dir "$WORK/module"
+            test -s "$WORK/module/$MODULE_ASSET"
+            printf '%s\n' "$WORK/module/$MODULE_ASSET" > "$WORK/module-apk.path"
           ) &
           MODULE_PID=$!
 
@@ -170,13 +167,10 @@ jobs:
           test -s "$WORK/source/manifest.json"
           test -s "$WORK/tools/lspatch.jar"
 
-          if [ -s "$WORK/module-apk.path" ]; then
-            MODULE_APK=$(cat "$WORK/module-apk.path")
-            echo "MODULE_APK=$MODULE_APK" >> "$GITHUB_ENV"
-            echo "prebuilt=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "prebuilt=false" >> "$GITHUB_OUTPUT"
-          fi
+          test -s "$WORK/module-apk.path"
+          MODULE_APK=$(cat "$WORK/module-apk.path")
+          echo "MODULE_APK=$MODULE_APK" >> "$GITHUB_ENV"
+          echo "prebuilt=true" >> "$GITHUB_OUTPUT"
 
           source "$WORK/source/source.env"
           {
@@ -189,38 +183,6 @@ jobs:
             echo "VERSION_NAME=$VERSION_NAME"
             echo "SOURCE_KIND=$SOURCE_KIND"
           } >> "$GITHUB_ENV"
-
-      - name: Compile module when no prebuilt exists
-        if: steps.inputs.outputs.prebuilt != 'true'
-        env:
-          MODULE_SHA: ${{ inputs.moduleSha }}
-          MODULE_REF: ${{ inputs.moduleRef }}
-          MODULE_REPO: ${{ secrets.AE_MODULE_REPO }}
-          GH_TOKEN: ${{ secrets.AE_MODULE_REPO_TOKEN }}
-          VARIANT: ${{ inputs.variant }}
-        run: |
-          set -Eeuo pipefail
-          SDKMANAGER="${ANDROID_HOME:-/usr/local/lib/android/sdk}/cmdline-tools/latest/bin/sdkmanager"
-          "$SDKMANAGER" 'platforms;android-35' 'build-tools;35.0.0' 'cmake;3.22.1' 'ndk;25.2.9519653' >/dev/null
-          git init -q "$WORK/module-src"
-          git -C "$WORK/module-src" remote add origin "https://x-access-token:${GH_TOKEN}@github.com/${MODULE_REPO}.git"
-          if ! git -C "$WORK/module-src" fetch --depth 1 origin "$MODULE_SHA"; then
-            git -C "$WORK/module-src" fetch --depth 50 origin "$MODULE_REF"
-          fi
-          git -C "$WORK/module-src" checkout --detach "$MODULE_SHA"
-          chmod +x "$WORK/module-src/gradlew"
-          case "$VARIANT" in
-            debug)
-              (cd "$WORK/module-src" && ./gradlew :app:assembleDebug -q)
-              MODULE_APK="$WORK/module-src/app/build/outputs/apk/debug/app-debug.apk"
-              ;;
-            *)
-              (cd "$WORK/module-src" && ./gradlew :app:assembleRelease -q)
-              MODULE_APK="$WORK/module-src/app/build/outputs/apk/release/app-release.apk"
-              ;;
-          esac
-          test -s "$MODULE_APK"
-          echo "MODULE_APK=$MODULE_APK" >> "$GITHUB_ENV"
 
       - name: Patch, sign, and package
         env:
@@ -305,7 +267,6 @@ jobs:
 
           LSPATCH_JAR="$WORK/tools/lspatch.jar"
           [ "$(sha256sum "$LSPATCH_JAR" | awk '{print $1}')" = "$LSPATCH_JAR_SHA256" ]
-          unzip -tq "$LSPATCH_JAR" >/dev/null
           java -jar "$LSPATCH_JAR" \
             -m "$MODULE_APK" \
             -k "$KEYSTORE" "$AE_HOST_KEYSTORE_PASSWORD" "$AE_HOST_KEY_ALIAS" "$AE_HOST_KEYSTORE_PASSWORD" \
@@ -359,7 +320,6 @@ jobs:
 
           OUT="$PWD/${DEFAULT_NAME}_${VERSION_NAME}_LSPatched_Ashfur${TARGET_SUFFIX}_${VARIANT}_${MODULE_SHA_SHORT}_${NONCE}.apks"
           (cd "$WORK/bundle" && zip -q -0 "$OUT" "${FINAL_ENTRIES[@]}" manifest.json)
-          unzip -tq "$OUT" >/dev/null
           {
             echo "OUT=$OUT"
             echo "DEFAULT_NAME=$DEFAULT_NAME"
@@ -375,7 +335,6 @@ jobs:
         run: |
           set -euo pipefail
           TAG="lspatch-${NONCE}"
-          gh release create "$TAG" "$OUT#$(basename "$OUT")" \
-            --repo "$GITHUB_REPOSITORY" \
+          python3 scripts/publish-release.py --file "$OUT" --tag "$TAG" \
             --title "Another Eden ${VERSION_NAME} ${REGION} ${RUNTIME_TARGET}" \
             --notes "Temporary ${SOURCE_KIND} LSPatch build for ${PACKAGE_NAME}. Target ${RUNTIME_TARGET}, guest ABI ${ARCHITECTURE}. Module ${MODULE_SHA_SHORT}. Automatically removed by the lspatch janitor."

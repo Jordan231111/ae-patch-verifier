@@ -1,3 +1,4 @@
+const { readyApksAsset } = require("../_shared/release.js");
 const { config, githubJson } = require("../_shared/github.js");
 
 function parseNonce(value) {
@@ -52,18 +53,16 @@ module.exports = async function handler(req, res) {
     }
 
     const release = await findRelease(cfg, nonce);
-    if (release && Array.isArray(release.assets) && release.assets.length) {
-      const asset = release.assets.find(item => item.name && item.name.endsWith(".apks"));
-      if (asset) {
-        res.statusCode = 200;
-        res.end(JSON.stringify({
-          status: "ready",
-          filename: asset.name,
-          sizeBytes: asset.size || 0,
-          downloadUrl: `/api/lspatch/download?nonce=${encodeURIComponent(nonce)}`
-        }));
-        return;
-      }
+    const asset = readyApksAsset(release);
+    if (asset) {
+      res.statusCode = 200;
+      res.end(JSON.stringify({
+        status: "ready",
+        filename: asset.name,
+        sizeBytes: asset.size || 0,
+        downloadUrl: `/api/lspatch/download?nonce=${encodeURIComponent(nonce)}`
+      }));
+      return;
     }
 
     const run = await findRun(cfg, nonce);
@@ -98,7 +97,7 @@ module.exports = async function handler(req, res) {
     res.statusCode = 200;
     res.end(JSON.stringify({
       status: "running",
-      runStatus: run.status,
+      runStatus: release ? "publishing" : run.status,
       runUrl: run.html_url || "",
       startedAt: run.run_started_at || run.created_at || ""
     }));

@@ -2075,16 +2075,9 @@ uintptr_t appraisal_exchange_shop_purchase_addr=resolve_masked_pattern_hook_addr
             ranges, "appraisalExchange.purchase.trace",
             sig_appraisal_exchange_shop_purchase, mask_appraisal_exchange_shop_purchase,
             sizeof(sig_appraisal_exchange_shop_purchase));report("appraisalExchange.purchase.trace",appraisal_exchange_shop_purchase_addr);
-uintptr_t token_shop_trade_complete_addr=resolve_masked_pattern_hook_address(
-            ranges, "tokenShop.tradeComplete.trace",
-            sig_token_shop_trade_complete, mask_token_shop_trade_complete,
-            sizeof(sig_token_shop_trade_complete));report("tokenShop.tradeComplete.trace",token_shop_trade_complete_addr);
 uintptr_t domain_token_shop_set_total_addr=resolve_pattern_hook_address(
             ranges, "domainTokenShopCommodity.setTotal.trace",
             sig_domain_token_shop_set_total, sizeof(sig_domain_token_shop_set_total));report("domainTokenShopCommodity.setTotal.trace",domain_token_shop_set_total_addr);
-uintptr_t domain_token_shop_reset_total_addr=resolve_pattern_hook_address(
-            ranges, "domainTokenShopCommodity.resetTotal.trace",
-            sig_domain_token_shop_reset_total, sizeof(sig_domain_token_shop_reset_total));report("domainTokenShopCommodity.resetTotal.trace",domain_token_shop_reset_total_addr);
 uintptr_t start_in_addr=resolve_masked_pattern_hook_address(
                 ranges, "dialogue.FieldTalkBaseNode.startInAnimation.trace",
                 sig_field_talk_start_in_animation, mask_field_talk_start_in_animation,

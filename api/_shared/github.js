@@ -117,8 +117,8 @@ async function publishedModuleShas(cfg, asset) {
   const shas = new Set();
   for (const rel of Array.isArray(releases) ? releases : []) {
     const match = MODULE_RELEASE_TAG.exec((rel && rel.tag_name) || "");
-    if (!match) continue;
-    if (asset && !(rel.assets || []).some(a => a && a.name === asset)) continue;
+    if (!match || rel.draft) continue;
+    if (asset && !(rel.assets || []).some(a => a && a.name === asset && a.state === "uploaded" && a.size > 0)) continue;
     shas.add(match[1].toLowerCase());
   }
   return shas;
@@ -130,9 +130,8 @@ async function resolveModuleCommit(cfg, moduleSource, options = {}) {
   }
   const ref = moduleSourceRef(cfg, moduleSource);
   // List recent branch commits (newest first) instead of just HEAD, so we can hand the builder the
-  // newest commit that is ACTUALLY prebuilt rather than a bleeding-edge HEAD the module CI may not
-  // have compiled yet. The builder skips its ~2-3 min Android compile only when a prebuilt exists,
-  // so this is what keeps every dispatched run on the <1 min fast path.
+  // newest completed prebuilt. The website never compiles the module; that
+  // belongs to module CI, outside the user's APKS build.
   const commits = await githubJson(
     cfg,
     "GET",
@@ -145,13 +144,13 @@ async function resolveModuleCommit(cfg, moduleSource, options = {}) {
 
   let chosen = head;
   let prebuilt = false;
-  // Gated to `main` on purpose: main is branch-correct (every main release is a main build),
-  // whereas houdini-x64-rewrite shares pre-fork ancestors with main, so walking back there could
-  // hand an ARM64 module to an x86_64 build. houdini therefore stays on HEAD and lets the builder
-  // compile if its commit is not prebuilt -- correctness wins over the fast path for that variant.
-  if (moduleSource === "main" && options.preferPrebuilt !== false) {
+  // Main may use the newest completed build. Other variants require their
+  // exact branch HEAD, never a pre-fork ancestor from main.
+  if (options.preferPrebuilt !== false) {
     const shas = await publishedModuleShas(cfg, options.requireAsset).catch(() => new Set());
-    const withPrebuilt = commits.find(c => c && shas.has(String(c.sha).toLowerCase()));
+    const withPrebuilt = moduleSource === "main"
+      ? commits.find(c => c && shas.has(String(c.sha).toLowerCase()))
+      : (shas.has(head.sha.toLowerCase()) ? head : null);
     if (withPrebuilt) {
       chosen = withPrebuilt;
       prebuilt = true;

@@ -45,8 +45,8 @@ test('a debug-only release cannot be presented as the latest release APK', async
   const responses = {
     '/repos/owner/module/commits?sha=main&per_page=30': [{ sha: head }, { sha: previous }],
     '/repos/owner/module/releases?per_page=100': [
-      { tag_name: 'module-' + head, assets: [{ name: 'app-debug.apk' }] },
-      { tag_name: 'module-' + previous, assets: [{ name: 'app-release.apk' }, { name: 'app-debug.apk' }] }
+      { tag_name: 'module-' + head, assets: [{ name: 'app-debug.apk', state: 'uploaded', size: 12 }] },
+      { tag_name: 'module-' + previous, assets: [{ name: 'app-release.apk', state: 'uploaded', size: 12 }, { name: 'app-debug.apk', state: 'uploaded', size: 12 }] }
     ]
   };
   const https = { request(options, callback) {
@@ -62,4 +62,11 @@ test('a debug-only release cannot be presented as the latest release APK', async
   const cfg = { githubToken: 'test-token', moduleOwner: 'owner', moduleRepo: 'module', moduleRef: 'main' };
   assert.equal((await api.resolveModuleCommit(cfg, 'main', { requireAsset: 'app-release.apk' })).sha, previous);
   assert.equal((await api.resolveModuleCommit(cfg, 'main', { requireAsset: 'app-debug.apk' })).sha, head);
+  cfg.houdiniModuleRef = 'houdini-x64-rewrite';
+  responses['/repos/owner/module/commits?sha=houdini-x64-rewrite&per_page=30'] = [{ sha: head }, { sha: previous }];
+  const missing = await api.resolveModuleCommit(cfg, 'houdini-x64-rewrite', { requireAsset: 'app-release.apk' });
+  assert.equal(missing.sha, head); assert.equal(missing.prebuilt, false);
+  const exact = await api.resolveModuleCommit(cfg, 'houdini-x64-rewrite', { requireAsset: 'app-debug.apk' });
+  assert.equal(exact.sha, head); assert.equal(exact.prebuilt, true);
+
 });

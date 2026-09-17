@@ -1,3 +1,4 @@
+const { readyApksAsset } = require("../_shared/release.js");
 const { config, githubJson, githubRequest } = require("../_shared/github.js");
 
 function parseNonce(value) {
@@ -44,12 +45,11 @@ module.exports = async function handler(req, res) {
       return;
     }
 
-    const assets = Array.isArray(release.assets) ? release.assets : [];
-    const asset = assets.find(item => item.name && item.name.endsWith(".apks"));
+    const asset = readyApksAsset(release);
     if (!asset) {
       res.statusCode = 404;
       res.setHeader("content-type", "application/json");
-      res.end(JSON.stringify({ message: "Release has no .apks asset yet" }));
+      res.end(JSON.stringify({ message: "Build is not ready for download yet" }));
       return;
     }
 

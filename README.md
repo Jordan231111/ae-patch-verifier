@@ -187,3 +187,18 @@ it immediately; a changed implementation requires regenerating and deploying the
 The pure byte scanner is checked against independent reference cases. Performance depends on
 the uploaded image, browser and device; simulator function timings do not establish whole-device
 performance or energy use.
+
+### APKS build latency
+
+The on-demand Another Eden builder downloads the app, precompiled module and pinned
+patcher in parallel. It never compiles the module or runs the native resolver suite.
+If no matching prebuilt exists, it returns a retryable error instead of a slow build.
+Downloaded source identity, patcher digest, signing identity and install alignment
+remain checked. Redundant ZIP rescans of files just hashed or created are omitted.
+
+Temporary APKS publishing uses a streaming HTTP/1.1 upload with a 28-second publishing
+budget, at most two attempts, and reconciliation before retrying an uncertain upload.
+A listed draft/partial asset is not ready for download. The janitor measures age from
+publication or upload time, not the target commit's older creation timestamp.
+A cold 30–40 second build is the target, not a promise about GitHub queueing or network
+availability; a stalled upload now fails promptly instead of waiting several minutes.

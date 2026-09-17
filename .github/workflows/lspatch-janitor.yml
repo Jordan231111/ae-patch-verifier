@@ -71,8 +71,14 @@ jobs:
                 *) continue ;;
               esac
 
-              age=999999999
-              if [ -n "$created_at" ] && [ "$created_at" != "null" ]; then
+              # Release created_at is the target commit's time, not upload time.
+              # Empty drafts use our timestamped nonce until an asset exists.
+              age=0
+              if [ "$created_at" = "pending" ]; then
+                if [[ "$tag_name" =~ ^(onceworld-)?lspatch-([0-9]{13})- ]]; then
+                  age=$(( now_epoch - BASH_REMATCH[2] / 1000 ))
+                fi
+              elif [ -n "$created_at" ] && [ "$created_at" != "null" ]; then
                 created_epoch=$(date -u -d "$created_at" +%s 2>/dev/null || echo 0)
                 age=$(( now_epoch - created_epoch ))
               fi
@@ -88,7 +94,7 @@ jobs:
               else
                 kept_releases=$(( kept_releases + 1 ))
               fi
-            done < <(echo "$page_json" | jq -r '.[] | [.tag_name, .created_at, (.id|tostring)] | @tsv')
+            done < <(echo "$page_json" | jq -r '.[] | [.tag_name, (.published_at // ([.assets[]?.created_at] | max) // "pending"), (.id|tostring)] | @tsv')
 
             if [ "$count" -lt 100 ]; then break; fi
             page=$(( page + 1 ))

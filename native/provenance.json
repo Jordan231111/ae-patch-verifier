@@ -1,8 +1,8 @@
 {
   "schemaVersion": 3,
   "uncommittedSource": false,
-  "moduleCommit": "86ab328d1843f90eaf9d3fe0a51ba223e0cade6f",
-  "sourceSha256": "273553f8e962563f68d6d82648773c91966f41e019c090e0eef3cc1dc330cc03",
+  "moduleCommit": "5d2726ca53b9098f582940274dcdb7081d5334b0",
+  "sourceSha256": "d36570ddeee9c18a0516c68030159fb8966958bea625c84997faeadbd6cf3ac0",
   "contractsSha256": "e920c8995a4ab9ca983d43f0560a8164dc43ea86a0f9318f09d6164590d7af0a",
   "productionFiles": {
     "app/src/main/cpp/CMakeLists.txt": "d05467748aeb388acf6f37188ecb61ad605bc31152c3f27622a7c27cddb4eb03",
@@ -42,7 +42,7 @@
     "app/src/main/cpp/runtime_events.h": "7c975bacab6f2bdd5349604c49f701efba2500d5eab5a11b950c59e1a8904452",
     "app/src/main/cpp/runtime_feature_hooks.inc": "023ead589e8499b5ffae7c87d89e92776a9fb77ca9d9eee984bccfc4ca95950f",
     "app/src/main/cpp/runtime_feature_signatures.h": "24a4f645082d81a9294e2afe4e575ee6620eba7cc516aeb8612f376fe608c895",
-    "app/src/main/cpp/template_native.cpp": "273553f8e962563f68d6d82648773c91966f41e019c090e0eef3cc1dc330cc03",
+    "app/src/main/cpp/template_native.cpp": "d36570ddeee9c18a0516c68030159fb8966958bea625c84997faeadbd6cf3ac0",
     "app/src/main/java/com/jordan/aepcdtrace/CrashDiagnostics.java": "56a29d8568093e724affc69ed8fdb91b66dee5baafddae4d5712026d5641cf28",
     "app/src/main/java/com/jordan/aepcdtrace/FeatureRegistry.java": "58abe639bcc6e0f8fa1dda515913fceee4ca5eba77a680d7607dc1ab33a02e36",
     "app/src/main/java/com/jordan/aepcdtrace/FeatureState.java": "e68b63567933253dc821998ee5a5b9128874d157332ce77fae3000019e3b3d9c",
@@ -140,13 +140,13 @@
     "gradle/wrapper/gradle-wrapper.properties": "23b7b98fa7f086c7310fb49d39084bdb472003a03f3b8508b43098f381d53114"
   },
   "generatedFiles": {
-    "engine.cpp": "7cda1332cbfcb6ba298507ffb0db8093b6a64bb5ea6e28a6cac05ea7d2acf946",
+    "engine.cpp": "2040728d6456df37769db26155cc3f3cc74d8a864ecd556e93dfc5f363197673",
     "byte-scan.h": "440a928b2871bf559930214fafed6394575713d9d0f3cdf03dbb085792b6ea86",
     "item_catalog_signatures.h": "e920c8995a4ab9ca983d43f0560a8164dc43ea86a0f9318f09d6164590d7af0a",
     "item_injection_resolver.h": "eba83d2347817a545e72eba725f633864576f14aa5afcb38d640e04559a49dba",
     "item_injection_queue_test.h": "05302a418806a07b92ce36abe4f82e475879bf0b985acd48cc164b2a5810ca7f",
     "lua_registration_model.inc": "25f5c8e927380d163197cf0e39bf4743ad7bdc88cde8a132c0d6d54961b96cdc",
-    "coverage.js": "0c5ed5f514f51363bad288c8b6fe88842be7be3757dde9ec5abd09546aacfe89",
+    "coverage.js": "854d9cebebfd31471898faa379b8480a6f290e85fac35c8c00bc58d9f1cdf670",
     "item_injection_contracts.h": "0298a3e5daeed2865872db5a3f50ac64f9ebe97f3fe9d0adc0c26160d2ea4bfa",
     "item_injection_queue.h": "7c92d4ce5c665022518af580b2a8d8af24c334954aa5575d982d6539e6a6d27a",
     "item_removal_contracts.h": "4e119e2c1425099f21f86e8d3189851c622a62a510ac2a50a0a122c3d4446d85",

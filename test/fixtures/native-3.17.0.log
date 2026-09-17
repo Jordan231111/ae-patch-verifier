@@ -5,9 +5,7 @@ RESULT quest.rewardGrant.patch 0x37b8dcc
 RESULT domainItem.setAmount.patch 0x3797594
 RESULT tokenShop.purchase.trace 0x27cc9e8
 RESULT appraisalExchange.purchase.trace 0x27e6ee4
-RESULT tokenShop.tradeComplete.trace 0x27cacb0
 RESULT domainTokenShopCommodity.setTotal.trace 0x374e704
-RESULT domainTokenShopCommodity.resetTotal.trace 0x374eb14
 RESULT dialogue.FieldTalkBaseNode.startInAnimation.trace 0x2cdceac
 RESULT dialogue.FieldTalkBaseNode.startOutAnimation.trace 0x2cdd0c8
 RESULT dialogue.FieldTalkBaseNode.onEndInAnimation.trace 0x2cddabc
@@ -142,11 +140,11 @@ UNWIND_EXTENTS 202556 GAPS_REJECTED 206
 CHECK models.unwind_extents 1
 CHECK models.unwind_gaps 1
 CHECK models.speed_math 1
-AE_TRACE lua registration modelLuaEntry resolved addr=0x1fed0 stringHits=1 directRefs=1 indirectRefs=1
-AE_TRACE lua registration modelLuaEntry resolved addr=0x1fed0 stringHits=1 directRefs=1 indirectRefs=1
-AE_TRACE lua registration modelLuaEntry resolved addr=0x1fed0 stringHits=1 directRefs=1 indirectRefs=1
+AE_TRACE lua registration modelLuaEntry resolved addr=0x1fe20 stringHits=1 directRefs=1 indirectRefs=1
+AE_TRACE lua registration modelLuaEntry resolved addr=0x1fe20 stringHits=1 directRefs=1 indirectRefs=1
+AE_TRACE lua registration modelLuaEntry resolved addr=0x1fe20 stringHits=1 directRefs=1 indirectRefs=1
 AE_TRACE lua registration modelLuaEntry skipped stringHits=1 directRefs=2 indirectRefs=1 functionHits=2
-AE_TRACE lua registration modelLuaEntry resolved addr=0x1fed0 stringHits=1 directRefs=1 indirectRefs=0
+AE_TRACE lua registration modelLuaEntry resolved addr=0x1fe20 stringHits=1 directRefs=1 indirectRefs=0
 AE_TRACE lua registration modelLuaEntry skipped stringHits=1 directRefs=0 indirectRefs=0 functionHits=0
 AE_TRACE lua registration absentModelLua absent in this libapp version
 CHECK models.lua_registration_rows 1
