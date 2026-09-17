@@ -22,7 +22,7 @@ if dirty and not args.allow_dirty:
  raise SystemExit('Production inputs have uncommitted changes; commit them or explicitly use --allow-dirty.')
 s=source.read_text()
 (out/'item_catalog_signatures.h').write_bytes(header.read_bytes())
-copied_headers=['item_injection_contracts.h','item_injection_queue.h','item_removal_contracts.h',
+copied_headers=['item_injection_contracts.h','item_injection_cascade_contracts.h','item_injection_queue.h','item_removal_contracts.h',
  'item_pet_contracts.h','item_count_contracts.h','item_creation_contracts.h','mass_shop_contracts.h',
  'director_speed_contracts.h','runtime_context_contracts.h','runtime_feature_signatures.h','elf_unwind_bounds.h',
  'item_fish_contracts.h','item_pet_creation_contracts.h','item_semantics_contracts.h']
@@ -35,7 +35,7 @@ pure_files={
  'director_speed.inc':(root/'app/src/main/cpp/director_speed.inc').read_text().split('void hooked_director_calculate_delta(')[0],
 }
 for name in ['item_pet_runtime.inc','item_creation_runtime.inc','mass_shop_resolver.inc',
- 'item_fish_resolver.inc','item_pet_creation_resolver.inc','item_semantics_resolver.inc']:
+ 'item_fish_resolver.inc','item_pet_creation_resolver.inc','item_semantics_resolver.inc','item_injection_cascade_resolver.inc']:
  pure_files[name]=(root/'app/src/main/cpp'/name).read_text()
 for name,text in pure_files.items():(out/name).write_text(text.rstrip()+'\n')
 injection = (root/'app/src/main/cpp/item_injection_runtime.inc').read_text()

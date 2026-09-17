@@ -62,6 +62,7 @@ AE_INJECTION removal kind=3 ready=1
 AE_INJECTION resolved changeSlot=80 poolBegin=0 equipment=1 lowWatermark=25 amountMax=999999999
 CHECK injection.resolver 1 Production resolver and cross-call consistency
 CHECK injection.token_repository 1 RVA=0x391202c
+CHECK injection.token_repository_slot 1 Existing native owner slot; admission must not create a repository during loading
 CHECK injection.token_assign 1 RVA=0x3912784
 CHECK injection.token_kind 1 RVA=0x27cf1f4
 CHECK injection.base_change 1 RVA=0x37979c0
@@ -73,6 +74,11 @@ CHECK injection.resource_gate 1 RVA=0x30129ac
 CHECK injection.other_resources 1 RVA=0x3880dfc
 CHECK injection.sync_manager 1 RVA=0x30c45d0
 CHECK injection.sync 1 RVA=0x30c7868
+CHECK injection.achievement_callback 1 RVA=0x3135ec4
+CHECK injection.achievement_eligible 1 RVA=0x35b9ab8
+CHECK injection.achievement_refresh 1 RVA=0x31355e4
+CHECK injection.achievement_release 1 RVA=0x3135344
+CHECK injection.achievement_owner_slot 1 Static capture, reward and lifecycle contracts; live ownership/resource behavior requires device validation
 CHECK injection.initial_weapon 1 RVA=0x3564188
 CHECK injection.initial_armor 1 RVA=0x35641d0
 CHECK injection.initial_equipment 1 RVA=0x3564218
@@ -140,11 +146,11 @@ UNWIND_EXTENTS 202556 GAPS_REJECTED 206
 CHECK models.unwind_extents 1
 CHECK models.unwind_gaps 1
 CHECK models.speed_math 1
-AE_TRACE lua registration modelLuaEntry resolved addr=0x1fe20 stringHits=1 directRefs=1 indirectRefs=1
-AE_TRACE lua registration modelLuaEntry resolved addr=0x1fe20 stringHits=1 directRefs=1 indirectRefs=1
-AE_TRACE lua registration modelLuaEntry resolved addr=0x1fe20 stringHits=1 directRefs=1 indirectRefs=1
+AE_TRACE lua registration modelLuaEntry resolved addr=0x20760 stringHits=1 directRefs=1 indirectRefs=1
+AE_TRACE lua registration modelLuaEntry resolved addr=0x20760 stringHits=1 directRefs=1 indirectRefs=1
+AE_TRACE lua registration modelLuaEntry resolved addr=0x20760 stringHits=1 directRefs=1 indirectRefs=1
 AE_TRACE lua registration modelLuaEntry skipped stringHits=1 directRefs=2 indirectRefs=1 functionHits=2
-AE_TRACE lua registration modelLuaEntry resolved addr=0x1fe20 stringHits=1 directRefs=1 indirectRefs=0
+AE_TRACE lua registration modelLuaEntry resolved addr=0x20760 stringHits=1 directRefs=1 indirectRefs=0
 AE_TRACE lua registration modelLuaEntry skipped stringHits=1 directRefs=0 indirectRefs=0 functionHits=0
 AE_TRACE lua registration absentModelLua absent in this libapp version
 CHECK models.lua_registration_rows 1

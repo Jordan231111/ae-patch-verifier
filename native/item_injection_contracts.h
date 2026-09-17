@@ -49,6 +49,15 @@ inline constexpr Word token_pool[] = {
     {0xAA0303F3, 0xFFFFFFFF, Role::none}, {0xAA0203F7, 0xFFFFFFFF, Role::none},
     {0xAA0003F5, 0xFFFFFFFF, Role::none}, {0x2A0103F8, 0xFFFFFFFF, Role::none},
 };
+// Read the existing repository without invoking its lazy constructor during
+// title-screen/loading state. The owner must be initialized by the host.
+inline constexpr Word token_singleton_load[] = {
+    {0x90000015,0x9F00001F,Role::item_page},
+    {0xF9401688,0xFFFFFFFF,Role::none},
+    {0xF81F83A8,0xFFFFFFFF,Role::none},
+    {0xF94002B3,0xFFC003FF,Role::item_load},
+    {0xB5000013,0xFF00001F,Role::none},
+};
 inline constexpr Word shop_token_kind[] = {
     {0x94000000, 0xFC000000, Role::repository}, {0xAA0003F5, 0xFFFFFFFF, Role::none},
     {0xD10003A0, 0xFFC003FF, Role::none}, {0x94000000, 0xFC000000, Role::kind},

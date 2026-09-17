@@ -6,6 +6,7 @@ struct InjectionLayout {
     uintptr_t currency_core = 0;
     uint32_t forbidden_currency = 0;
     uintptr_t token_repository = 0, token_assign = 0, token_kind = 0;
+    uintptr_t token_repository_slot = 0;
     uintptr_t base_change = 0, ticket_writer = 0;
     uintptr_t base_set = 0, amount_floor = 0;
     size_t setter_slot = 0, core_slot = 0, state_slot = 0;
@@ -142,6 +143,7 @@ uintptr_t injection_contract(const std::vector<MemoryRange> &exec, uintptr_t sta
 #include "item_fish_resolver.inc"
 
 #include "item_semantics_resolver.inc"
+#include "item_injection_cascade_resolver.inc"
 
 bool resolve_item_injection(const std::vector<MemoryRange> &readable,
                             const std::vector<MemoryRange> &exec,
@@ -171,6 +173,12 @@ bool resolve_item_injection(const std::vector<MemoryRange> &readable,
         if (decode_branch_target(pc, true, &callee) && callee == layout.token_assign) shared_assign = true;
     }
     const uintptr_t pool = injection_contract(exec, layout.token_assign, 128, token_pool);
+    const auto singleton=injection_contract(exec,layout.token_repository,128,token_singleton_load);
+    if(!singleton || injection_function_start(readable,exec,singleton)!=layout.token_repository) return false;
+    layout.token_repository_slot=decode_adrp_ldr_global(
+        injection_capture(singleton,token_singleton_load,Role::item_page),
+        injection_capture(singleton,token_singleton_load,Role::item_load));
+    if(!injection_writable_image_slot(readable,layout.token_repository_slot)) return false;
     if (!shared_assign || !pool) return false;
     const int64_t pool_offset = item_catalog::signed_bits((read_u32(pool) >> 15U) & 127U, 7) * 8;
     layout.change_slot = item_catalog::unsigned_offset(read_u32(injection_capture(dispatch, lua_change_dispatch, Role::change_slot)), 3);
@@ -326,6 +334,8 @@ bool resolve_item_injection(const std::vector<MemoryRange> &readable,
             }
         }
     }
+    g_injection_cascade=resolve_injection_cascade(readable,exec,layout);
+    if(!g_injection_cascade.ready) return false;
     resolve_item_removals(readable, exec, g_object_layouts.amount_slot, layout.change_slot);
     g_injection_layout = layout;
     g_fish=resolve_fish(readable,exec);

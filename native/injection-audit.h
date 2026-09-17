@@ -19,6 +19,8 @@ bool audit_item_injection(const std::vector<MemoryRange> &readable,
         check(id, resolved && address && range_contains(exec, address, sizeof(uint32_t)), detail);
     };
     target("injection.token_repository", layout.token_repository);
+    check("injection.token_repository_slot",injection_writable_image_slot(readable,layout.token_repository_slot),
+          "Existing native owner slot; admission must not create a repository during loading");
     target("injection.token_assign", layout.token_assign);
     target("injection.token_kind", layout.token_kind);
     target("injection.base_change", layout.base_change);
@@ -30,6 +32,13 @@ bool audit_item_injection(const std::vector<MemoryRange> &readable,
     target("injection.other_resources", layout.other_resources);
     target("injection.sync_manager", layout.sync_manager);
     target("injection.sync", layout.sync);
+    target("injection.achievement_callback",g_injection_cascade.callback);
+    target("injection.achievement_eligible",g_injection_cascade.eligible);
+    target("injection.achievement_refresh",g_injection_cascade.reset);
+    target("injection.achievement_release",g_injection_cascade.destroy);
+    check("injection.achievement_owner_slot",g_injection_cascade.ready &&
+          injection_writable_image_slot(readable,g_injection_cascade.manager_slot),
+          "Static capture, reward and lifecycle contracts; live ownership/resource behavior requires device validation");
     target("injection.initial_weapon", layout.initial_equipment_checks[0]);
     target("injection.initial_armor", layout.initial_equipment_checks[1]);
     target("injection.initial_equipment", layout.initial_equipment_checks[2]);

@@ -18,14 +18,14 @@ for (const [name, expected] of Object.entries({ ...info.generatedFiles, ...info.
   const actual = crypto.createHash('sha256').update(fs.readFileSync(path.join(native, name))).digest('hex');
   assert.equal(actual, expected, name + ' differs from its recorded import; regenerate the engine');
 }
-for (const name of ['item_catalog_signatures.h', 'item_injection_contracts.h', 'item_injection_queue.h']) {
+for (const name of ['item_catalog_signatures.h', 'item_injection_contracts.h', 'item_injection_cascade_contracts.h', 'item_injection_queue.h']) {
   assert.equal(info.generatedFiles[name], info.productionFiles['app/src/main/cpp/' + name]);
 }
 assert.ok(!/\b(step_item_injection|injection_amount|hooked_injection_sync)\s*\(/.test(fs.readFileSync(path.join(native, 'item_injection_resolver.h'), 'utf8')));
 for (const filename of ['engine.cpp','item_removal_runtime.inc','item_count_runtime.inc','item_pet_runtime.inc',
   'item_creation_runtime.inc','mass_shop_resolver.inc','director_speed.inc','item_fish_resolver.inc',
-  'item_pet_creation_resolver.inc','item_semantics_resolver.inc']) {
-  assert.ok(!/\b(PetRemovalPlan|PetCreateRollback|FishSnapshot|create_native_fish|sample_native_fish|InstanceSnapshot|create_injection_instance|hooked_mass_bind_token|check_pet_ownership_model)\b/
+  'item_pet_creation_resolver.inc','item_semantics_resolver.inc','item_injection_cascade_resolver.inc']) {
+  assert.ok(!/\b(PetRemovalPlan|PetCreateRollback|FishSnapshot|create_native_fish|sample_native_fish|InstanceSnapshot|create_injection_instance|hooked_mass_bind_token|check_pet_ownership_model|hooked_injection_reward|drain_injection_rewards|retain_existing_image)\b/
     .test(fs.readFileSync(path.join(native, filename), 'utf8')), filename + ' must not execute uploaded game code');
 }
 const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'ae-queue-contracts-'));
