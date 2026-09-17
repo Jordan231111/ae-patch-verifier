@@ -2,8 +2,13 @@
 // Included in template_native.cpp after the shared read-only resolver helpers.
 // This feature owns its queue, command serials, diagnostics and token use.
 struct InjectionLayout {
+    uintptr_t character_ready_slot = 0;
+    uintptr_t currency_core = 0;
+    uint32_t forbidden_currency = 0;
     uintptr_t token_repository = 0, token_assign = 0, token_kind = 0;
     uintptr_t base_change = 0, ticket_writer = 0;
+    uintptr_t base_set = 0, amount_floor = 0;
+    size_t setter_slot = 0, core_slot = 0, state_slot = 0;
     uintptr_t resources_low = 0, cast_function = 0, item_rtti = 0, ticket_rtti = 0;
     uintptr_t master_getter = 0, type_getter = 0;
     uintptr_t sync = 0, sync_manager = 0;
@@ -22,23 +27,29 @@ std::atomic<bool> g_injection_ready{false};
 // These are standard ELF/DWARF format records, never game-object field layouts.
 uintptr_t injection_function_start(const std::vector<MemoryRange> &readable,
                                    const std::vector<MemoryRange> &exec, uintptr_t pc) {
+    if(!range_contains(exec,pc,4)) return 0;
+    const auto read_metadata=[&](uintptr_t address,void *value,size_t size) {
+        if(!range_contains(readable,address,size)) return false;
+        if(t_active_scan_snapshot && t_active_scan_snapshot->read(address,value,size)) return true;
+        return vm_read_partial(address,value,size)==static_cast<ssize_t>(size);
+    };
     const uintptr_t base = find_module_base(kTargetLib);
     Elf64_Ehdr elf{};
     if (!base || !range_contains(readable, base, sizeof(elf)) ||
-        vm_read_partial(base, &elf, sizeof(elf)) != sizeof(elf) ||
+        !read_metadata(base, &elf, sizeof(elf)) ||
         std::memcmp(elf.e_ident, ELFMAG, SELFMAG) != 0 || elf.e_machine != EM_AARCH64 ||
         elf.e_phentsize != sizeof(Elf64_Phdr) || elf.e_phnum == 0) return 0;
     for (size_t i = 0; i < elf.e_phnum; ++i) {
         Elf64_Phdr ph{};
         uintptr_t at = base + elf.e_phoff + i * sizeof(ph);
-        if (!range_contains(readable, at, sizeof(ph)) || vm_read_partial(at, &ph, sizeof(ph)) != sizeof(ph)) return 0;
+        if (!read_metadata(at, &ph, sizeof(ph))) return 0;
         if (ph.p_type != PT_GNU_EH_FRAME) continue;
         struct Header { uint8_t version, pointer_encoding, count_encoding, table_encoding;
                         int32_t frame_pointer; uint32_t count; } header{};
         struct Entry { int32_t function, fde; };
         const uintptr_t address = base + ph.p_vaddr;
         if (!range_contains(readable, address, sizeof(header)) ||
-            vm_read_partial(address, &header, sizeof(header)) != sizeof(header) ||
+            !read_metadata(address, &header, sizeof(header)) ||
             header.version != 1 || header.pointer_encoding != 0x1b ||
             header.count_encoding != 0x03 || header.table_encoding != 0x3b ||
             header.count == 0 || ph.p_memsz < sizeof(header) ||
@@ -46,17 +57,46 @@ uintptr_t injection_function_start(const std::vector<MemoryRange> &readable,
         const uintptr_t table = address + sizeof(header);
         if (!range_contains(readable, table, header.count * sizeof(Entry))) return 0;
         size_t lo = 0, hi = header.count;
-        uintptr_t found = 0;
+        uintptr_t found = 0, fde=0;
         while (lo < hi) {
             const size_t mid = lo + (hi - lo) / 2;
             Entry entry{};
-            if (vm_read_partial(table + mid * sizeof(Entry), &entry, sizeof(entry)) != sizeof(entry)) return 0;
+            if (!read_metadata(table + mid * sizeof(Entry), &entry, sizeof(entry))) return 0;
             const uintptr_t start = address + static_cast<intptr_t>(entry.function);
-            if (start <= pc) { found = start; lo = mid + 1; } else hi = mid;
+            if (start <= pc) { found = start; fde=address+static_cast<intptr_t>(entry.fde);lo = mid + 1; } else hi = mid;
         }
-        return range_contains(exec, found, sizeof(uint32_t)) ? found : 0;
+        uintptr_t end=0;
+        return found && elf_unwind::fde_contains(read_metadata,fde,found,pc,&end) &&
+               range_contains(exec,found,end-found) ? found : 0;
     }
     return 0;
+}
+
+// Android may map the zero-filled tail of PT_LOAD as anonymous memory. A
+// pathname-filtered /proc/maps snapshot therefore cannot validate BSS slots.
+bool injection_writable_image_slot(const std::vector<MemoryRange> &readable, uintptr_t slot) {
+    const uintptr_t base=find_module_base(kTargetLib);
+    Elf64_Ehdr elf{};
+    if(!base || !range_contains(readable,base,sizeof(elf)) ||
+       vm_read_partial(base,&elf,sizeof(elf))!=sizeof(elf) ||
+       std::memcmp(elf.e_ident,ELFMAG,SELFMAG) || elf.e_ident[EI_CLASS]!=ELFCLASS64 ||
+       elf.e_ident[EI_DATA]!=ELFDATA2LSB || elf.e_machine!=EM_AARCH64 ||
+       elf.e_phentsize!=sizeof(Elf64_Phdr) || !elf.e_phnum || slot%alignof(uintptr_t)) return false;
+    if(elf.e_phoff>UINTPTR_MAX-base) return false;
+    const uintptr_t table=base+elf.e_phoff;
+    if(!range_contains(readable,table,size_t(elf.e_phnum)*sizeof(Elf64_Phdr))) return false;
+    for(size_t i=0;i<elf.e_phnum;++i) {
+        Elf64_Phdr ph{};
+        if(vm_read_partial(table+i*sizeof(ph),&ph,sizeof(ph))!=sizeof(ph)) return false;
+        if(ph.p_type!=PT_LOAD || !(ph.p_flags&PF_W) || ph.p_filesz>ph.p_memsz ||
+           ph.p_vaddr>UINTPTR_MAX-base) continue;
+        const uintptr_t start=base+ph.p_vaddr;
+        if(ph.p_memsz>UINTPTR_MAX-start || slot<start || ph.p_memsz<sizeof(uintptr_t) ||
+           slot-start>ph.p_memsz-sizeof(uintptr_t)) continue;
+        uintptr_t value=0;
+        return vm_read_partial(slot,&value,sizeof(value))==sizeof(value);
+    }
+    return false;
 }
 
 uintptr_t injection_anchored_function(const std::vector<MemoryRange> &readable,
@@ -87,6 +127,7 @@ std::vector<uintptr_t> injection_contract_candidates(const std::vector<MemoryRan
 template<size_t N>
 uintptr_t injection_capture(uintptr_t site, const item_injection_contracts::Word (&pattern)[N],
                             item_injection_contracts::Role role) {
+    if (!site) return 0;
     for (size_t i = 0; i < N; ++i) if (pattern[i].role == role) return site + i * sizeof(uint32_t);
     return 0;
 }
@@ -96,6 +137,11 @@ uintptr_t injection_contract(const std::vector<MemoryRange> &exec, uintptr_t sta
     auto hits = injection_contract_candidates(exec, start, length, pattern);
     return hits.size() == 1 ? hits.front() : 0;
 }
+
+#include "item_removal_runtime.inc"
+#include "item_fish_resolver.inc"
+
+#include "item_semantics_resolver.inc"
 
 bool resolve_item_injection(const std::vector<MemoryRange> &readable,
                             const std::vector<MemoryRange> &exec,
@@ -184,6 +230,21 @@ bool resolve_item_injection(const std::vector<MemoryRange> &readable,
                              (((read_u32(injection_capture(ceiling, amount_ceiling, Role::high_half)) >> 5U) & 0xffffU) << 16U);
     if (maximum == 0 || maximum > INT32_MAX) return false;
     layout.amount_max = static_cast<int32_t>(maximum);
+    layout.setter_slot = item_catalog::unsigned_offset(read_u32(injection_capture(ceiling, amount_ceiling, Role::setter_slot)), 3);
+    const auto floor = injection_contract(exec, layout.base_change, 256, amount_floor);
+    uintptr_t floor2 = 0;
+    if (!floor || !decode_branch_target(injection_capture(floor, amount_floor, Role::floor1), true, &layout.amount_floor) ||
+        !decode_branch_target(injection_capture(floor, amount_floor, Role::floor2), true, &floor2) || floor2 != layout.amount_floor) return false;
+    layout.base_set = injection_anchored_function(readable, exec, "virtual void toybox::DomainItem::setAmount(int, uint32_t)");
+    const auto core = layout.base_set ? injection_contract(exec, layout.base_set, 1024, base_set_core) : 0;
+    const auto state = layout.base_set ? injection_contract(exec, layout.base_set, 1024, base_set_state) : 0;
+    if (!core || !state || item_catalog::unsigned_offset(read_u32(injection_capture(core, base_set_core, Role::amount_slot)), 3)
+            != g_object_layouts.amount_slot ||
+        ((read_u32(injection_capture(core, base_set_core, Role::requested1)) >> 12U) & 511U) !=
+        ((read_u32(injection_capture(core, base_set_core, Role::requested2)) >> 12U) & 511U)) return false;
+    layout.core_slot = item_catalog::unsigned_offset(read_u32(injection_capture(core, base_set_core, Role::core_slot)), 3);
+    layout.state_slot = item_catalog::unsigned_offset(read_u32(injection_capture(state, base_set_state, Role::state_slot)), 3);
+    if (!layout.setter_slot || !layout.core_slot || !layout.state_slot || !range_contains(exec, layout.amount_floor, 4)) return false;
     const uintptr_t type = injection_contract(exec, layout.token_kind, 128, master_type);
     if (!type || !decode_branch_target(injection_capture(type, master_type, Role::master_getter), true, &layout.master_getter) ||
         !decode_branch_target(injection_capture(type, master_type, Role::type_getter), true, &layout.type_getter)) return false;
@@ -226,7 +287,49 @@ bool resolve_item_injection(const std::vector<MemoryRange> &readable,
             }
         }
     }
+    const auto character=injection_anchored_function(readable,exec,"static DomainPCRepository *toybox::DomainPCRepository::getInstance()");
+    if(character) {
+        const auto unique_owned=[&](const auto &pattern) {
+            auto sites=injection_contract_candidates(exec,character,1024,pattern);
+            sites.erase(std::remove_if(sites.begin(),sites.end(),[&](uintptr_t at) {
+                return injection_function_start(readable,exec,at)!=character;
+            }),sites.end());
+            return sites.size()==1 ? sites.front() : uintptr_t(0);
+        };
+        const auto load=unique_owned(pc_singleton_load),store=unique_owned(pc_singleton_store);
+        uintptr_t page=0;uint32_t reg=0;
+        if(load && store && decode_adrp_page(read_u32(load),load,&page,&reg)) {
+            const auto field=item_catalog::unsigned_offset(read_u32(load+12),3);
+            const auto target=load+16+static_cast<intptr_t>(item_catalog::signed_bits((read_u32(load+16)>>5)&0x7ffff,19)*4);
+            if(field==item_catalog::unsigned_offset(read_u32(store+12),3) && target==store+16 &&
+               field<=UINTPTR_MAX-page && injection_writable_image_slot(readable,page+field))
+                layout.character_ready_slot=page+field;
+        }
+    }
+    const auto currency_table = unique_primary_vtable(readable,exec,"N6toybox14DomainCurrencyE");
+    uintptr_t currency_core = 0;
+    if (currency_table && read_range_ptr(readable,currency_table+layout.core_slot,&currency_core)) {
+        auto sites = injection_contract_candidates(exec,currency_core,2048,currency_forbidden);
+        sites.erase(std::remove_if(sites.begin(),sites.end(),[&](uintptr_t at) {
+            return injection_function_start(readable,exec,at)!=currency_core;
+        }),sites.end());
+        if (sites.size()==1) {
+            bool anchored = false;
+            static constexpr char message[] = "cannot modify gem amount";
+            for (auto text : find_pattern(readable,reinterpret_cast<const uint8_t *>(message),sizeof(message)))
+                for (auto ref : find_pc_relative_refs(exec,text))
+                    anchored |= injection_function_start(readable,exec,ref)==currency_core;
+            if (anchored) {
+                layout.currency_core=currency_core;
+                layout.forbidden_currency=((read_u32(sites[0])>>5U)&0xffffU) |
+                    (((read_u32(sites[0]+20)>>5U)&0xffffU)<<16U);
+            }
+        }
+    }
+    resolve_item_removals(readable, exec, g_object_layouts.amount_slot, layout.change_slot);
     g_injection_layout = layout;
+    g_fish=resolve_fish(readable,exec);
+    g_special_inventory=resolve_special_inventory(readable,exec,g_object_layouts.amount_slot,layout.core_slot);
     g_injection_ready.store(true, std::memory_order_release);
     ALOGI("AE_INJECTION resolved changeSlot=%zu poolBegin=%zu equipment=%d lowWatermark=%zu amountMax=%d",
           layout.change_slot, layout.pool_begin, layout.equipment_master != 0, layout.low_watermark, layout.amount_max);

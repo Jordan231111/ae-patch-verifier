@@ -23,7 +23,7 @@ struct Word {
     Role role;
 };
 
-inline constexpr Word owned_count_read[] = {
+inline constexpr Word purchase_token_read[] = {
     {0xF9400008, 0xFFFFFFFF, Role::none},
     {0xF9400108, 0xFFC003FF, Role::none},
     {0xD63F0100, 0xFFFFFFFF, Role::none},

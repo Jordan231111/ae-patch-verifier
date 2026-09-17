@@ -91,112 +91,99 @@ signing material never enter Vercel or browser code.
 
 ## Native verifier provenance
 
-Another Eden verification runs the module's production C++ resolvers and patch functions in a
-Web Worker. The ARM64 ELF is mapped and relocated into a private byte image; uploaded game
-instructions are never executed or sent to the server. The report checks resolved layouts,
-unique apply/undo sites, repeated-operation idempotence, and byte-for-byte image restoration.
-A static pass verifies compatibility of the code contracts, not the state of a running shop.
+Another Eden verification is a **read-only resolver audit**. A Web Worker maps the uploaded
+ARM64 ELF into a private byte image and runs imported C++ instruction, RTTI, call-graph and
+unwind-range contracts. The upload remains byte-identical. The website does not execute
+uploaded ARM64 game code, attach to the game, change inventory or exercise a live hook chain.
 
-`native/provenance.json` records the imported module commit, hashes of every Item Injection
-production input (including the Android integration), and hashes of the generated native files.
-Imports reject uncommitted production inputs unless explicitly requested with `--allow-dirty`;
-the normal checks reject dirty provenance. To import a reviewed module checkout and rebuild:
+Protocol 3 requires every generated target and check exactly once, `READ_ONLY unchanged=1`,
+`AUDIT_COMPLETE ok=1`, and a zero engine exit code. Missing, ambiguous, duplicated, interrupted
+or stale output cannot produce a successful audit. Optional Lua APIs are N/A only when their
+registration name is genuinely absent; ambiguity remains a failure.
+
+`native/provenance.json` records the module commit and SHA-256 digests for production code,
+Android integration, build inputs and the locked ShadowHook source. A normal import requires
+an entirely clean, committed module checkout. `--allow-dirty` is a development option whose
+output is labelled and rejected by deployment checks and the browser Worker.
 
 ```sh
 python3 scripts/build-native-engine.py /path/to/ae-pcd-stamp-tracer
 npm run check
 ```
 
-Commit the generated C++/headers, `native/coverage.js`, and provenance together.
-`npm run check` verifies their integrity, compiles/runs the production queue tests, and checks
-the API, ELF loader and report's missing/duplicate/truncated-output behavior. GitHub Actions
-also performs these checks and compiles the deployable WASM engine on pushes and pull requests.
-Vercel runs `scripts/build-web-engine.sh` (also `npm run build`) with pinned
-Emscripten 6.0.9 to regenerate `native/engine.js` and `native/engine.wasm`. These compiled
-assets are ignored by Git. The SDK checkout is pinned by commit in the build script.
-Game binaries, downloaded APKs, and local regression fixtures are not deployment inputs.
+Generation and compilation take place in a temporary sibling tree. Publication uses an atomic
+directory exchange only after all work succeeds and the original sources are unchanged.
+Failures leave the previous generated files and compiled assets intact; concurrent edits are
+preserved. `--skip-build` publishes source only and removes stale compiled assets. `npm run build`
+also stages the complete native directory before publication.
 
-### Item Injection coverage
+Commit the generated C++/headers, coverage manifest and provenance together. After that commit,
+run `npm run build` to stamp the final verifier commit into `native/build.json`. Emscripten 6.0.9
+is required; an installed compiler of another version is rejected. The fallback SDK checkout
+is pinned by commit. Compiled JS/WASM are deployment artifacts, not tracked source files.
 
-The browser imports the module's actual pure resolver and queue code. It does not invoke
-uploaded ARM64 instructions, attach to a game or perform a grant. The 25 added checks cover:
+### Inventory and feature coverage
 
-- Token repository, classification and assignment; ordinary grants and key/ticket history.
-- Real metadata getters, dynamic-cast operands and the instruction-derived grant virtual slot.
-- Both resource predicates, pool members, low-water marks and inventory amount ceiling.
-- All three initial-equipment eligibility predicates and their shared member.
-- Unidentified-equipment factory, embedded ID member and secure-copy agreement.
-- Save-manager/call-site consensus and the synchronization function.
-- Actual production parsing/queue tests: 20,000 IDs, per-ID quantities, duplicate aggregation,
-  overflow rejection, partial progress, cancellation, conflicting deltas and no terminal replay.
+The static audit includes:
 
-All native dialogue targets and field contracts are also reported, alongside the existing
-catalog, shop, achievement, reward, battle and exact patch round-trip checks. The generated
-coverage manifest makes omitted checks fail; old engine output cannot silently pass.
-Optional Lua APIs are N/A only when the production resolver explicitly reports genuine
-absence. An ambiguous optional binding remains a failure.
+- Signed int64 input, safe duplicate merging, overflow handling and production queue models.
+- Token and resource contracts, limits, native save bindings and character readiness in
+  anonymous ELF BSS, plus the native forbidden-currency restriction.
+- Equipment, Pet equipment, Buddy equipment and unidentified-equipment owning queries,
+  factories, precise removers and native count indexes.
+- Pet FBS and three-index preservation contracts, and native creation publication boundaries.
+- Fish pools with their original weights, native size/signature generation and inventory-only
+  storage contracts. The audit does not run the sampler or create a fish.
+- Legacy scalar lottery tickets versus server-issued expiry records, and character growth
+  gifts whose amount/writer do not represent reversible inventory quantities.
+- Independent runtime feature targets, Director delta/cap contracts, shop ownership/binders,
+  RTTI/vtable uniqueness, complete FDE extents, missing/duplicate/moved targets and Lua
+  registration pointer-row models.
 
-Five **RUNTIME** rows explicitly cover what a file cannot prove: live objects/ABI calls,
-actual counts and special types, adaptive timing/memory/resource supply, networking/save
-acknowledgement/persistence, and Android scheduling/storage/feature isolation. These rows
-are never counted as static passes. The module's runtime test scope is documented in
-[its Item Injection report](https://github.com/Jordan231111/ae-pcd-stamp-tracer/blob/main/docs/ITEM_INJECTION.md).
+Seven **RUNTIME** rows separate what an ELF cannot prove: live objects/native ABI calls;
+actual quantities, identities and paired restoration; resources and memory pressure; saving
+and persistence; Android lifecycle and feature isolation; ShadowHook chains and unhooking;
+and live shop ownership/restoration. Runtime-only rows never count as static passes. Native
+ownership/failure tests that execute ARM64 helpers run in disposable Android processes, and
+business mutations run only in the dedicated device lab.
 
 ### Historical regression results
 
-[native/validation.json](native/validation.json) records hashes and outcomes for all 13 retained
-libraries, using the website's real ELF loader, compiled WASM and report parser:
+`native/validation.json` records the input hashes, exit codes and report counts for all
+13 retained versions from 3.10.70 through 3.17.0. The command uses the website's real ELF loader,
+compiled WASM and report parser, with a fresh process for each file:
 
 ```sh
 npm run check:fixtures -- /path/to/ae-pcd-stamp-tracer/fixtures/libapp/arm64-v8a
 ```
 
-All 25 Item Injection checks pass on **13/13** versions from 3.10.70 through 3.17.0.
-The current 3.17.0 library has **105 static passes, zero failures and five runtime-only rows**.
-Some older libraries still expose genuine ambiguity in pre-existing dialogue bindings:
-
-| Libraries | Existing ambiguous binding |
-| --- | --- |
-| 3.15.50, 3.15.60 | lua.resetPlaySpeedAndAutoText |
-| 3.16.60, 3.16.70, 3.16.71 | lua.setAutoFeedWaitTimeMinimum |
-
-Those bindings have two candidate functions. They remain visible as FAIL, and the full
-fixture command therefore exits nonzero for those files; they are not Item Injection failures
-and are not hidden behind an N/A label. Other genuine optional absences remain N/A.
-No historical game binaries are committed or deployed. Field-movement and contradictory-call
-tests operate only on disposable copies of the library.
+All required contracts must pass for every supported fixture. Counts are derived from the
+coverage manifest and actual engine output, so adding a check cannot silently leave an old
+fixed pass total. The oldest versions have explicitly reported optional Lua absences. No game
+binaries, downloaded APKs or private account snapshots are committed or deployed.
 
 ### Deployment and prebuilt freshness
 
-Every deployment generates `native/build.json` with the **verifier commit**, imported **module
-commit**, and compiled asset hashes. The Worker checks matching provenance and verifies the
-engine JS/WASM SHA-256 before loading, so mixed deployment assets fail rather than producing
-an apparently clean result. The page displays both site and module revisions.
+`native/build.json` identifies the verifier commit, imported module commit and artifact hashes.
+The Worker verifies matching provenance and the exact JS/WASM bytes before loading them,
+including across an alias change. Nonzero or missing engine exit status cannot become success.
+The page displays the source revisions.
 
-The module metadata endpoint returns the full selected commit and requires the chosen release
-or debug APK asset; a debug-only release cannot stand in for a release build. The LSPatch builder
-already pins that full commit and downloads its durable `module-<sha>` asset. It does not use
-bundled APKs from this website repository.
+Module downloads are pinned to a full module commit and its durable `module-<FULL_SHA>` GitHub
+release. Release and debug APKs are distinct required assets. Module APKs embed their own
+`assets/module-build.json`; a clean source commit and SHA-256 identify the published build.
+Separate native debug symbols accompany the module release. No private signing material is
+included in Vercel or browser code.
 
-### Compatibility boundaries and performance
+### Compatibility boundaries
 
-Addresses and private game-field offsets are decoded rather than taken from a version table.
-The recognizers still require supported ARM64 instruction shapes, anchors and C++/ELF ABI
-contracts. Compiler register allocation, inlining, removed strings, engine rewrites or changed
-inventory/save behavior can require a resolver update. Historical static passes are evidence
-of compatibility, not proof of future runtime semantics.
+Private offsets and call targets are derived from the inspected image, not selected from a
+version/RVA table. A new compiler layout, missing anchor, changed ABI or rewritten subsystem
+can require new contracts. Thirteen historical passes and current-device tests are evidence
+within those scopes, not a guarantee for unknown future versions.
 
-The website checks a **pinned module implementation**. A new game library can be checked against
-that implementation immediately; changing the module implementation requires regenerating and
-deploying the verifier sources. Provenance checks detect inconsistent imports; they do not
-automatically redesign a resolver for a future module or game.
-
-The production byte-mask matcher is imported verbatim and checked against 4,000 independent
-reference cases. Byte-patch names and version alternatives come from the production descriptors.
-Round-trip validation checks the actual union of owned write ranges and byte-for-byte restoration,
-without fixing the number of writes or requiring identical write granularity during undo.
-
-Verification runs in a Web Worker and retains a private image for reliable apply/undo checks.
-On the development machine, the full 3.17.0 check took about 7 seconds, including about 6.7 seconds
-in the native engine. Alternative scanners were benchmarked and rejected because they were slower.
-This is a measured sample, not a speed guarantee on other devices or files.
+The website evaluates one pinned module implementation. A new library can be audited against
+it immediately; a changed implementation requires regenerating and deploying the engine.
+The pure byte scanner is checked against independent reference cases. Performance depends on
+the uploaded image, browser and device; simulator function timings do not establish whole-device
+performance or energy use.

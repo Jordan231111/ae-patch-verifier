@@ -11,7 +11,7 @@ bool audit_injection_queue() {
     AUDIT_REQUIRE(parse_items("[564000003:3, 221008025\n564000003:2;288015014 x 4]", 7, entries, error));
     AUDIT_REQUIRE(entries.size() == 3 && entries[0].id == 564000003 && entries[0].quantity == 5);
     AUDIT_REQUIRE(entries[1].quantity == 7 && entries[2].quantity == 4);
-    for (const char *bad : {"", "0", "-1", "123abc", "1:0", "1:-2", "2147483648",
+    for (const char *bad : {"", "0", "-1", "123abc", "1:0", "2147483648",
                             "1:18446744073709551616", "1:18446744073709551615,1:1"}) {
         AUDIT_REQUIRE(!parse_items(bad, 1, entries, error));
         AUDIT_REQUIRE(!error.empty());
@@ -46,6 +46,46 @@ bool audit_injection_queue() {
     batch.phase = Phase::Running;
     AUDIT_REQUIRE(batch.acknowledge(1, 0, 1) && batch.phase == Phase::Complete);
     AUDIT_REQUIRE(!batch.acknowledge(1, 1, 2)); // terminal requests never repeat
+    AUDIT_REQUIRE(parse_items("564000003:-5,564000003:+2,7", -4, entries, error));
+    AUDIT_REQUIRE(entries.size() == 2 && entries[0].quantity == -3 && entries[1].quantity == -4);
+    AUDIT_REQUIRE(parse_items("1:5,1:-5", 1, entries, error) && entries[0].quantity == 0);
+    for (const char *bad : {"1:0", "1:-0", "1:--1", "1:-+1", "1:9223372036854775808",
+                            "1:-9223372036854775809", "1:9223372036854775807,1:1",
+                            "1:-9223372036854775808,1:-1"})
+        AUDIT_REQUIRE(!parse_items(bad, 1, entries, error));
+    AUDIT_REQUIRE(parse_items("1:-9223372036854775808", 1, entries, error));
+    AUDIT_REQUIRE(magnitude(entries[0].quantity) == (uint64_t{1} << 63));
+    AUDIT_REQUIRE(!parse_items("1", 0, entries, error));
+    AUDIT_REQUIRE(batch.start("1:-5,2:3", 1));
+    batch.phase = Phase::Running;
+    AUDIT_REQUIRE(!batch.acknowledge(1, 10, 11));
+    AUDIT_REQUIRE(batch.acknowledge(-2, 10, 8) && batch.entries[0].granted == -2);
+    AUDIT_REQUIRE(batch.acknowledge(-3, 8, 5) && batch.index == 1);
+    AUDIT_REQUIRE(batch.acknowledge(3, 0, 3) && batch.phase == Phase::Complete);
+    AUDIT_REQUIRE(batch.start("1:-5", 1)); batch.phase = Phase::Running;
+    AUDIT_REQUIRE(!batch.acknowledge(-5, 3, 0)); // unexpected host clipping is not an acknowledgement
+    AUDIT_REQUIRE(batch.phase == Phase::Failed);
+    AUDIT_REQUIRE(batch.start("1:-9223372036854775808",1));
+    batch.entries[0].goal=-3;batch.phase=Phase::Running;
+    AUDIT_REQUIRE(batch.acknowledge(-3,3,0) && batch.phase==Phase::Complete);
+    AUDIT_REQUIRE(batch.entries[0].quantity==INT64_MIN && batch.entries[0].granted==-3);
+    AUDIT_REQUIRE(!batch.acknowledge(-1,0,-1));
+    uint64_t seed = 0x8264c0ffeeULL;
+    const auto random = [&] { seed ^= seed << 13; seed ^= seed >> 7; seed ^= seed << 17; return seed; };
+    for (size_t trial = 0; trial < 25000; ++trial) {
+        const int64_t first = static_cast<int64_t>(random());
+        const int64_t second = static_cast<int64_t>(random());
+        if (!first || !second) continue;
+        const __int128 sum = static_cast<__int128>(first) + second;
+        const bool representable = sum >= INT64_MIN && sum <= INT64_MAX;
+        const std::string request = "42:" + std::to_string(first) + ",7:-3,42:" + std::to_string(second);
+        const bool parsed = parse_items(request, 1, entries, error);
+        AUDIT_REQUIRE(parsed == representable);
+        if (parsed) {
+            AUDIT_REQUIRE(entries.size() == 2 && entries[0].id == 42 && entries[1].id == 7);
+            AUDIT_REQUIRE(entries[0].quantity == static_cast<int64_t>(sum) && entries[1].quantity == -3);
+        }
+    }
     return true;
 }
 

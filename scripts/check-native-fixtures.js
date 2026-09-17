@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Runs the same ELF loader, compiled WASM and report parser used by the website.
-// Fixtures remain local. Each child process gets a fresh WASM heap and patch state.
+// Fixtures remain local. Each child process gets a fresh WASM heap and audit state.
 const fs = require('node:fs');
 const path = require('node:path');
 const crypto = require('node:crypto');
@@ -20,7 +20,7 @@ async function verify(filename) {
   const nativeStarted = performance.now();
   const exitCode = engine.callMain(['/input']);
   const nativeMs = Math.round(performance.now() - nativeStarted);
-  const rows = nativeReport(lines);
+  const rows = nativeReport(lines, exitCode);
   const failures = rows.filter(row => row.status === 'FAIL');
   const result = { version: path.basename(path.dirname(filename)),
     sha256: crypto.createHash('sha256').update(input).digest('hex'), exitCode,

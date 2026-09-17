@@ -10,35 +10,38 @@
 #include <iostream>
 #include <iterator>
 #include <mutex>
+#include <memory>
+#include <cmath>
+#include <limits>
+#include <unordered_set>
 #include <vector>
 #include <string>
 #include <unordered_map>
 #include <sys/types.h>
 #include "elf-abi.h"
+#include "elf_unwind_bounds.h"
 #include "item_injection_contracts.h"
 #include "item_injection_queue_test.h"
 #include "item_catalog_signatures.h"
 #define ALOGI(...) do { printf(__VA_ARGS__); puts(""); } while(0)
 #define ALOGW(...) ALOGI(__VA_ARGS__)
 struct MemoryRange {uintptr_t start,end;bool executable,writable;};
-uintptr_t audit_base=0;size_t writes=0;std::vector<MemoryRange> audit_ranges;
+uintptr_t audit_base=0;size_t writes=0;std::vector<MemoryRange> audit_ranges,audit_readable;
 constexpr const char *kTargetLib="libapp.so";
 uintptr_t find_module_base(const char *){return audit_base;}
 uintptr_t decode_adrp_ldr_global(uintptr_t,uintptr_t);
 std::unordered_map<std::string,uintptr_t> audit_symbols;
 void *resolve_app_symbol(const char *n){return (void*)audit_symbols[n];}
 std::vector<MemoryRange> app_exec_ranges(){return audit_ranges;}
-std::mutex g_token_purchase_patch_mutex;std::atomic<uintptr_t> g_token_purchase_owned_count_address{0};std::atomic<bool> g_token_purchase_owned_count_patch_enabled{false};
-#define mass_trace_log(...) ALOGI(__VA_ARGS__)
-std::mutex g_speed_patch_mutex;uintptr_t g_speed_patch_address=0;
+std::vector<MemoryRange> app_readable_ranges(){return audit_readable;}
+struct ScanSnapshot {bool read(uintptr_t,void*,size_t) const{return false;}};
+thread_local ScanSnapshot *t_active_scan_snapshot=nullptr;
 std::mutex g_item_layout_mutex;std::atomic<bool> g_item_layout_ready{false};item_catalog::Layout g_item_layout{};
 std::atomic<bool> g_object_layouts_ready{false};item_catalog::ObjectLayouts g_object_layouts{};
 struct ItemNameRet {uint64_t w0,w1,w2;};
 void append_item_dump_log(const char *kind,int,int,int,const char *d){printf("LAYOUT %s %s\n",kind,d);}
 ssize_t vm_read_partial(uintptr_t a,void *p,size_t n){memcpy(p,(void*)a,n);return n;}
 template<typename T> void for_each_snapshot_segment(const std::vector<MemoryRange>& rs,T visit){for(auto r:rs)visit(r.start,(const uint8_t*)r.start,r.end-r.start);}
-bool patch_memory(uintptr_t a,const void *p,size_t n){++writes;printf("WRITE 0x%llx size=%zu\n",(unsigned long long)(a-audit_base),n);memcpy((void*)a,p,n);return true;}
-struct RuntimeConfig {bool enabled=true,speedy=true,battle_mp=true,all_damage=true,dungeon_skip=true,team_god_mode=true,ad_bypass=true,encounter_freeze=true,encounter_force=false;};
 
 bool checked_address_end(uintptr_t address, size_t len, uintptr_t *end) {
     if (end == nullptr || address == 0 || len == 0 || len > UINTPTR_MAX - address) return false;
@@ -92,31 +95,6 @@ bool memory_matches_mask(uintptr_t address, const uint8_t *pattern, const uint8_
 bool memory_equals(uintptr_t address, const uint8_t *bytes, size_t len) {
     if (address == 0 || bytes == nullptr || len == 0) return false;
     return std::memcmp(reinterpret_cast<const void *>(address), bytes, len) == 0;
-}
-
-bool encode_branch(uint32_t opcode, uintptr_t source, uintptr_t target, uint32_t *out) {
-    int64_t delta = static_cast<int64_t>(target) - static_cast<int64_t>(source);
-    if ((delta & 3) != 0) return false;
-    int64_t imm26 = delta / 4;
-    if (imm26 < -0x2000000LL || imm26 > 0x1FFFFFFLL) return false;
-    *out = opcode | (static_cast<uint32_t>(imm26) & 0x03FFFFFFU);
-    return true;
-}
-
-bool encode_cbz_w(uint32_t reg, uintptr_t source, uintptr_t target, uint32_t *out) {
-    int64_t delta = static_cast<int64_t>(target) - static_cast<int64_t>(source);
-    if ((delta & 3) != 0) return false;
-    int64_t imm19 = delta / 4;
-    if (imm19 < -0x40000LL || imm19 > 0x3FFFFLL) return false;
-    *out = 0x34000000U | ((static_cast<uint32_t>(imm19) & 0x7FFFFU) << 5U) | (reg & 0x1FU);
-    return true;
-}
-
-void append_u32(std::vector<uint8_t> &bytes, uint32_t value) {
-    bytes.push_back(static_cast<uint8_t>(value & 0xFF));
-    bytes.push_back(static_cast<uint8_t>((value >> 8) & 0xFF));
-    bytes.push_back(static_cast<uint8_t>((value >> 16) & 0xFF));
-    bytes.push_back(static_cast<uint8_t>((value >> 24) & 0xFF));
 }
 
 std::vector<uintptr_t> find_pattern(const std::vector<MemoryRange>& rs,const uint8_t*p,size_t n){std::vector<uintptr_t> h;if(!p||!n)return h;for(auto r:rs){auto b=(const uint8_t*)r.start,e=(const uint8_t*)r.end;while(b+n<=e){auto q=std::search(b,e,p,p+n);if(q==e)break;h.push_back((uintptr_t)q);b=q+1;}}return h;}
@@ -382,19 +360,6 @@ struct DialoguePageJumpCandidate {
     uintptr_t address;
     uintptr_t unlocked_offset;
 };
-struct BytePatch {
-    const char *name;
-    const uint8_t *original_full;
-    size_t original_full_len;
-    const uint8_t *patched_full;
-    size_t patched_full_len;
-    size_t patch_offset;
-    const uint8_t *original_patch;
-    const uint8_t *patched_patch;
-    size_t patch_len;
-    const uint8_t *original_full_mask = nullptr;
-    const uint8_t *patched_full_mask = nullptr;
-};
 template<size_t N> bool read_item_contract(uintptr_t, const item_catalog::Word (&)[N], uint32_t (&)[N]);
 template<size_t N> std::vector<uintptr_t> find_item_contract(const std::vector<MemoryRange> &, const item_catalog::Word (&)[N]);
 template<size_t N> uint32_t item_role_word(const uint32_t (&)[N], const item_catalog::Word (&)[N], item_catalog::Role);
@@ -402,6 +367,8 @@ template<size_t N> uintptr_t scoped_layout_contract(const std::vector<MemoryRang
 uintptr_t find_function_start_before_ref(const std::vector<MemoryRange> &, uintptr_t);
 void *resolve_app_symbol(const char *);
 
+
+template<size_t N> uintptr_t layout_call_target(uintptr_t,const item_catalog::Word (&)[N],item_catalog::Role);
 
 uintptr_t resolve_pattern_hook_address(const std::vector<MemoryRange> &ranges,
                                        const char *name,
@@ -921,37 +888,42 @@ bool resolve_dialogue_page_jump_delay(const std::vector<MemoryRange> &ranges,
                                       uintptr_t talk_ui_process_wait_addr,
                                       DialogueNativeResolution *out) {
     if (out == nullptr) return false;
-    std::vector<DialoguePageJumpCandidate> candidates = find_dialogue_page_jump_candidates(ranges);
-    DialoguePageJumpCandidate selected{0, 0};
-    size_t after_count = 0;
-    if (talk_ui_process_wait_addr != 0) {
-        for (const DialoguePageJumpCandidate &candidate: candidates) {
-            if (candidate.address <= talk_ui_process_wait_addr) continue;
-            ++after_count;
-            if (selected.address == 0 ||
-                candidate.address - talk_ui_process_wait_addr <
-                selected.address - talk_ui_process_wait_addr) {
-                selected = candidate;
+    (void) talk_ui_process_wait_addr;
+    const auto readable = app_readable_ranges();
+    // The std::function callable's RTTI names its enclosing C++ method. Follow
+    // name -> type_info -> vtable -> constructor reference; never choose by RVA
+    // proximity to an unrelated function. These are Itanium C++ ABI relations.
+    constexpr char owner[] = "NSt6__ndk110__function6__funcIZN6toybox3gui21TalkMessageWindowNode13pageJumpDelayEvE3$_0";
+    std::vector<uintptr_t> vtables;
+    for (uintptr_t text: find_pattern(readable, reinterpret_cast<const uint8_t *>(owner), sizeof(owner) - 1)) {
+        uint8_t needle[sizeof(uintptr_t)];
+        std::memcpy(needle, &text, sizeof(text));
+        for (uintptr_t name_slot: find_pattern(readable, needle, sizeof(needle))) {
+            if (name_slot < sizeof(uintptr_t)) continue;
+            uintptr_t type_info = name_slot - sizeof(uintptr_t);
+            std::memcpy(needle, &type_info, sizeof(type_info));
+            for (uintptr_t type_slot: find_pattern(readable, needle, sizeof(needle))) {
+                uintptr_t first_function = 0;
+                const uintptr_t vtable = type_slot + sizeof(uintptr_t);
+                if (read_range_ptr(readable, vtable, &first_function) &&
+                    range_contains(ranges, first_function, sizeof(uint32_t))) push_unique(vtables, vtable);
             }
         }
     }
-    if (selected.address == 0 && candidates.size() == 1) {
-        selected = candidates[0];
+    std::vector<DialoguePageJumpCandidate> matches;
+    for (const auto &candidate: find_dialogue_page_jump_candidates(ranges)) {
+        bool references_owner = false;
+        for (uintptr_t vtable: vtables) {
+            references_owner |= function_references_address(ranges, candidate.address, 0x180, vtable);
+        }
+        if (references_owner) matches.push_back(candidate);
     }
-    if (selected.address == 0) {
-        ALOGW("AE_TRACE dialogue pageJumpDelay skipped candidates=%zu afterTalkUi=%zu",
-              candidates.size(),
-              after_count);
+    if (matches.size() != 1) {
+        ALOGW("AE_TRACE pageJumpDelay semantic candidates=%zu callableVtables=%zu", matches.size(), vtables.size());
         return false;
     }
-    out->page_jump_delay = selected.address;
-    out->page_jump_unlocked_offset = selected.unlocked_offset;
-    ALOGI("AE_TRACE dialogue pageJumpDelay resolved addr=0x%" PRIxPTR
-          " unlockedOffset=0x%" PRIxPTR " candidates=%zu afterTalkUi=%zu",
-          selected.address,
-          selected.unlocked_offset,
-          candidates.size(),
-          after_count);
+    out->page_jump_delay = matches[0].address;
+    out->page_jump_unlocked_offset = matches[0].unlocked_offset;
     return true;
 }
 
@@ -1332,6 +1304,9 @@ bool resolve_lua_registered_function(const std::vector<MemoryRange> &readable_ra
         uint8_t pointer_bytes[sizeof(uintptr_t)] = {};
         std::memcpy(pointer_bytes, &string_address, sizeof(pointer_bytes));
         for (uintptr_t ref: find_pattern(readable_ranges, pointer_bytes, sizeof(pointer_bytes))) {
+            // These are native pointer rows, not arbitrary occurrences of the
+            // same bytes (low WASM image addresses can occur inside packed data).
+            if(ref%alignof(uintptr_t)) continue;
             uintptr_t adjacent = 0;
             if (!read_range_ptr(readable_ranges, ref + sizeof(uintptr_t), &adjacent)) continue;
 
@@ -1341,14 +1316,17 @@ bool resolve_lua_registered_function(const std::vector<MemoryRange> &readable_ra
             //   { "setGlobalFlag", &direct_row.function_ptr, ... }.
             // Resolving through the adjacent slot handles both layouts and avoids
             // assuming a fragile fixed +24 byte offset from the string reference.
-            if (range_contains(exec_ranges, adjacent, 4)) {
+            if (adjacent%4==0 && range_contains(exec_ranges, adjacent, 4)) {
                 ++direct_refs;
                 push_unique(hits, adjacent);
                 continue;
             }
 
             uintptr_t indirect = 0;
-            if (read_range_ptr(readable_ranges, adjacent, &indirect) &&
+            uintptr_t indirect_name=0;
+            if (adjacent>=sizeof(uintptr_t) && adjacent%alignof(uintptr_t)==0 &&
+                read_range_ptr(readable_ranges,adjacent-sizeof(uintptr_t),&indirect_name) && indirect_name==string_address &&
+                read_range_ptr(readable_ranges, adjacent, &indirect) && indirect%4==0 &&
                 range_contains(exec_ranges, indirect, 4)) {
                 ++indirect_refs;
                 push_unique(hits, indirect);
@@ -1377,6 +1355,9 @@ bool resolve_lua_registered_function(const std::vector<MemoryRange> &readable_ra
 }
 
 #include "item_injection_resolver.h"
+#include "mass_shop_resolver.inc"
+
+#include "director_speed.inc"
 
 uintptr_t resolve_named_integer_setter(const std::vector<MemoryRange> &readable,
                                         const std::vector<MemoryRange> &ranges, const char *key) {
@@ -1478,6 +1459,7 @@ std::vector<uintptr_t> find_item_contract(const std::vector<MemoryRange> &ranges
 template<size_t N>
 uintptr_t item_role_address(uintptr_t address, const item_catalog::Word (&pattern)[N],
                             item_catalog::Role role) {
+    if(!address) return 0;
     for (size_t i = 0; i < N; ++i) {
         if (pattern[i].role == role) return address + i * sizeof(uint32_t);
     }
@@ -1888,837 +1870,190 @@ uintptr_t bridge_receiver_global(const std::vector<MemoryRange> &ranges, uintptr
 }
 
 
-void apply_token_purchase_owned_count_zero_patch(bool enable, const char *reason) {
-    static constexpr uint32_t patched[] = {0x52800000, 0xD503201F, 0xD503201F};
-    static uintptr_t owned_address = 0;
-    static uint32_t original[3]{};
-    std::lock_guard<std::mutex> lock(g_token_purchase_patch_mutex);
-    const uintptr_t address = g_token_purchase_owned_count_address.load(std::memory_order_acquire);
-    if (address == 0 || !range_contains(app_exec_ranges(), address, sizeof(original))) return;
-    if (owned_address == 0) {
-        if (!enable) return;
-        uint32_t words[std::size(item_catalog::owned_count_read)]{};
-        if (!read_item_contract(address, item_catalog::owned_count_read, words)) return;
-        std::copy_n(words, std::size(original), original);
-        owned_address = address;
-    }
-    if (address != owned_address) return;
-    const bool is_original = memory_equals(address, reinterpret_cast<const uint8_t *>(original), sizeof(original));
-    const bool is_patched = memory_equals(address, reinterpret_cast<const uint8_t *>(patched), sizeof(patched));
-    if (!is_original && !is_patched) {
-        mass_trace_log("AE_MPTRACE TOKEN_PURCHASE_OWNED_COUNT_PATCH trigger=%s enable=%d ok=0 reason=unexpected-bytes",
-                       reason == nullptr ? "unknown" : reason, enable ? 1 : 0);
-        return;
-    }
-    if ((enable && is_patched) || (!enable && is_original)) {
-        g_token_purchase_owned_count_patch_enabled.store(enable, std::memory_order_relaxed);
-        return;
-    }
-    const bool ok = patch_memory(address, reinterpret_cast<const uint8_t *>(enable ? patched : original), sizeof(original));
-    if (ok) g_token_purchase_owned_count_patch_enabled.store(enable, std::memory_order_relaxed);
-    mass_trace_log("AE_MPTRACE TOKEN_PURCHASE_OWNED_COUNT_PATCH trigger=%s enable=%d addr=0x%" PRIxPTR " ok=%d",
-                   reason == nullptr ? "unknown" : reason, enable ? 1 : 0, address, ok ? 1 : 0);
+
+uintptr_t resolve_currency_token_site(const std::vector<MemoryRange> &ranges) {
+    const auto matches = find_item_contract(ranges, item_catalog::purchase_token_read);
+    return matches.size() == 1 ? matches.front() + 6 * sizeof(uint32_t) : 0;
 }
 
-bool apply_byte_patch(const std::vector<MemoryRange> &ranges, const BytePatch &patch, bool enable) {
-    struct OwnedPatch { uintptr_t address; std::vector<uint8_t> original; };
-    static std::mutex mutex;
-    static std::unordered_map<std::string, OwnedPatch> owned;
-    std::lock_guard<std::mutex> lock(mutex);
-    const auto original_hits = find_code_pattern(ranges, patch.original_full, patch.original_full_len, patch.original_full_mask);
-    const auto patched_hits = find_code_pattern(ranges, patch.patched_full, patch.patched_full_len, patch.patched_full_mask);
-    if (original_hits.size() + patched_hits.size() != 1) {
-        ALOGW("AE_TRACE byte patch %s skipped originalHits=%zu patchedHits=%zu", patch.name, original_hits.size(), patched_hits.size());
-        return false;
-    }
-    const bool original = !original_hits.empty();
-    const uintptr_t address = (original ? original_hits[0] : patched_hits[0]) + patch.patch_offset;
-    if (!range_contains(ranges, address, patch.patch_len)) return false;
-    auto found = owned.find(patch.name);
-    if (original) {
-        if (!enable) return true;
-        if (found == owned.end()) {
-            std::vector<uint8_t> bytes(patch.patch_len);
-            if (vm_read_partial(address, bytes.data(), bytes.size()) != static_cast<ssize_t>(bytes.size())) return false;
-            found = owned.emplace(patch.name, OwnedPatch{address, std::move(bytes)}).first;
-        }
-        if (found->second.address != address || !memory_equals(address, found->second.original.data(), patch.patch_len)) return false;
-    } else {
-        // No guessed undo instruction: only restore the bytes captured by this process.
-        if (found == owned.end() || found->second.address != address ||
-            !memory_equals(address, patch.patched_patch, patch.patch_len)) return false;
-        if (enable) return true;
-    }
-    const uint8_t *replacement = enable ? patch.patched_patch : found->second.original.data();
-    const bool ok = patch_memory(address, replacement, patch.patch_len);
-    ALOGI("AE_TRACE byte patch %s enable=%d addr=0x%" PRIxPTR " ok=%d", patch.name, enable ? 1 : 0, address, ok ? 1 : 0);
-    return ok;
-}
+#include "runtime_feature_signatures.h"
 
-bool apply_present_byte_patch(const std::vector<MemoryRange> &ranges, const BytePatch *variants, size_t n, bool enable) {
-    const BytePatch *selected = nullptr;
-    for (size_t i = 0; i < n; ++i) {
-        const BytePatch &p = variants[i];
-        auto src = find_code_pattern(ranges, p.original_full, p.original_full_len, p.original_full_mask);
-        auto dst = find_code_pattern(ranges, p.patched_full, p.patched_full_len, p.patched_full_mask);
-        if (src.empty() && dst.empty()) continue;
-        if (selected != nullptr || src.size() + dst.size() != 1) {
-            ALOGW("AE_TRACE byte patch variants ambiguous; no bytes changed");
-            return false;
-        }
-        selected = &p;
-    }
-    if (selected != nullptr) return apply_byte_patch(ranges, *selected, enable);
-    if (n > 0) ALOGW("AE_TRACE byte patch %s skipped: no variant signature present", variants[0].name);
-    return false;
-}
-
-void apply_team_god_patch(const std::vector<MemoryRange> &ranges, bool enable) {
-    static constexpr uint8_t branch_original[] = {0x68, 0x02, 0x40, 0xF9};
-    static constexpr uint8_t cave_prefix[] = {
-            0x66, 0xC8, 0x66, 0xC8, 0x66, 0xC8, 0x66, 0xC8,
-            0x66, 0xC8, 0x66, 0xC8, 0x66, 0xC8, 0x66, 0xC8,
-            0x04, 0x22, 0x04, 0x22, 0x04, 0x22, 0x04, 0x22,
-            0x04, 0x22, 0x04, 0x22, 0x04, 0x22, 0x04, 0x22,
-            0xEB, 0xBA, 0xEB, 0xBA, 0xEB, 0xBA, 0xEB, 0xBA,
-            0xEB, 0xBA, 0xEB, 0xBA, 0xEB, 0xBA, 0xEB, 0xBA
+// Hook handles own their process-local instruction trampolines. Config changes
+// change proxy behavior, never rewrite executable code or restore saved offsets.
+// libapp remains loaded for this module's supported process lifetime.
+struct RuntimeFeatureTargets {
+    uintptr_t mp_cost = 0, mp_delta = 0, mp_current = 0, mp_max = 0;
+    uintptr_t damage = 0, dungeon = 0, encounter = 0;
+    bool dungeon_two_args = false;
+};
+RuntimeFeatureTargets resolve_runtime_feature_targets(const std::vector<MemoryRange> &ranges) {
+    using namespace runtime_feature_signatures;
+    RuntimeFeatureTargets out;
+    const auto unique = [&](const auto &pattern, const uint8_t *mask = nullptr) {
+        auto hits = find_code_pattern(ranges, pattern, sizeof(pattern), mask);
+        return hits.size() == 1 ? hits.front() : uintptr_t(0);
     };
-    static constexpr uint8_t cave_suffix[] = {
-            0xFF, 0x83, 0x06, 0xD1, 0xE8, 0x03, 0x03, 0xAA,
-            0xAC, 0x50, 0x89, 0x52, 0xFD, 0x7B, 0xBA, 0xA9,
-            0xFD, 0x03, 0x00, 0x91
-    };
-    using namespace item_catalog;
-    auto tail_hits = find_item_contract(ranges, team_branch_tail);
-    if (tail_hits.size() != 1 || tail_hits[0] < sizeof(uint32_t)) return;
-    uintptr_t branch_address = tail_hits[0] - sizeof(uint32_t);
-    uint32_t tail_words[std::size(team_branch_tail)]{};
-    uint32_t type_words[std::size(team_actor_type)]{};
-    if (!read_item_contract(tail_hits[0], team_branch_tail, tail_words) ||
-        !scoped_layout_contract(ranges, tail_hits[0], team_actor_type, type_words)) return;
-
-    struct Cave { uintptr_t address; size_t size; };
-    std::vector<Cave> caves;
-    auto prefixes = find_pattern(ranges, cave_prefix, sizeof(cave_prefix));
-    auto suffixes = find_pattern(ranges, cave_suffix, sizeof(cave_suffix));
-    for (uintptr_t prefix: prefixes) {
-        uintptr_t begin = prefix + sizeof(cave_prefix);
-        for (uintptr_t suffix: suffixes) {
-            if (suffix > begin && suffix - begin <= 512 && (begin & 3U) == 0 &&
-                ((suffix - begin) & 3U) == 0 && range_contains(ranges, begin, suffix - begin)) {
-                caves.push_back({begin, suffix - begin});
-            }
-        }
-    }
-    if (caves.size() != 1) return;
-    uintptr_t cave_address = caves[0].address;
-    size_t cave_size = caves[0].size;
-    const uintptr_t hp_callsite = tail_hits[0] + sizeof(tail_words);
-    uintptr_t hp_target = 0;
-    if (!range_contains(ranges, hp_callsite, sizeof(uint32_t)) ||
-        !decode_branch_target(hp_callsite, true, &hp_target)) return;
-
-    std::vector<uint8_t> cave_patch;
-    append_u32(cave_patch, item_role_word(tail_words, team_branch_tail, Role::saved_value));
-    cave_patch.insert(cave_patch.end(), branch_original, branch_original + sizeof(branch_original));
-    append_u32(cave_patch, item_role_word(tail_words, team_branch_tail, Role::self_argument));
-    append_u32(cave_patch, item_role_word(type_words, team_actor_type, Role::actor_type_slot));
-    append_u32(cave_patch, item_role_word(tail_words, team_branch_tail, Role::virtual_call));
-    append_u32(cave_patch, 0x7100041FU);  // cmp w0, #1 (player actor kind)
-    size_t skip_offset = cave_patch.size();
-    append_u32(cave_patch, 0);  // generated EQ branch to the return branch
-    cave_patch.insert(cave_patch.end(), branch_original, branch_original + sizeof(branch_original));
-    for (size_t i = 0; i < std::size(team_branch_tail); ++i) {
-        if (team_branch_tail[i].role != Role::saved_value) append_u32(cave_patch, tail_words[i]);
-    }
-    uint32_t instruction = 0;
-    if (!encode_branch(0x94000000U, cave_address + cave_patch.size(), hp_target, &instruction)) return;
-    append_u32(cave_patch, instruction);
-    size_t return_offset = cave_patch.size();
-    if (!encode_branch(0x14000000U, cave_address + return_offset,
-                       hp_callsite + sizeof(uint32_t), &instruction)) return;
-    append_u32(cave_patch, instruction);
-    uint32_t skip = 0x54000000U | (static_cast<uint32_t>((return_offset - skip_offset) / 4U) << 5U);
-    std::memcpy(cave_patch.data() + skip_offset, &skip, sizeof(skip));
-    if (cave_patch.size() > cave_size) return;
-    cave_patch.resize(cave_size, 0);
-    uint32_t branch_patch = 0;
-    if (!encode_branch(0x14000000U, branch_address, cave_address, &branch_patch)) return;
-    std::vector<uint8_t> empty_cave(cave_size, 0);
-    bool original = memory_equals(branch_address, branch_original, sizeof(branch_original)) &&
-                    memory_equals(cave_address, empty_cave.data(), empty_cave.size());
-    bool patched = memory_equals(branch_address, reinterpret_cast<const uint8_t *>(&branch_patch), sizeof(branch_patch)) &&
-                   memory_equals(cave_address, cave_patch.data(), cave_patch.size());
-    bool ok = true;
-    if (enable && original) {
-        ok = patch_memory(cave_address, cave_patch.data(), cave_patch.size()) &&
-             patch_memory(branch_address, reinterpret_cast<const uint8_t *>(&branch_patch), sizeof(branch_patch));
-    } else if (!enable && patched) {
-        ok = patch_memory(branch_address, branch_original, sizeof(branch_original)) &&
-             patch_memory(cave_address, empty_cave.data(), empty_cave.size());
-    } else if (!(enable ? patched : original)) {
-        ALOGW("AE_TRACE team god unknown/mixed state; no bytes changed");
-        return;
-    }
-    ALOGI("AE_TRACE team god enable=%d cave=0x%" PRIxPTR " branch=0x%" PRIxPTR
-          " modelSlot=%zu actorTypeSlot=%zu ok=%d", enable, cave_address, branch_address,
-          unsigned_offset(item_role_word(tail_words, team_branch_tail, Role::hp_model_slot), 3),
-          unsigned_offset(item_role_word(type_words, team_actor_type, Role::actor_type_slot), 3), ok);
-}
-
-void apply_ad_bypass_patch(const std::vector<MemoryRange> &ranges, bool enable) {
-    static constexpr uint8_t availability_return_original[] = {
-            0x60, 0x02, 0x00, 0x12, 0xF4, 0x4F, 0x45, 0xA9,
-            0xFD, 0x7B, 0x44, 0xA9, 0xFF, 0x83, 0x01, 0x91,
-            0xC0, 0x03, 0x5F, 0xD6
-    };
-    static constexpr uint8_t availability_return_patched[] = {
-            0x20, 0x00, 0x80, 0x52, 0xF4, 0x4F, 0x45, 0xA9,
-            0xFD, 0x7B, 0x44, 0xA9, 0xFF, 0x83, 0x01, 0x91,
-            0xC0, 0x03, 0x5F, 0xD6
-    };
-    static constexpr uint8_t availability_original[] = {0x60, 0x02, 0x00, 0x12};
-    static constexpr uint8_t availability_patch[] = {0x20, 0x00, 0x80, 0x52};
-    static constexpr uint8_t availability_wrapper_prologue[] = {
-            0xFF, 0x83, 0x01, 0xD1, 0xFD, 0x7B, 0x04, 0xA9,
-            0xF4, 0x4F, 0x05, 0xA9, 0xFD, 0x03, 0x01, 0x91,
-            0x54, 0xD0, 0x3B, 0xD5
-    };
-    // Stable return epilogue; its call targets are decoded below.
-    static constexpr uint8_t sdk_show_epilogue[] = {
-            0x60, 0x02, 0x00, 0x12, 0xF4, 0x4F, 0x42, 0xA9,
-            0xF5, 0x0B, 0x40, 0xF9, 0xFD, 0x7B, 0xC3, 0xA8,
-            0xC0, 0x03, 0x5F, 0xD6
-    };
-    static constexpr uint8_t sdk_show_wrapper_prologue[] = {
-            0xFF, 0x83, 0x01, 0xD1, 0xFD, 0x7B, 0x04, 0xA9
-    };
-    static constexpr uint8_t sdk_show_call_patch[] = {0x1F, 0x20, 0x03, 0xD5};
-    static constexpr uint8_t cave_prefix[] = {
-            0x66, 0xC8, 0x66, 0xC8, 0x66, 0xC8, 0x66, 0xC8,
-            0x66, 0xC8, 0x66, 0xC8, 0x66, 0xC8, 0x66, 0xC8,
-            0x04, 0x22, 0x04, 0x22, 0x04, 0x22, 0x04, 0x22,
-            0x04, 0x22, 0x04, 0x22, 0x04, 0x22, 0x04, 0x22,
-            0xEB, 0xBA, 0xEB, 0xBA, 0xEB, 0xBA, 0xEB, 0xBA,
-            0xEB, 0xBA, 0xEB, 0xBA, 0xEB, 0xBA, 0xEB, 0xBA
-    };
-    static constexpr uint8_t cave_suffix_head[] = {0xFD, 0x7B, 0xA3, 0xA9};
-    static constexpr uint8_t cave_suffix_tail[] = {
-            0xFD, 0x03, 0x00, 0x91, 0xE8, 0x27, 0x06, 0x6D
-    };
-    // Pair each unique SDK call site with its actual availability call. No
-    // inter-call distance is assumed, including when the show call is already NOP'd.
-    struct SdkSite { uintptr_t site, function, availability; };
-    std::vector<SdkSite> sdk_sites;
-    for (uintptr_t epi: find_pattern(ranges, sdk_show_epilogue, sizeof(sdk_show_epilogue))) {
-        if (epi < sizeof(uint32_t)) continue;
-        uintptr_t site = epi - sizeof(uint32_t), start = find_function_start_before_ref(ranges, site);
-        if (start == 0 || !range_contains(ranges, site, sizeof(uint32_t))) continue;
-        uint32_t word = read_u32(site);
-        if (word != 0xD503201FU) {
-            uintptr_t show = 0;
-            if (!decode_branch_target(site, true, &show) ||
-                !range_contains(ranges, show, sizeof(sdk_show_wrapper_prologue)) ||
-                !memory_equals(show, sdk_show_wrapper_prologue, sizeof(sdk_show_wrapper_prologue))) continue;
-        }
-        std::vector<uintptr_t> availability;
-        for (uintptr_t pc = start; pc < site; pc += sizeof(uint32_t)) {
-            uintptr_t target = 0;
-            if (decode_branch_target(pc, true, &target) &&
-                range_contains(ranges, target, sizeof(availability_wrapper_prologue)) &&
-                memory_equals(target, availability_wrapper_prologue, sizeof(availability_wrapper_prologue))) {
-                push_unique(availability, target);
-            }
-        }
-        if (availability.size() == 1) sdk_sites.push_back({site, start, availability[0]});
-    }
-    if (sdk_sites.size() != 1) { ALOGW("AE_TRACE ad resolver SDK sites=%zu", sdk_sites.size()); return; }
-    const auto sdk = sdk_sites[0];
-
-    std::vector<uintptr_t> state_store_hits;
-    for (uintptr_t hit: find_item_contract(ranges, item_catalog::ad_state)) {
-        uintptr_t site = 0;
-        uintptr_t branch = item_role_address(hit, item_catalog::ad_state, item_catalog::Role::ad_state_branch);
-        if (!decode_branch_target(branch, false, &site) || site < hit + std::size(item_catalog::ad_state) * sizeof(uint32_t) ||
-            site > hit + 64 || !range_contains(ranges, site, sizeof(uint32_t))) continue;
-        bool padding_ok = true;
-        for (uintptr_t pc = hit + std::size(item_catalog::ad_state) * sizeof(uint32_t); pc < site; pc += 4) {
-            if (read_u32(pc) != 0xD503201FU) padding_ok = false;
-        }
-        bool calls_sdk = false;
-        uintptr_t lo = hit >= 512 ? hit - 512 : 0;
-        for (uintptr_t pc = hit; pc >= lo; pc -= sizeof(uint32_t)) {
-            if (!range_contains(ranges, pc, sizeof(uint32_t))) break;
-            uintptr_t target = 0;
-            if (decode_branch_target(pc, true, &target) && target == sdk.function) calls_sdk = true;
-            if (pc == lo) break;
-        }
-        if (padding_ok && calls_sdk) push_unique(state_store_hits, site);
-    }
-
-    struct Cave { uintptr_t address; size_t size; };
-    std::vector<Cave> caves;
-    for (uintptr_t hit: find_pattern(ranges, cave_prefix, sizeof(cave_prefix))) {
-        uintptr_t start = hit + sizeof(cave_prefix);
-        for (size_t length = sizeof(uint32_t); length <= 512; length += sizeof(uint32_t)) {
-            uintptr_t suffix = start + length;
-            if (!range_contains(ranges, suffix, sizeof(cave_suffix_head) + sizeof(uint32_t) + sizeof(cave_suffix_tail))) break;
-            if (memory_equals(suffix, cave_suffix_head, sizeof(cave_suffix_head)) &&
-                (read_u32(suffix + sizeof(cave_suffix_head)) & 0x9F00001FU) == 0x90000009U &&
-                memory_equals(suffix + sizeof(cave_suffix_head) + sizeof(uint32_t), cave_suffix_tail, sizeof(cave_suffix_tail))) {
-                caves.push_back({start, length});
-            }
-        }
-    }
-
-    std::vector<uintptr_t> availability_return_hits;
-    for (uintptr_t pc = sdk.availability; pc < sdk.availability + 512; pc += sizeof(uint32_t)) {
-        if (!range_contains(ranges, pc, sizeof(availability_return_original))) break;
-        if (memory_equals(pc, availability_return_original, sizeof(availability_return_original)) ||
-            memory_equals(pc, availability_return_patched, sizeof(availability_return_patched))) {
-            push_unique(availability_return_hits, pc);
-        }
-        if (read_u32(pc) == 0xD65F03C0U) break;
-    }
-    if (state_store_hits.size() != 1 || caves.size() != 1 || availability_return_hits.size() != 1) { ALOGW("AE_TRACE ad resolver state=%zu caves=%zu availability=%zu", state_store_hits.size(), caves.size(), availability_return_hits.size()); return; }
-
-    // Resolve each JNI bridge by its exported identity, then validate its complete
-    // supported argument/callback contract. Never derive another function by distance.
-    uintptr_t opened_bridge_address = reinterpret_cast<uintptr_t>(resolve_app_symbol(
-        "Java_net_wrightflyer_toybox_IronSourceEvents_onRewardedVideoAdOpened"));
-    uintptr_t closed_bridge_address = reinterpret_cast<uintptr_t>(resolve_app_symbol(
-        "Java_net_wrightflyer_toybox_IronSourceEvents_onRewardedVideoAdClosed"));
-    uintptr_t availability_bridge = reinterpret_cast<uintptr_t>(resolve_app_symbol(
-        "Java_net_wrightflyer_toybox_IronSourceEvents_onRewardedVideoAvailabilityChanged"));
-    uintptr_t reward_bridge = reinterpret_cast<uintptr_t>(resolve_app_symbol(
-        "Java_net_wrightflyer_toybox_IronSourceEvents_onRewardedVideoAdRewarded"));
-    uintptr_t receiver = bridge_receiver_global(ranges, opened_bridge_address, item_catalog::bridge_simple);
-    uintptr_t reward_receiver = bridge_receiver_global(ranges, reward_bridge, item_catalog::bridge_reward);
-    uintptr_t legacy_receiver = bridge_receiver_global(ranges, reward_bridge, item_catalog::bridge_reward_legacy);
-    if (receiver == 0 || receiver != bridge_receiver_global(ranges, closed_bridge_address, item_catalog::bridge_simple) ||
-        receiver != bridge_receiver_global(ranges, availability_bridge, item_catalog::bridge_available) ||
-        (reward_receiver != 0) == (legacy_receiver != 0) || receiver != (reward_receiver != 0 ? reward_receiver : legacy_receiver)) { ALOGW("AE_TRACE ad resolver bridge contracts unavailable"); return; }
-    std::vector<uintptr_t> reward_hits{reward_bridge}, availability_hits{availability_bridge};
-
-    uintptr_t availability_address = availability_return_hits[0];
-    uintptr_t sdk_show_address = sdk.site;
-    uintptr_t state_store_address = state_store_hits[0];
-    uintptr_t cave_address = caves[0].address;
-    size_t cave_size = caves[0].size;
-    uint32_t state_word = read_u32(state_store_address);
-    // The original field store is copied from the matched game instruction; on the
-    // ON form it is the first instruction of our fully verified cave program.
-    if ((state_word & 0xFFC003FFU) != 0x39000268U) state_word = read_u32(cave_address);
-    if ((state_word & 0xFFC003FFU) != 0x39000268U) return;
-    uint8_t state_store_original[sizeof(state_word)];
-    std::memcpy(state_store_original, &state_word, sizeof(state_word));
-
-    // The original SDK-show BL is version-specific (its branch offset re-encodes every build), so
-    // cache it the first time we see the site unpatched; the disable/undo path restores these
-    // exact bytes instead of a hard-coded literal. In-memory patches do not persist across game
-    // launches, so every process starts unpatched and populates this before any toggle-off.
-    static uint32_t g_ad_sdk_show_original_word = 0;
-    uint32_t sdk_show_word = read_u32(sdk_show_address);
-    if ((sdk_show_word & 0xFC000000U) == 0x94000000U) {
-        g_ad_sdk_show_original_word = sdk_show_word;
-    }
-
-    std::vector<uint8_t> cave_patch(state_store_original, state_store_original + sizeof(state_store_original));
-    size_t cbz_offset = cave_patch.size();
-    append_u32(cave_patch, 0);
-    static constexpr uint8_t frame_setup[] = {
-            0xFD, 0x7B, 0xBF, 0xA9, 0xFD, 0x03, 0x00, 0x91
-    };
-    cave_patch.insert(cave_patch.end(), frame_setup, frame_setup + sizeof(frame_setup));
-
-    uint32_t instruction = 0;
-    if (!encode_branch(0x94000000U, cave_address + cave_patch.size(), opened_bridge_address, &instruction)) {
-        ALOGW("AE_TRACE ad bypass skipped: opened bridge encode failed");
-        return;
-    }
-    append_u32(cave_patch, instruction);
-
-    static constexpr uint8_t mov_x2_null[] = {0xE2, 0x03, 0x1F, 0xAA};
-    cave_patch.insert(cave_patch.end(), mov_x2_null, mov_x2_null + sizeof(mov_x2_null));
-
-    if (!encode_branch(0x94000000U, cave_address + cave_patch.size(), reward_hits[0], &instruction)) {
-        ALOGW("AE_TRACE ad bypass skipped: reward bridge encode failed");
-        return;
-    }
-    append_u32(cave_patch, instruction);
-
-    if (!encode_branch(0x94000000U, cave_address + cave_patch.size(), closed_bridge_address, &instruction)) {
-        ALOGW("AE_TRACE ad bypass skipped: closed bridge encode failed");
-        return;
-    }
-    append_u32(cave_patch, instruction);
-
-    static constexpr uint8_t mov_w2_true[] = {0x22, 0x00, 0x80, 0x52};
-    cave_patch.insert(cave_patch.end(), mov_w2_true, mov_w2_true + sizeof(mov_w2_true));
-
-    if (!encode_branch(0x94000000U, cave_address + cave_patch.size(), availability_hits[0], &instruction)) {
-        ALOGW("AE_TRACE ad bypass skipped: availability bridge encode failed");
-        return;
-    }
-    append_u32(cave_patch, instruction);
-
-    static constexpr uint8_t frame_restore[] = {0xFD, 0x7B, 0xC1, 0xA8};
-    cave_patch.insert(cave_patch.end(), frame_restore, frame_restore + sizeof(frame_restore));
-
-    uint32_t return_branch = 0;
-    if (!encode_branch(0x14000000U, cave_address + cave_patch.size(), state_store_address + 4, &return_branch)) {
-        ALOGW("AE_TRACE ad bypass skipped: return branch encode failed");
-        return;
-    }
-
-    uint32_t cbz = 0;
-    if (!encode_cbz_w(8, cave_address + cbz_offset, cave_address + cave_patch.size(), &cbz)) {
-        ALOGW("AE_TRACE ad bypass skipped: state-active guard encode failed");
-        return;
-    }
-    cave_patch[cbz_offset] = static_cast<uint8_t>(cbz & 0xFF);
-    cave_patch[cbz_offset + 1] = static_cast<uint8_t>((cbz >> 8) & 0xFF);
-    cave_patch[cbz_offset + 2] = static_cast<uint8_t>((cbz >> 16) & 0xFF);
-    cave_patch[cbz_offset + 3] = static_cast<uint8_t>((cbz >> 24) & 0xFF);
-    append_u32(cave_patch, return_branch);
-    if (cave_patch.size() > cave_size) return;
-    cave_patch.resize(cave_size, 0);
-
-    uint32_t state_branch = 0;
-    if (!encode_branch(0x14000000U, state_store_address, cave_address, &state_branch)) {
-        ALOGW("AE_TRACE ad bypass skipped: state trampoline branch encode failed");
-        return;
-    }
-    uint8_t state_store_patch[4] = {
-            static_cast<uint8_t>(state_branch & 0xFF),
-            static_cast<uint8_t>((state_branch >> 8) & 0xFF),
-            static_cast<uint8_t>((state_branch >> 16) & 0xFF),
-            static_cast<uint8_t>((state_branch >> 24) & 0xFF),
-    };
-    std::vector<uint8_t> cave_zero(cave_size, 0);
-
-    bool availability_is_original = memory_equals(availability_address, availability_original, sizeof(availability_original));
-    bool availability_is_patched = memory_equals(availability_address, availability_patch, sizeof(availability_patch));
-    bool sdk_is_original = (sdk_show_word & 0xFC000000U) == 0x94000000U;  // a BL (any offset)
-    bool sdk_is_patched = sdk_show_word == 0xD503201FU;                    // NOP
-    bool state_is_original = memory_equals(state_store_address, state_store_original, sizeof(state_store_original));
-    bool state_is_patched = memory_equals(state_store_address, state_store_patch, sizeof(state_store_patch));
-    bool cave_is_original = memory_equals(cave_address, cave_zero.data(), cave_zero.size());
-    bool cave_is_patched = memory_equals(cave_address, cave_patch.data(), cave_patch.size());
-
-    if (enable) {
-        if (availability_is_patched && sdk_is_patched && state_is_patched && cave_is_patched) {
-            return;
-        }
-        if (!(availability_is_original && sdk_is_original && state_is_original && cave_is_original)) {
-            ALOGW("AE_TRACE ad bypass partial state; no bytes changed");
-            return;
-        }
-
-        bool cave_ok = patch_memory(cave_address, cave_patch.data(), cave_patch.size());
-        bool sdk_ok = cave_ok && patch_memory(sdk_show_address, sdk_show_call_patch, sizeof(sdk_show_call_patch));
-        bool availability_ok = sdk_ok && patch_memory(availability_address, availability_patch, sizeof(availability_patch));
-        bool state_ok = availability_ok && patch_memory(state_store_address, state_store_patch, sizeof(state_store_patch));
-        ALOGI("AE_TRACE ad bypass enable availability=0x%" PRIxPTR " sdk=0x%" PRIxPTR
-              " state=0x%" PRIxPTR " cave=0x%" PRIxPTR " ok=%d",
-              availability_address,
-              sdk_show_address,
-              state_store_address,
-              cave_address,
-              state_ok ? 1 : 0);
-    } else {
-        if (availability_is_original && sdk_is_original && state_is_original && cave_is_original) {
-            return;
-        }
-        if (!(availability_is_patched && sdk_is_patched && state_is_patched && cave_is_patched)) {
-            ALOGW("AE_TRACE ad bypass partial state while disabling; no bytes changed");
-            return;
-        }
-
-        bool state_ok = patch_memory(state_store_address, state_store_original, sizeof(state_store_original));
-        uint8_t sdk_restore[4] = {
-                static_cast<uint8_t>(g_ad_sdk_show_original_word & 0xFF),
-                static_cast<uint8_t>((g_ad_sdk_show_original_word >> 8) & 0xFF),
-                static_cast<uint8_t>((g_ad_sdk_show_original_word >> 16) & 0xFF),
-                static_cast<uint8_t>((g_ad_sdk_show_original_word >> 24) & 0xFF),
-        };
-        bool sdk_ok = state_ok && g_ad_sdk_show_original_word != 0 &&
-                      patch_memory(sdk_show_address, sdk_restore, sizeof(sdk_restore));
-        bool availability_ok = sdk_ok && patch_memory(availability_address, availability_original, sizeof(availability_original));
-        bool cave_ok = availability_ok && patch_memory(cave_address, cave_zero.data(), cave_zero.size());
-        ALOGI("AE_TRACE ad bypass disable availability=0x%" PRIxPTR " sdk=0x%" PRIxPTR
-              " state=0x%" PRIxPTR " cave=0x%" PRIxPTR " ok=%d",
-              availability_address,
-              sdk_show_address,
-              state_store_address,
-              cave_address,
-              cave_ok ? 1 : 0);
-    }
-}
-
-bool patch_speed_constants(const std::vector<MemoryRange> &ranges, bool enable) {
-    std::lock_guard<std::mutex> lock(g_speed_patch_mutex);
-    if (!enable && g_speed_patch_address == 0) return true;
-    const float original = 1000000.0f, patched = 31250.0f;
-    const auto *original_bytes = reinterpret_cast<const uint8_t *>(&original);
-    const auto *patched_bytes = reinterpret_cast<const uint8_t *>(&patched);
-    if (g_speed_patch_address == 0) {
-        auto hits = find_pattern(ranges, original_bytes, sizeof(original));
-        hits.erase(std::remove_if(hits.begin(), hits.end(), [](uintptr_t address) {
-            return address % alignof(float) != 0;
-        }), hits.end());
-        if (hits.size() != 1) {
-            ALOGW("AE_TRACE speed constant skipped: expected one aligned original, hits=%zu", hits.size());
-            return false;
-        }
-        g_speed_patch_address = hits[0];
-    }
-    uintptr_t address = g_speed_patch_address;
-    if (!range_contains(ranges, address, sizeof(float))) return false;
-    bool is_original = memory_equals(address, original_bytes, sizeof(original));
-    bool is_patched = memory_equals(address, patched_bytes, sizeof(patched));
-    if (!is_original && !is_patched) {
-        ALOGW("AE_TRACE speed constant changed by another writer; preserving bytes");
-        return false;
-    }
-    bool ok = enable ? (is_patched || patch_memory(address, patched_bytes, sizeof(patched)))
-                     : (is_original || patch_memory(address, original_bytes, sizeof(original)));
-    // Undo never scans for the replacement value: it may already exist elsewhere.
-    // Keep ownership on failure so a later request can retry the exact same site.
-    if (ok && !enable) g_speed_patch_address = 0;
-    ALOGI("AE_TRACE speed constant enable=%d addr=0x%" PRIxPTR " ok=%d", enable, address, ok);
-    return ok;
-}
-
-void apply_encounter_judge_patch(const std::vector<MemoryRange> &ranges, bool freeze, bool force) {
-    static constexpr uint8_t original_full[] = {
-            0xFF, 0x03, 0x02, 0xD1, 0xFD, 0x7B, 0x05, 0xA9,
-            0xF6, 0x57, 0x06, 0xA9, 0xF4, 0x4F, 0x07, 0xA9,
-            0xFD, 0x43, 0x01, 0x91, 0x55, 0xD0, 0x3B, 0xD5,
-            0xA8, 0x16, 0x40, 0xF9, 0xA8, 0x83, 0x1F, 0xF8,
-            0x00, 0x70, 0x40, 0xBD, 0x08, 0x20, 0x20, 0x1E,
-            0xA9, 0x04, 0x00, 0x54, 0xF3, 0x03, 0x00, 0xAA
-    };
-    static constexpr uint8_t freeze_full[] = {
-            0x00, 0x00, 0x80, 0x52, 0xC0, 0x03, 0x5F, 0xD6,
-            0xF6, 0x57, 0x06, 0xA9, 0xF4, 0x4F, 0x07, 0xA9,
-            0xFD, 0x43, 0x01, 0x91, 0x55, 0xD0, 0x3B, 0xD5,
-            0xA8, 0x16, 0x40, 0xF9, 0xA8, 0x83, 0x1F, 0xF8,
-            0x00, 0x70, 0x40, 0xBD, 0x08, 0x20, 0x20, 0x1E,
-            0xA9, 0x04, 0x00, 0x54, 0xF3, 0x03, 0x00, 0xAA
-    };
-    static constexpr uint8_t force_full[] = {
-            0x20, 0x00, 0x80, 0x52, 0xC0, 0x03, 0x5F, 0xD6,
-            0xF6, 0x57, 0x06, 0xA9, 0xF4, 0x4F, 0x07, 0xA9,
-            0xFD, 0x43, 0x01, 0x91, 0x55, 0xD0, 0x3B, 0xD5,
-            0xA8, 0x16, 0x40, 0xF9, 0xA8, 0x83, 0x1F, 0xF8,
-            0x00, 0x70, 0x40, 0xBD, 0x08, 0x20, 0x20, 0x1E,
-            0xA9, 0x04, 0x00, 0x54, 0xF3, 0x03, 0x00, 0xAA
-    };
-    static constexpr uint8_t return_false[] = {
-            0x00, 0x00, 0x80, 0x52, 0xC0, 0x03, 0x5F, 0xD6
-    };
-    static constexpr uint8_t return_true[] = {
-            0x20, 0x00, 0x80, 0x52, 0xC0, 0x03, 0x5F, 0xD6
-    };
-    static constexpr uint8_t original_head[] = {
-            0xFF, 0x03, 0x02, 0xD1, 0xFD, 0x7B, 0x05, 0xA9
-    };
-
-    enum Mode {
-        Original = 0,
-        Freeze = 1,
-        Force = 2,
-    };
-
-    Mode desired = Original;
-    if (freeze) {
-        desired = Freeze;
-    } else if (force) {
-        desired = Force;
-    }
-
-    std::vector<uintptr_t> hits;
-    Mode current = Original;
-    for (uintptr_t hit: find_code_pattern(ranges, original_full, sizeof(original_full))) {
-        push_unique(hits, hit);
-        current = Original;
-    }
-    for (uintptr_t hit: find_code_pattern(ranges, freeze_full, sizeof(freeze_full))) {
-        push_unique(hits, hit);
-        current = Freeze;
-    }
-    for (uintptr_t hit: find_code_pattern(ranges, force_full, sizeof(force_full))) {
-        push_unique(hits, hit);
-        current = Force;
-    }
-
-    if (hits.empty()) {
-        if (desired != Original) {
-            ALOGW("AE_TRACE encounter judge patch skipped sourceHits=0 desired=%d", desired);
-        }
-        return;
-    }
-    if (hits.size() != 1) {
-        ALOGW("AE_TRACE encounter judge patch skipped hits=%zu desired=%d", hits.size(), desired);
-        return;
-    }
-    if (current == desired) return;
-
-    const uint8_t *replacement = original_head;
-    if (desired == Freeze) {
-        replacement = return_false;
-    } else if (desired == Force) {
-        replacement = return_true;
-    }
-
-    bool ok = patch_memory(hits[0], replacement, sizeof(original_head));
-    (void) ok;
-    ALOGI("AE_TRACE encounter judge patch desired=%d previous=%d addr=0x%" PRIxPTR " ok=%d",
-          desired,
-          current,
-          hits[0],
-          ok ? 1 : 0);
-}
-
-void apply_runtime_byte_patches(const RuntimeConfig &cfg) {
-    std::vector<MemoryRange> ranges = app_exec_ranges();
-    if (ranges.empty()) return;
-
-    static constexpr uint8_t mp_cost_orig[] = {
-            0x08, 0x20, 0x40, 0x39, 0x68, 0x01, 0x00, 0x34, 0xF3, 0x03, 0x00, 0xAA, 0x00, 0x00, 0x40, 0xF9,
-            0xF4, 0x03, 0x01, 0xAA, 0x08, 0x00, 0x40, 0xF9, 0x08, 0x31, 0x40, 0xF9, 0x00, 0x01, 0x3F, 0xD6
-    };
-    static constexpr uint8_t mp_cost_patch[] = {
-            0xE8, 0x03, 0x1F, 0x2A, 0x68, 0x01, 0x00, 0x34, 0xF3, 0x03, 0x00, 0xAA, 0x00, 0x00, 0x40, 0xF9,
-            0xF4, 0x03, 0x01, 0xAA, 0x08, 0x00, 0x40, 0xF9, 0x08, 0x31, 0x40, 0xF9, 0x00, 0x01, 0x3F, 0xD6
-    };
-    static constexpr uint8_t mp_delta_orig[] = {
-            0xE0, 0x03, 0x17, 0xCB, 0xED, 0xD1, 0x63, 0x94, 0xE1, 0x03, 0x00, 0x2A, 0xE0, 0x03, 0x18, 0xAA,
-            0x96, 0xAA, 0xFE, 0x97, 0x68, 0x02, 0x40, 0xF9, 0xE0, 0x03, 0x13, 0xAA, 0x08, 0x31, 0x40, 0xF9,
-            0x00, 0x01, 0x3F, 0xD6, 0x00, 0x00, 0x40, 0xF9, 0x08, 0x00, 0x40, 0xF9, 0x08, 0x1D, 0x40, 0xF9,
-            0x00, 0x01, 0x3F, 0xD6, 0xF8, 0x03, 0x00, 0x2A, 0xE0, 0x5F, 0xFD, 0x97, 0x71, 0x62, 0xFD, 0x97,
-            0x19, 0x5C, 0x40, 0xA9, 0xB9, 0x5F, 0x3E, 0xA9, 0x97, 0x00, 0x00, 0xB4, 0xE1, 0x22, 0x00, 0x91,
-            0x20, 0x00, 0x80, 0x52, 0xB8, 0xD6, 0x7D, 0x94, 0x99, 0x00, 0x00, 0xB4, 0xC1, 0x02, 0x18, 0x4B,
-            0xE0, 0x03, 0x19, 0xAA
-    };
-    static constexpr uint8_t mp_delta_patch[] = {
-            0xE0, 0x03, 0x17, 0xCB, 0xED, 0xD1, 0x63, 0x94, 0xE1, 0x03, 0x1F, 0x2A, 0xE0, 0x03, 0x18, 0xAA,
-            0x96, 0xAA, 0xFE, 0x97, 0x68, 0x02, 0x40, 0xF9, 0xE0, 0x03, 0x13, 0xAA, 0x08, 0x31, 0x40, 0xF9,
-            0x00, 0x01, 0x3F, 0xD6, 0x00, 0x00, 0x40, 0xF9, 0x08, 0x00, 0x40, 0xF9, 0x08, 0x1D, 0x40, 0xF9,
-            0x00, 0x01, 0x3F, 0xD6, 0xF8, 0x03, 0x00, 0x2A, 0xE0, 0x5F, 0xFD, 0x97, 0x71, 0x62, 0xFD, 0x97,
-            0x19, 0x5C, 0x40, 0xA9, 0xB9, 0x5F, 0x3E, 0xA9, 0x97, 0x00, 0x00, 0xB4, 0xE1, 0x22, 0x00, 0x91,
-            0x20, 0x00, 0x80, 0x52, 0xB8, 0xD6, 0x7D, 0x94, 0x99, 0x00, 0x00, 0xB4, 0xC1, 0x02, 0x18, 0x4B,
-            0xE0, 0x03, 0x19, 0xAA
-    };
-    static constexpr uint8_t mp_delta_mask[] = {
-            0xFF, 0xFF, 0xFF, 0xFF, 0x00, 0x00, 0x00, 0x00,
-            0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
-            0x00, 0x00, 0x00, 0x00, 0xFF, 0xFF, 0xFF, 0xFF,
-            0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
-            0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
-            0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
-            0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
-            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-            0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
-            0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
-            0xFF, 0xFF, 0xFF, 0xFF, 0x00, 0x00, 0x00, 0x00,
-            0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
-            0xFF, 0xFF, 0xFF, 0xFF
-    };
-    static_assert(sizeof(mp_delta_orig) == sizeof(mp_delta_mask),
-                  "mp_delta mask length mismatch");
-    static constexpr uint8_t pc_mp_orig[] = {
-            0xFD, 0x7B, 0xBE, 0xA9, 0xF3, 0x0B, 0x00, 0xF9, 0xFD, 0x03, 0x00, 0x91,
-            0x08, 0x08, 0x40, 0xF9, 0xF3, 0x03, 0x00, 0xAA, 0x00, 0xC1, 0x02, 0x91,
-            0xB4, 0x28, 0xB2, 0x97, 0x68, 0xAA, 0x40, 0xF9, 0xF3, 0x03, 0x00, 0x2A,
-            0x01, 0x08, 0x80, 0x52, 0xE0, 0x03, 0x08, 0xAA, 0x81, 0x0C, 0x00, 0x94,
-            0x1F, 0x04, 0x00, 0x71, 0x08, 0xC4, 0x9F, 0x1A, 0x1F, 0x01, 0x13, 0x6B,
-            0x00, 0xB1, 0x93, 0x1A, 0xF3, 0x0B, 0x40, 0xF9, 0xFD, 0x7B, 0xC2, 0xA8,
-            0xC0, 0x03, 0x5F, 0xD6,
-    };
-    static constexpr uint8_t pc_mp_patch[] = {
-            0xE0, 0xFF, 0x9F, 0x52, 0xC0, 0x03, 0x5F, 0xD6, 0xFD, 0x03, 0x00, 0x91,
-            0x08, 0x08, 0x40, 0xF9, 0xF3, 0x03, 0x00, 0xAA, 0x00, 0xC1, 0x02, 0x91,
-            0xB4, 0x28, 0xB2, 0x97, 0x68, 0xAA, 0x40, 0xF9, 0xF3, 0x03, 0x00, 0x2A,
-            0x01, 0x08, 0x80, 0x52, 0xE0, 0x03, 0x08, 0xAA, 0x81, 0x0C, 0x00, 0x94,
-            0x1F, 0x04, 0x00, 0x71, 0x08, 0xC4, 0x9F, 0x1A, 0x1F, 0x01, 0x13, 0x6B,
-            0x00, 0xB1, 0x93, 0x1A, 0xF3, 0x0B, 0x40, 0xF9, 0xFD, 0x7B, 0xC2, 0xA8,
-            0xC0, 0x03, 0x5F, 0xD6,
-    };
-    static constexpr uint8_t pc_mp_max_orig[] = {
-            0xFD, 0x7B, 0xBF, 0xA9, 0xFD, 0x03, 0x00, 0x91, 0x00, 0xA8, 0x40, 0xF9,
-            0x01, 0x08, 0x80, 0x52, 0x54, 0x19, 0x00, 0x94, 0x1F, 0x04, 0x00, 0x71,
-            0x00, 0xC4, 0x9F, 0x1A, 0xFD, 0x7B, 0xC1, 0xA8, 0xC0, 0x03, 0x5F, 0xD6,
-    };
-    static constexpr uint8_t pc_mp_max_patch[] = {
-            0xE0, 0xFF, 0x9F, 0x52, 0xC0, 0x03, 0x5F, 0xD6, 0x00, 0xA8, 0x40, 0xF9,
-            0x01, 0x08, 0x80, 0x52, 0x54, 0x19, 0x00, 0x94, 0x1F, 0x04, 0x00, 0x71,
-            0x00, 0xC4, 0x9F, 0x1A, 0xFD, 0x7B, 0xC1, 0xA8, 0xC0, 0x03, 0x5F, 0xD6,
-    };
-    static constexpr uint8_t ret_65535[] = {0xE0, 0xFF, 0x9F, 0x52, 0xC0, 0x03, 0x5F, 0xD6};
-    static constexpr uint8_t zero_w1[] = {0xE1, 0x03, 0x1F, 0x2A};
-    static constexpr uint8_t mov_w8_wzr[] = {0xE8, 0x03, 0x1F, 0x2A};
-    static constexpr uint8_t ldrb_w8[] = {0x08, 0x20, 0x40, 0x39};
-    static constexpr uint8_t mov_w1_w0[] = {0xE1, 0x03, 0x00, 0x2A};
-    static constexpr uint8_t prologue_be[] = {0xFD, 0x7B, 0xBE, 0xA9, 0xF3, 0x0B, 0x00, 0xF9};
-    static constexpr uint8_t prologue_bf[] = {0xFD, 0x7B, 0xBF, 0xA9, 0xFD, 0x03, 0x00, 0x91};
-
-    static constexpr uint8_t damage_orig[] = {
-            0xC8, 0x02, 0x40, 0xF9, 0xA1, 0x8A, 0x4A, 0x29, 0x08, 0x0D, 0x40, 0xF9, 0xE3, 0xA3, 0x00, 0x91,
-            0xE0, 0x03, 0x16, 0xAA, 0x00, 0x01, 0x3F, 0xD6, 0xC8, 0x02, 0x40, 0xF9, 0xA5, 0x43, 0x5F, 0xB8,
-            0xE4, 0x03, 0x00, 0x2A, 0x09, 0x15, 0x40, 0xF9, 0xE8, 0x03, 0x13, 0xAA, 0xE0, 0x03, 0x16, 0xAA,
-            0xE1, 0x03, 0x15, 0xAA, 0xE2, 0x03, 0x14, 0xAA, 0xE3, 0x03, 0x19, 0xAA, 0x20, 0x01, 0x3F, 0xD6,
-            0x68, 0x02, 0x40, 0xF9, 0x09, 0x03, 0x00, 0x12, 0x09, 0x01, 0x01, 0x39, 0xF3, 0x1B, 0x40, 0xF9
-    };
-    static constexpr uint8_t damage_patch[] = {
-            0xC8, 0x02, 0x40, 0xF9, 0xA1, 0x8A, 0x4A, 0x29, 0x08, 0x0D, 0x40, 0xF9, 0xE3, 0xA3, 0x00, 0x91,
-            0xE0, 0x03, 0x16, 0xAA, 0x00, 0x01, 0x3F, 0xD6, 0xC8, 0x02, 0x40, 0xF9, 0xA5, 0x43, 0x5F, 0xB8,
-            0xE4, 0x03, 0x00, 0x2A, 0x09, 0x15, 0x40, 0xF9, 0xE8, 0x03, 0x13, 0xAA, 0xE0, 0x03, 0x16, 0xAA,
-            0xE1, 0x03, 0x15, 0xAA, 0xE2, 0x03, 0x14, 0xAA, 0x23, 0xB3, 0x6D, 0xD3, 0x20, 0x01, 0x3F, 0xD6,
-            0x68, 0x02, 0x40, 0xF9, 0x09, 0x03, 0x00, 0x12, 0x09, 0x01, 0x01, 0x39, 0xF3, 0x1B, 0x40, 0xF9
-    };
-    static constexpr uint8_t mov_x3_x25[] = {0xE3, 0x03, 0x19, 0xAA};
-    static constexpr uint8_t lsl_x3_x25_19[] = {0x23, 0xB3, 0x6D, 0xD3};
-
-    static constexpr uint8_t dungeon_orig[] = {
-            0xFF, 0x43, 0x01, 0xD1, 0xFD, 0x7B, 0x02, 0xA9, 0xF5, 0x1B, 0x00, 0xF9,
-            0xF4, 0x4F, 0x04, 0xA9, 0xFD, 0x83, 0x00, 0x91, 0x55, 0xD0, 0x3B, 0xD5,
-            0xA8, 0x16, 0x40, 0xF9, 0xA8, 0x83, 0x1F, 0xF8, 0x08, 0x00, 0x40, 0xF9,
-            0xE8, 0x04, 0x00, 0xB4, 0xF3, 0x03, 0x00, 0xAA, 0x31, 0x0C, 0xED, 0x97,
-            0xF4, 0x03, 0x00, 0xAA, 0xE1, 0x0D, 0xFF, 0x90, 0x21, 0x10, 0x35, 0x91,
-            0xE0, 0x03, 0x00, 0x91, 0x47, 0xB9, 0xB6, 0x97, 0xE1, 0x03, 0x00, 0x91,
-            0xE0, 0x03, 0x14, 0xAA, 0x4E, 0x0C, 0xED, 0x97, 0xE8, 0x03, 0x40, 0x39,
-            0xF4, 0x03, 0x00, 0x2A, 0x68, 0x00, 0x00, 0x36, 0xE0, 0x0B, 0x40, 0xF9,
-            0x38, 0x5E, 0x2D, 0x94, 0xF4, 0x02, 0x00, 0x36, 0x60, 0x02, 0x40, 0xF9,
-            0xAB, 0x1B, 0x00, 0x94, 0x80, 0x02, 0x00, 0x36, 0x60, 0x02, 0x40, 0xF9,
-            0x82, 0x10, 0x00, 0x94, 0x20, 0x02, 0x00, 0x36,
-    };
-    static constexpr uint8_t dungeon_patch[] = {
-            0x20, 0x00, 0x80, 0x52, 0xC0, 0x03, 0x5F, 0xD6, 0x1F, 0x20, 0x03, 0xD5,
-            0xF4, 0x4F, 0x04, 0xA9, 0xFD, 0x83, 0x00, 0x91, 0x55, 0xD0, 0x3B, 0xD5,
-            0xA8, 0x16, 0x40, 0xF9, 0xA8, 0x83, 0x1F, 0xF8, 0x08, 0x00, 0x40, 0xF9,
-            0xE8, 0x04, 0x00, 0xB4, 0xF3, 0x03, 0x00, 0xAA, 0x31, 0x0C, 0xED, 0x97,
-            0xF4, 0x03, 0x00, 0xAA, 0xE1, 0x0D, 0xFF, 0x90, 0x21, 0x10, 0x35, 0x91,
-            0xE0, 0x03, 0x00, 0x91, 0x47, 0xB9, 0xB6, 0x97, 0xE1, 0x03, 0x00, 0x91,
-            0xE0, 0x03, 0x14, 0xAA, 0x4E, 0x0C, 0xED, 0x97, 0xE8, 0x03, 0x40, 0x39,
-            0xF4, 0x03, 0x00, 0x2A, 0x68, 0x00, 0x00, 0x36, 0xE0, 0x0B, 0x40, 0xF9,
-            0x38, 0x5E, 0x2D, 0x94, 0xF4, 0x02, 0x00, 0x36, 0x60, 0x02, 0x40, 0xF9,
-            0xAB, 0x1B, 0x00, 0x94, 0x80, 0x02, 0x00, 0x36, 0x60, 0x02, 0x40, 0xF9,
-            0x82, 0x10, 0x00, 0x94, 0x20, 0x02, 0x00, 0x36,
-    };
-    static constexpr uint8_t dungeon_prologue[] = {0xFF, 0x43, 0x01, 0xD1, 0xFD, 0x7B, 0x02, 0xA9, 0xF5, 0x1B, 0x00, 0xF9};
-    static constexpr uint8_t dungeon_return_true[] = {0x20, 0x00, 0x80, 0x52, 0xC0, 0x03, 0x5F, 0xD6, 0x1F, 0x20, 0x03, 0xD5};
-
-    // AE 3.16.0 recompiled the dungeon-skip gate (the function that reads
-    // "skip_dungeon_enabled"): frame 0x50->0x70, an extra callee-saved pair
-    // (stp x22,x21), stack-guard reg x21->x22, and the cbz branch offset re-encoded.
-    // The legacy prologue no longer appears, so ship the 3.16.0 form too. Only the
-    // drifting cbz word (offset 0x24) is masked; the return-true stub is unchanged.
-    //  prologue: sub sp,#0x70; stp x29,x30,[sp,#0x40]; stp x22,x21,[sp,#0x50]; stp x20,x19,[sp,#0x60]
-    //            add x29,sp,#0x40; mrs x22,tpidr_el0; ldr x8,[x22,#0x28]; stur x8,[x29,#-8]
-    //            ldr x8,[x0]; cbz x8,*; mov x20,x0
-    static constexpr uint8_t dungeon_orig_v316[] = {
-            0xFF, 0xC3, 0x01, 0xD1, 0xFD, 0x7B, 0x04, 0xA9, 0xF6, 0x57, 0x05, 0xA9,
-            0xF4, 0x4F, 0x06, 0xA9, 0xFD, 0x03, 0x01, 0x91, 0x56, 0xD0, 0x3B, 0xD5,
-            0xC8, 0x16, 0x40, 0xF9, 0xA8, 0x83, 0x1F, 0xF8, 0x08, 0x00, 0x40, 0xF9,
-            0x28, 0x08, 0x00, 0xB4, 0xF4, 0x03, 0x00, 0xAA, 0xF3, 0x03, 0x01, 0xAA,
-            0xBF, 0x18, 0xEA, 0x97, 0xF5, 0x03, 0x00, 0xAA, 0x41, 0xEA, 0xFE, 0xD0,
-            0x21, 0xD4, 0x29, 0x91, 0xE0, 0x83, 0x00, 0x91, 0xBB, 0x53, 0xAB, 0x97,
-            0xE1, 0x83, 0x00, 0x91, 0xE0, 0x03, 0x15, 0xAA, 0xDC, 0x18, 0xEA, 0x97,
-            0xE8, 0x83, 0x40, 0x39, 0xF5, 0x03, 0x00, 0x2A, 0x68, 0x00, 0x00, 0x36,
-            0xE0, 0x1B, 0x40, 0xF9, 0x24, 0x59, 0x31, 0x94, 0x15, 0x06, 0x00, 0x36,
-            0x80, 0x02, 0x40, 0xF9, 0x24, 0x26, 0x00, 0x94, 0xA0, 0x05, 0x00, 0x36,
-            0x80, 0x02, 0x40, 0xF9, 0xE3, 0x1A, 0x00, 0x94,
-    };
-    static constexpr uint8_t dungeon_patch_v316[] = {
-            0x20, 0x00, 0x80, 0x52, 0xC0, 0x03, 0x5F, 0xD6, 0x1F, 0x20, 0x03, 0xD5,
-            0xF4, 0x4F, 0x06, 0xA9, 0xFD, 0x03, 0x01, 0x91, 0x56, 0xD0, 0x3B, 0xD5,
-            0xC8, 0x16, 0x40, 0xF9, 0xA8, 0x83, 0x1F, 0xF8, 0x08, 0x00, 0x40, 0xF9,
-            0x28, 0x08, 0x00, 0xB4, 0xF4, 0x03, 0x00, 0xAA, 0xF3, 0x03, 0x01, 0xAA,
-            0xBF, 0x18, 0xEA, 0x97, 0xF5, 0x03, 0x00, 0xAA, 0x41, 0xEA, 0xFE, 0xD0,
-            0x21, 0xD4, 0x29, 0x91, 0xE0, 0x83, 0x00, 0x91, 0xBB, 0x53, 0xAB, 0x97,
-            0xE1, 0x83, 0x00, 0x91, 0xE0, 0x03, 0x15, 0xAA, 0xDC, 0x18, 0xEA, 0x97,
-            0xE8, 0x83, 0x40, 0x39, 0xF5, 0x03, 0x00, 0x2A, 0x68, 0x00, 0x00, 0x36,
-            0xE0, 0x1B, 0x40, 0xF9, 0x24, 0x59, 0x31, 0x94, 0x15, 0x06, 0x00, 0x36,
-            0x80, 0x02, 0x40, 0xF9, 0x24, 0x26, 0x00, 0x94, 0xA0, 0x05, 0x00, 0x36,
-            0x80, 0x02, 0x40, 0xF9, 0xE3, 0x1A, 0x00, 0x94,
-    };
-    static constexpr uint8_t dungeon_mask_v316[] = {
-            0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
-            0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
-            0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
-            0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
-            0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
-            0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
-            0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
-            0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
-            0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
-            0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
-            0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
-    };
-    static_assert(sizeof(dungeon_orig_v316) == sizeof(dungeon_mask_v316),
-                  "dungeon v316 mask length mismatch");
-    static_assert(sizeof(dungeon_patch_v316) == sizeof(dungeon_orig_v316),
-                  "dungeon v316 patch length mismatch");
-    static constexpr uint8_t dungeon_prologue_v316[] = {0xFF, 0xC3, 0x01, 0xD1, 0xFD, 0x7B, 0x04, 0xA9, 0xF6, 0x57, 0x05, 0xA9};
-
-    // Reconcile the max getter with the current getter's property field and getter BL.
-    // Both original and ON current forms retain this tail unchanged.
-    std::vector<uintptr_t> pc_current = find_code_pattern(ranges, pc_mp_orig, sizeof(pc_mp_orig));
-    for (uintptr_t hit: find_code_pattern(ranges, pc_mp_patch, sizeof(pc_mp_patch))) push_unique(pc_current, hit);
-    std::vector<MemoryRange> pc_max_ranges;
-    if (pc_current.size() == 1) {
-        uintptr_t property_getter = 0;
-        const size_t field = item_catalog::unsigned_offset(read_u32(pc_current[0] + 7 * sizeof(uint32_t)), 3);
-        if (decode_branch_target(pc_current[0] + 11 * sizeof(uint32_t), true, &property_getter)) {
-            std::vector<uintptr_t> candidates = find_code_pattern(ranges, pc_mp_max_orig, sizeof(pc_mp_max_orig));
-            for (uintptr_t hit: find_code_pattern(ranges, pc_mp_max_patch, sizeof(pc_mp_max_patch))) push_unique(candidates, hit);
-            for (uintptr_t hit: candidates) {
+    out.mp_cost = unique(mp_cost_orig);
+    out.mp_delta = unique(mp_delta_orig, mp_delta_mask);
+    out.mp_current = unique(pc_mp_orig);
+    if (out.mp_current) {
+        uintptr_t getter = 0;
+        const size_t field = item_catalog::unsigned_offset(read_u32(out.mp_current + 7 * 4), 3);
+        std::vector<uintptr_t> candidates;
+        if (decode_branch_target(out.mp_current + 11 * 4, true, &getter)) {
+            for (auto hit : find_code_pattern(ranges, pc_mp_max_orig, sizeof(pc_mp_max_orig))) {
                 uintptr_t callee = 0;
-                if (item_catalog::unsigned_offset(read_u32(hit + 2 * sizeof(uint32_t)), 3) == field &&
-                    decode_branch_target(hit + 4 * sizeof(uint32_t), true, &callee) && callee == property_getter)
-                    pc_max_ranges.push_back({hit, hit + sizeof(pc_mp_max_orig), true, false});
+                if (item_catalog::unsigned_offset(read_u32(hit + 2 * 4), 3) == field &&
+                    decode_branch_target(hit + 4 * 4, true, &callee) && callee == getter)
+                    candidates.push_back(hit);
             }
         }
+        if (candidates.size() == 1) out.mp_max = candidates.front();
     }
-    const BytePatch mp_patches[] = {
-            {"battle.mp.cost", mp_cost_orig, sizeof(mp_cost_orig), mp_cost_patch, sizeof(mp_cost_patch), 0, ldrb_w8, mov_w8_wzr, sizeof(ldrb_w8)},
-            {"battle.mp.delta", mp_delta_orig, sizeof(mp_delta_orig), mp_delta_patch, sizeof(mp_delta_patch), 8, mov_w1_w0, zero_w1, sizeof(mov_w1_w0), mp_delta_mask, mp_delta_mask},
-            {"battle.mp.current", pc_mp_orig, sizeof(pc_mp_orig), pc_mp_patch, sizeof(pc_mp_patch), 0, prologue_be, ret_65535, sizeof(prologue_be)},
-            {"battle.mp.max", pc_mp_max_orig, sizeof(pc_mp_max_orig), pc_mp_max_patch, sizeof(pc_mp_max_patch), 0, prologue_bf, ret_65535, sizeof(prologue_bf)},
-    };
-    for (const BytePatch &patch: mp_patches) {
-        apply_byte_patch(std::strcmp(patch.name, "battle.mp.max") == 0 ? pc_max_ranges : ranges, patch, cfg.enabled && cfg.battle_mp);
+    out.damage = unique(damage_orig);
+    const auto old = find_code_pattern(ranges, dungeon_orig, sizeof(dungeon_orig));
+    const auto modern = find_code_pattern(ranges, dungeon_orig_v316, sizeof(dungeon_orig_v316), dungeon_mask_v316);
+    if (old.size() + modern.size() == 1) {
+        out.dungeon_two_args = !modern.empty();
+        out.dungeon = out.dungeon_two_args ? modern.front() : old.front();
     }
+    out.encounter = unique(encounter_orig);
+    return out;
+}
 
-    const BytePatch damage = {"damage.x524288", damage_orig, sizeof(damage_orig), damage_patch, sizeof(damage_patch), 56, mov_x3_x25, lsl_x3_x25_19, sizeof(mov_x3_x25)};
-    apply_byte_patch(ranges, damage, cfg.enabled && cfg.all_damage);
 
-    const BytePatch skip_variants[] = {
-            {"dungeon.skip", dungeon_orig, sizeof(dungeon_orig), dungeon_patch, sizeof(dungeon_patch), 0, dungeon_prologue, dungeon_return_true, sizeof(dungeon_prologue)},
-            {"dungeon.skip.v316", dungeon_orig_v316, sizeof(dungeon_orig_v316), dungeon_patch_v316, sizeof(dungeon_patch_v316), 0, dungeon_prologue_v316, dungeon_return_true, sizeof(dungeon_prologue_v316), dungeon_mask_v316, dungeon_mask_v316},
+#include "runtime_context_contracts.h"
+
+uintptr_t injection_function_start(const std::vector<MemoryRange> &, const std::vector<MemoryRange> &, uintptr_t);
+bool decode_adrp_page(uint32_t, uintptr_t, uintptr_t *, uint32_t *);
+bool decode_add_immediate(uint32_t, uint32_t, uintptr_t, uintptr_t *);
+uintptr_t unique_primary_vtable(const std::vector<MemoryRange> &, const std::vector<MemoryRange> &, const char *);
+bool function_references_address(const std::vector<MemoryRange> &, uintptr_t, size_t, uintptr_t);
+std::vector<uintptr_t> find_pc_relative_refs(const std::vector<MemoryRange> &, uintptr_t);
+
+template<size_t N>
+uintptr_t context_contract(const std::vector<MemoryRange> &x, uintptr_t function, const item_catalog::Word (&pattern)[N]) {
+    uint32_t words[N]{};
+    return scoped_layout_contract(x, function, pattern, words);
+}
+std::vector<uintptr_t> context_named_functions(const std::vector<MemoryRange> &r, const std::vector<MemoryRange> &x, const char *name) {
+    std::vector<uintptr_t> result;
+    for (const auto string : find_pattern(r, reinterpret_cast<const uint8_t *>(name), std::strlen(name) + 1))
+        for (const auto ref : find_pc_relative_refs(x, string)) {
+            const auto function = injection_function_start(r, x, ref);
+            if (function) push_unique(result, function);
+        }
+    return result;
+}
+struct AdLayout {
+    uintptr_t owner=0, availability=0, sdk_show=0, sdk_return=0, post_store=0, receiver=0;
+    size_t slots[4]{};
+    bool valid=false;
+};
+AdLayout resolve_ad_context(const std::vector<MemoryRange> &r, const std::vector<MemoryRange> &x) {
+    using namespace runtime_context_contracts;
+    AdLayout out;
+    const auto java_class = find_pattern(r, reinterpret_cast<const uint8_t *>("net/wrightflyer/toybox/IronSourceBridge"),
+                                        sizeof("net/wrightflyer/toybox/IronSourceBridge"));
+    const auto wrapper = [&](const char *method) {
+        std::vector<uintptr_t> matches;
+        for (const auto function : context_named_functions(r,x,method)) {
+            if (context_contract(x,function,ad_bridge_entry) != function) continue;
+            for (const auto text : java_class) if (function_references_address(x,function,512,text)) push_unique(matches,function);
+        }
+        return matches.size()==1 ? matches.front() : uintptr_t(0);
     };
-    apply_present_byte_patch(ranges, skip_variants, sizeof(skip_variants) / sizeof(skip_variants[0]), cfg.enabled && cfg.dungeon_skip);
+    out.sdk_show = wrapper("showRewardedVideo");
+    out.availability = wrapper("isRewardedVideoAvailable");
+    if (!out.sdk_show || !out.availability || !context_contract(x,out.availability,ad_availability_return)) return {};
+    uintptr_t outer_function=0;
+    std::vector<uintptr_t> outer_matches;
+    for (const auto at : find_item_contract(x,ad_outer)) {
+        uintptr_t availability=0, show=0;
+        if (decode_branch_target(at+8,true,&availability) && availability==out.availability &&
+            decode_branch_target(at+36,true,&show) && show==out.sdk_show) outer_matches.push_back(at);
+    }
+    if (outer_matches.size()!=1) return {};
+    outer_function=injection_function_start(r,x,outer_matches.front());
+    out.sdk_return=outer_matches.front()+40;
+    const auto callback_table=unique_primary_vtable(r,x,
+        "NSt6__ndk110__function6__funcIZN6toybox3gui15AdColonyUIState4initEvE3$_0NS_9allocatorIS5_EEFvbEEE");
+    if (!outer_function || !callback_table) return {};
+    std::vector<uintptr_t> owners;
+    for (const auto function : context_named_functions(r,x,"advertisement_reward_receive_flag")) {
+        const auto callback=context_contract(x,function,ad_callback);
+        if (!context_contract(x,function,ad_owner_entry) || !callback) continue;
+        uintptr_t target=0,page=0,table=0; uint32_t reg=0;
+        if (!decode_branch_target(callback+28,true,&target) || target!=outer_function ||
+            !decode_adrp_page(read_u32(callback+4),callback+4,&page,&reg) ||
+            !decode_add_immediate(read_u32(callback+8),reg,page,&table) || table!=callback_table) continue;
+        const auto state=context_contract(x,function,item_catalog::ad_state);
+        if (!state || !decode_branch_target(state+8,false,&target) ||
+            !range_contains(x,target,4+sizeof(ad_state_epilogue)/sizeof(ad_state_epilogue[0])*4) ||
+            (read_u32(target)&0xFFC003FFU)!=0x39000268U) continue;
+        uint32_t words[std::size(ad_state_epilogue)]{};
+        if (!read_item_contract(target+4,ad_state_epilogue,words)) continue;
+        owners.push_back(function); out.post_store=target+4;
+    }
+    if (owners.size()!=1) return {};
+    out.owner=owners.front();
+    const char *names[]={"Java_net_wrightflyer_toybox_IronSourceEvents_onRewardedVideoAdOpened",
+        "Java_net_wrightflyer_toybox_IronSourceEvents_onRewardedVideoAdRewarded",
+        "Java_net_wrightflyer_toybox_IronSourceEvents_onRewardedVideoAdClosed",
+        "Java_net_wrightflyer_toybox_IronSourceEvents_onRewardedVideoAvailabilityChanged"};
+    for (size_t i=0;i<4;++i) {
+        const auto function=reinterpret_cast<uintptr_t>(resolve_app_symbol(names[i]));
+        uintptr_t receiver=0;
+        const auto decode=[&](const auto &pattern) {
+            const auto global=bridge_receiver_global(x,function,pattern);
+            if (!global) return uintptr_t(0);
+            const auto instruction=item_role_address(function,pattern,item_catalog::Role::bridge_callback_slot);
+            out.slots[i]=item_catalog::unsigned_offset(read_u32(instruction),3);
+            return global;
+        };
+        if (i==1) {
+            const auto current=bridge_receiver_global(x,function,item_catalog::bridge_reward);
+            const auto legacy=bridge_receiver_global(x,function,item_catalog::bridge_reward_legacy);
+            if (bool(current)==bool(legacy)) return {};
+            receiver=current ? decode(item_catalog::bridge_reward) : decode(item_catalog::bridge_reward_legacy);
+        } else if(i==3) receiver=decode(item_catalog::bridge_available);
+        else receiver=decode(item_catalog::bridge_simple);
+        if (!receiver || (out.receiver && out.receiver!=receiver) || out.slots[i]>4096) return {};
+        out.receiver=receiver;
+    }
+    out.valid=true;
+    return out;
+}
 
-    apply_encounter_judge_patch(ranges,
-                                cfg.enabled && cfg.encounter_freeze,
-                                cfg.enabled && cfg.encounter_force);
 
-    patch_speed_constants(ranges, cfg.enabled && cfg.speedy);
-
-    apply_team_god_patch(ranges, cfg.enabled && cfg.team_god_mode);
-
-    apply_ad_bypass_patch(ranges, cfg.enabled && cfg.ad_bypass);
+struct TeamLayout { uintptr_t call=0, helper=0; size_t kind_slot=0; bool valid=false; };
+TeamLayout resolve_team_context(const std::vector<MemoryRange> &x) {
+    TeamLayout out;
+    const auto tails=find_item_contract(x,item_catalog::team_branch_tail);
+    if(tails.size()!=1) return out;
+    uint32_t words[std::size(item_catalog::team_actor_type)]{};
+    if(!scoped_layout_contract(x,tails.front(),item_catalog::team_actor_type,words)) return out;
+    out.kind_slot=item_catalog::unsigned_offset(item_role_word(words,item_catalog::team_actor_type,item_catalog::Role::actor_type_slot),3);
+    out.call=tails.front()+sizeof(item_catalog::team_branch_tail)/sizeof(item_catalog::team_branch_tail[0])*4;
+    uint32_t body[std::size(runtime_context_contracts::player_hp_delta)]{};
+    if(!out.kind_slot || out.kind_slot>4096 || !decode_branch_target(out.call,true,&out.helper) ||
+       !range_contains(x,out.helper,sizeof(body)) || !read_item_contract(out.helper,runtime_context_contracts::player_hp_delta,body)) return {};
+    out.valid=true;
+    return out;
 }
 
 #include "injection-audit.h"
 
+#include "lua_registration_model.inc"
+
+#include "resolver-audit.h"
+
 int main(int argc,char**argv){std::string dir=argv[1];std::ifstream in(dir+"/image.bin",std::ios::binary);std::vector<char> raw((std::istreambuf_iterator<char>(in)),{});void *mem=nullptr;posix_memalign(&mem,4096,raw.size());memcpy(mem,raw.data(),raw.size());uintptr_t base=(uintptr_t)mem;audit_base=base;
 std::ifstream rel(dir+"/relocs.txt");uint64_t o,v;while(rel>>o>>v){uintptr_t p=base+v;memcpy((void*)(base+o),&p,8);}
 std::ifstream symbols(dir+"/symbols.txt");std::string name;while(symbols>>name>>v)audit_symbols[name]=base+v;
-std::vector<MemoryRange> ranges,readable_ranges;std::ifstream segs(dir+"/segments.txt");uint64_t a,z,fl;while(segs>>a>>z>>fl){readable_ranges.push_back({base+a,base+a+z,bool(fl&1),bool(fl&2)});if(fl&1)ranges.push_back(readable_ranges.back());}audit_ranges=ranges;
-printf("AUDIT_VERSION 2\n");
+std::vector<MemoryRange> ranges,readable_ranges;std::ifstream segs(dir+"/segments.txt");uint64_t a,z,fl;while(segs>>a>>z>>fl){readable_ranges.push_back({base+a,base+a+z,bool(fl&1),bool(fl&2)});if(fl&1)ranges.push_back(readable_ranges.back());}audit_ranges=ranges;audit_readable=readable_ranges;
+std::vector<char> before((char*)mem,(char*)mem+raw.size());
+printf("AUDIT_VERSION 3\n");
 auto report=[&](const char*n,uintptr_t a){printf("RESULT %s 0x%llx\n",n,(unsigned long long)(a?a-base:0));};
 
 uintptr_t item_writer_addr=resolve_masked_pattern_hook_address(
@@ -2827,13 +2162,10 @@ report("dialogue.native.talk_ui_process_wait",dg.talk_ui_process_wait);
 report("dialogue.native.talk_layer_touch_handler",dg.talk_layer_touch_handler);
 report("dialogue.native.rendering_checker",dg.rendering_checker);
 printf("CHECK dialogue.layout_fields %d page_jump_unlocked_offset=%zu talk_ui_state_talk_layer_offset=%zu talk_layer_main_window_offset=%zu talk_main_window_rendering_flag_offset=%zu talk_main_window_ready_offset=%zu talk_main_window_started_offset=%zu talk_main_window_aux_offset=%zu\n",dg.page_jump_unlocked_offset!=0 && dg.talk_ui_state_talk_layer_offset!=0 && dg.talk_layer_main_window_offset!=0 && dg.talk_main_window_rendering_flag_offset!=0 && dg.talk_main_window_ready_offset!=0 && dg.talk_main_window_started_offset!=0 && dg.talk_main_window_aux_offset!=0,static_cast<size_t>(dg.page_jump_unlocked_offset),static_cast<size_t>(dg.talk_ui_state_talk_layer_offset),static_cast<size_t>(dg.talk_layer_main_window_offset),static_cast<size_t>(dg.talk_main_window_rendering_flag_offset),static_cast<size_t>(dg.talk_main_window_ready_offset),static_cast<size_t>(dg.talk_main_window_started_offset),static_cast<size_t>(dg.talk_main_window_aux_offset));
-std::vector<char> before((char*)mem,(char*)mem+raw.size());RuntimeConfig cfg;
-uint32_t ow[std::size(item_catalog::owned_count_read)]{};
-auto oa=scoped_layout_contract(ranges,token_shop_purchase_addr,item_catalog::owned_count_read,ow);report("mass.ownedCount",oa);g_token_purchase_owned_count_address.store(oa);
-apply_runtime_byte_patches(cfg);apply_token_purchase_owned_count_zero_patch(true,"audit");auto apply_writes=writes;
-apply_runtime_byte_patches(cfg);apply_token_purchase_owned_count_zero_patch(true,"repeat-audit");bool repeat_on=writes==apply_writes;
-cfg.enabled=false;apply_runtime_byte_patches(cfg);apply_token_purchase_owned_count_zero_patch(false,"audit");auto undone=writes;
-apply_runtime_byte_patches(cfg);apply_token_purchase_owned_count_zero_patch(false,"repeat-audit");bool repeat_off=writes==undone;
-printf("IDEMPOTENT on=%d off=%d owned=%d\n",repeat_on,repeat_off,oa!=0);
-bool restored=memcmp(before.data(),mem,raw.size())==0;printf("ROUNDTRIP item=%d applyWrites=%zu undoWrites=%zu restored=%d\n",item_ok,apply_writes,writes-apply_writes,restored);
-free(mem);return restored&&item_ok&&injection_ok&&repeat_on&&repeat_off&&oa!=0?0:1;}
+bool bindings_ok=audit_runtime_bindings(readable_ranges,ranges,appraisal_exchange_shop_purchase_addr);
+bool models_ok=audit_resolver_models(readable_ranges,ranges);
+bool unchanged=memcmp(before.data(),mem,raw.size())==0;
+printf("READ_ONLY unchanged=%d\n",unchanged);
+bool complete=item_ok&&injection_ok&&bindings_ok&&models_ok&&unchanged;
+printf("AUDIT_COMPLETE ok=%d\n",complete);
+free(mem);return complete?0:1;}

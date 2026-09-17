@@ -1,170 +1,126 @@
 {
-  "schemaVersion": 1,
-  "moduleCommit": "958b80b7697366bca4373925f6cf8108177058a4",
-  "engineSourceSha256": "70676d19f28558f3f80552a0a5a697154955a5e531b748d7c431ef00422a46b6",
-  "method": "Website ELF loader + deployable WASM + website report parser. Game code is never executed.",
+  "schemaVersion": 3,
+  "moduleCommit": "86ab328d1843f90eaf9d3fe0a51ba223e0cade6f",
+  "uncommittedSource": false,
+  "engineSourceSha256": "7cda1332cbfcb6ba298507ffb0db8093b6a64bb5ea6e28a6cac05ea7d2acf946",
+  "method": "Actual website ELF loader + WASM + report parser; read-only static audit, no uploaded ARM64 execution.",
   "fixtures": [
     {
       "version": "3.10.70",
       "sha256": "70a5deb206359cbbfc50675991699f5e943a7ab11aafeb63817dea5a40913522",
-      "itemInjectionPassed": 25,
-      "staticPassed": 102,
-      "runtimeOnly": 5,
-      "optionalAbsent": 3,
-      "legacyFailures": []
+      "exitCode": 0,
+      "passes": 117,
+      "runtime": 7,
+      "optional": 3,
+      "failures": []
     },
     {
       "version": "3.14.60",
       "sha256": "5ff9d801f505b1ea939f5a3c3b2f11753657b78542567e953ae8723a162bdfaa",
-      "itemInjectionPassed": 25,
-      "staticPassed": 104,
-      "runtimeOnly": 5,
-      "optionalAbsent": 1,
-      "legacyFailures": []
+      "exitCode": 0,
+      "passes": 119,
+      "runtime": 7,
+      "optional": 1,
+      "failures": []
     },
     {
       "version": "3.15.10",
       "sha256": "d12d577563cb26a8dda4b3be05a32fce53f7879928e2978efd97231b374a3e1a",
-      "itemInjectionPassed": 25,
-      "staticPassed": 105,
-      "runtimeOnly": 5,
-      "optionalAbsent": 0,
-      "legacyFailures": []
+      "exitCode": 0,
+      "passes": 120,
+      "runtime": 7,
+      "optional": 0,
+      "failures": []
     },
     {
       "version": "3.15.20",
       "sha256": "aeffdba192175626057cf86588436658ab838b14cf3b1ca4161aff8de4623720",
-      "itemInjectionPassed": 25,
-      "staticPassed": 105,
-      "runtimeOnly": 5,
-      "optionalAbsent": 0,
-      "legacyFailures": []
+      "exitCode": 0,
+      "passes": 120,
+      "runtime": 7,
+      "optional": 0,
+      "failures": []
     },
     {
       "version": "3.15.50",
       "sha256": "100c8a518fdd83a86ade7f4a367d83e953c54a99b2909a3c422753de205ba90f",
-      "itemInjectionPassed": 25,
-      "staticPassed": 104,
-      "runtimeOnly": 5,
-      "optionalAbsent": 0,
-      "legacyFailures": [
-        {
-          "feature": "lua.resetPlaySpeedAndAutoText",
-          "check": "Production resolver: one validated target",
-          "count": 0,
-          "detail": "lua registration resetPlaySpeedAndAutoText skipped stringHits=1 directRefs=1 indirectRefs=1 functionHits=2",
-          "status": "FAIL",
-          "klass": "fail"
-        }
-      ]
+      "exitCode": 0,
+      "passes": 120,
+      "runtime": 7,
+      "optional": 0,
+      "failures": []
     },
     {
       "version": "3.15.60",
       "sha256": "f96616b5ed770f884aeefbbcdcfc6c8cab3f92f57157b7b8fa8a4e720275e60d",
-      "itemInjectionPassed": 25,
-      "staticPassed": 104,
-      "runtimeOnly": 5,
-      "optionalAbsent": 0,
-      "legacyFailures": [
-        {
-          "feature": "lua.resetPlaySpeedAndAutoText",
-          "check": "Production resolver: one validated target",
-          "count": 0,
-          "detail": "lua registration resetPlaySpeedAndAutoText skipped stringHits=1 directRefs=1 indirectRefs=1 functionHits=2",
-          "status": "FAIL",
-          "klass": "fail"
-        }
-      ]
+      "exitCode": 0,
+      "passes": 120,
+      "runtime": 7,
+      "optional": 0,
+      "failures": []
     },
     {
       "version": "3.16.0",
       "sha256": "12394302720fec09862cbedb7b638ebaa0c3f1df8093c9b5b2c7a8162ceec35b",
-      "itemInjectionPassed": 25,
-      "staticPassed": 105,
-      "runtimeOnly": 5,
-      "optionalAbsent": 0,
-      "legacyFailures": []
+      "exitCode": 0,
+      "passes": 120,
+      "runtime": 7,
+      "optional": 0,
+      "failures": []
     },
     {
       "version": "3.16.10",
       "sha256": "78268269151e13b945f29d36f45ec7d7731de8e85259699b1dd539bad7ec5a91",
-      "itemInjectionPassed": 25,
-      "staticPassed": 105,
-      "runtimeOnly": 5,
-      "optionalAbsent": 0,
-      "legacyFailures": []
+      "exitCode": 0,
+      "passes": 120,
+      "runtime": 7,
+      "optional": 0,
+      "failures": []
     },
     {
       "version": "3.16.50",
       "sha256": "60e67a512205ff0ddc011d110a7799ebc1cf04431196cb093ca8d5f666988089",
-      "itemInjectionPassed": 25,
-      "staticPassed": 105,
-      "runtimeOnly": 5,
-      "optionalAbsent": 0,
-      "legacyFailures": []
+      "exitCode": 0,
+      "passes": 120,
+      "runtime": 7,
+      "optional": 0,
+      "failures": []
     },
     {
       "version": "3.16.60",
       "sha256": "be90a9476f68111710bcd07f60617c031f575792c7863869ac2b7fddee3fbeda",
-      "itemInjectionPassed": 25,
-      "staticPassed": 104,
-      "runtimeOnly": 5,
-      "optionalAbsent": 0,
-      "legacyFailures": [
-        {
-          "feature": "lua.setAutoFeedWaitTimeMinimum",
-          "check": "Production resolver: one validated target",
-          "count": 0,
-          "detail": "lua registration setAutoFeedWaitTimeMinimum skipped stringHits=1 directRefs=1 indirectRefs=1 functionHits=2",
-          "status": "FAIL",
-          "klass": "fail"
-        }
-      ]
+      "exitCode": 0,
+      "passes": 120,
+      "runtime": 7,
+      "optional": 0,
+      "failures": []
     },
     {
       "version": "3.16.70",
       "sha256": "4eaf60e12897f924bfad8c6efd66b27ccd3633f08b4a7248406fca77456d1c6f",
-      "itemInjectionPassed": 25,
-      "staticPassed": 104,
-      "runtimeOnly": 5,
-      "optionalAbsent": 0,
-      "legacyFailures": [
-        {
-          "feature": "lua.setAutoFeedWaitTimeMinimum",
-          "check": "Production resolver: one validated target",
-          "count": 0,
-          "detail": "lua registration setAutoFeedWaitTimeMinimum skipped stringHits=1 directRefs=1 indirectRefs=1 functionHits=2",
-          "status": "FAIL",
-          "klass": "fail"
-        }
-      ]
+      "exitCode": 0,
+      "passes": 120,
+      "runtime": 7,
+      "optional": 0,
+      "failures": []
     },
     {
       "version": "3.16.71",
       "sha256": "424962efbc4071eb209fec207bc5f8c81aa5802587fffd76b715f09308156aac",
-      "itemInjectionPassed": 25,
-      "staticPassed": 104,
-      "runtimeOnly": 5,
-      "optionalAbsent": 0,
-      "legacyFailures": [
-        {
-          "feature": "lua.setAutoFeedWaitTimeMinimum",
-          "check": "Production resolver: one validated target",
-          "count": 0,
-          "detail": "lua registration setAutoFeedWaitTimeMinimum skipped stringHits=1 directRefs=1 indirectRefs=1 functionHits=2",
-          "status": "FAIL",
-          "klass": "fail"
-        }
-      ]
+      "exitCode": 0,
+      "passes": 120,
+      "runtime": 7,
+      "optional": 0,
+      "failures": []
     },
     {
       "version": "3.17.0",
       "sha256": "2789c0f6bb570d168a14d836a36a3e3fc372c60c63a8e79730dc9c67bc78a1dc",
-      "itemInjectionPassed": 25,
-      "staticPassed": 105,
-      "runtimeOnly": 5,
-      "optionalAbsent": 0,
-      "legacyFailures": []
+      "exitCode": 0,
+      "passes": 120,
+      "runtime": 7,
+      "optional": 0,
+      "failures": []
     }
   ]
 }

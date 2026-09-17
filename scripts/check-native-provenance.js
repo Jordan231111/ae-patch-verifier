@@ -6,10 +6,11 @@ const assert = require('node:assert/strict');
 const os = require('node:os');
 const { spawnSync } = require('node:child_process');
 const root = path.resolve(__dirname, '..');
-const native = path.join(root, 'native');
-const info = require('../native/provenance.json');
-const coverage = require('../native/coverage.js');
-assert.equal(info.schemaVersion, 2);
+const native = process.env.AE_NATIVE_DIR ? path.resolve(process.env.AE_NATIVE_DIR) : path.join(root, 'native');
+const info = JSON.parse(fs.readFileSync(path.join(native, 'provenance.json'), 'utf8'));
+const coverage = require(path.join(native, 'coverage.js'));
+assert.equal(info.schemaVersion, 3);
+assert.equal(coverage.schemaVersion, 3);
 assert.equal(info.uncommittedSource, false, 'Published checks must come from committed module inputs');
 assert.match(info.moduleCommit, /^[a-f0-9]{40}$/);
 assert.deepEqual(info.staticCoverage, coverage.checks);
@@ -21,6 +22,12 @@ for (const name of ['item_catalog_signatures.h', 'item_injection_contracts.h', '
   assert.equal(info.generatedFiles[name], info.productionFiles['app/src/main/cpp/' + name]);
 }
 assert.ok(!/\b(step_item_injection|injection_amount|hooked_injection_sync)\s*\(/.test(fs.readFileSync(path.join(native, 'item_injection_resolver.h'), 'utf8')));
+for (const filename of ['engine.cpp','item_removal_runtime.inc','item_count_runtime.inc','item_pet_runtime.inc',
+  'item_creation_runtime.inc','mass_shop_resolver.inc','director_speed.inc','item_fish_resolver.inc',
+  'item_pet_creation_resolver.inc','item_semantics_resolver.inc']) {
+  assert.ok(!/\b(PetRemovalPlan|PetCreateRollback|FishSnapshot|create_native_fish|sample_native_fish|InstanceSnapshot|create_injection_instance|hooked_mass_bind_token|check_pet_ownership_model)\b/
+    .test(fs.readFileSync(path.join(native, filename), 'utf8')), filename + ' must not execute uploaded game code');
+}
 const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'ae-queue-contracts-'));
 try {
   const binary = path.join(temp, 'queue');

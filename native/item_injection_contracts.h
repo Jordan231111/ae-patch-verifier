@@ -5,8 +5,27 @@
 // Immediates that identify game addresses, stack locations and vtable fields are
 // decoded at runtime. These contracts add no patches to either path.
 namespace item_injection_contracts {
-enum class Role { none, assign, cast_call, change_slot, check1, check2, check3, count_field, factory, high_half, id_constructor, id_getter, inner_factory, input_field, item_load, item_page, kind, low_half, manager, master1, master2, master3, master_getter, other_predicate, other_repository, pool_field, pool_predicate, repository, secure_copy, secure_field, source_field, sync, ticket_load, ticket_page, type_getter, watermark, writer };
+enum class Role { none, assign, cast_call, change_slot, check1, check2, check3, count_field, factory, high_half, id_constructor, id_getter, inner_factory, input_field, item_load, item_page, kind, low_half, manager, master1, master2, master3, master_getter, other_predicate, other_repository, pool_field, pool_predicate, repository, secure_copy, secure_field, source_field, sync, ticket_load, ticket_page, type_getter, watermark, writer,
+    amount_slot, core_slot, notify_slot, state_slot, setter_slot, requested1, requested2, floor1, floor2 };
 struct Word { uint32_t value, mask; Role role; };
+inline constexpr Word pc_singleton_load[] = {
+    {0x90000015,0x9F00001F,Role::none},{0xF9401688,0xFFFFFFFF,Role::none},
+    {0xF81F83A8,0xFFFFFFFF,Role::none},{0xF94002B3,0xFFC003FF,Role::none},
+    {0xB5000013,0xFF00001F,Role::none},{0x90000013,0x9F00001F,Role::none},
+    {0x39400268,0xFFC003FF,Role::none},{0x34000008,0xFF00001F,Role::none}
+};
+inline constexpr Word pc_singleton_store[] = {
+    {0x94000000,0xFC000000,Role::none},{0xAA0003F3,0xFFFFFFFF,Role::none},
+    {0x94000000,0xFC000000,Role::none},{0xF90002B3,0xFFC003FF,Role::none}
+};
+// Capture the currency ID explicitly forbidden by this build's native API.
+inline constexpr Word currency_forbidden[] = {
+    {0x52800017,0xFFE0001F,Role::low_half},{0xF94002C8,0xFFC003FF,Role::none},
+    {0x91000000,0xFFC003FF,Role::source_field},{0x2A0203F3,0xFFFFFFFF,Role::none},
+    {0x2A0103F4,0xFFFFFFFF,Role::none},{0x72A00017,0xFFE0001F,Role::high_half},
+    {0xF80003A8,0xFFE00FFF,Role::none},{0x94000000,0xFC000000,Role::none},
+    {0x6B17001F,0xFFFFFFFF,Role::none},{0x54000001,0xFF00001F,Role::none}
+};
 inline constexpr Word lua_token_repository[] = {
     {0x94000000, 0xFC000000, Role::repository}, {0xAA0003F5, 0xFFFFFFFF, Role::none},
     {0xF84003A0, 0xFFE00FFF, Role::none}, {0x910003E8, 0xFFC003FF, Role::none},
@@ -78,13 +97,37 @@ inline constexpr Word sync_bridge[] = {
 inline constexpr Word amount_ceiling[] = {
     {0x52800008, 0xFFE0001F, Role::low_half}, {0xF9400289, 0xFFFFFFFF, Role::none},
     {0xAA1403E0, 0xFFFFFFFF, Role::none}, {0x72A00008, 0xFFE0001F, Role::high_half},
-    {0xEB0802BF, 0xFFFFFFFF, Role::none}, {0xF9400123, 0xFFC003FF, Role::none},
+    {0xEB0802BF, 0xFFFFFFFF, Role::none}, {0xF9400123, 0xFFC003FF, Role::setter_slot},
     {0x9A88B2A1, 0xFFFFFFFF, Role::none}, {0x2A1303E2, 0xFFFFFFFF, Role::none},
 };
 inline constexpr Word token_low_watermark[] = {
     {0xA9402009, 0xFFC07FFF, Role::pool_field}, {0xCB090108, 0xFFFFFFFF, Role::none},
     {0xF100011F, 0xFFC003FF, Role::watermark}, {0x1A9F27E0, 0xFFFFFFFF, Role::none},
     {0xD65F03C0, 0xFFFFFFFF, Role::none},
+};
+inline constexpr Word amount_floor[] = {
+    {0x93407C08, 0xFFFFFFFF, Role::none}, {0xAA1403E0, 0xFFFFFFFF, Role::none},
+    {0x8B35C115, 0xFFFFFFFF, Role::none}, {0x94000000, 0xFC000000, Role::floor1},
+    {0xEB20C2BF, 0xFFFFFFFF, Role::none}, {0x5400000A, 0xFF00001F, Role::none},
+    {0xAA1403E0, 0xFFFFFFFF, Role::none}, {0x94000000, 0xFC000000, Role::floor2},
+    {0x93407C15, 0xFFFFFFFF, Role::none},
+};
+inline constexpr Word base_set_core[] = {
+    {0xF9400268, 0xFFFFFFFF, Role::none}, {0xAA1303E0, 0xFFFFFFFF, Role::none},
+    {0xF9400108, 0xFFC003FF, Role::amount_slot}, {0xD63F0100, 0xFFFFFFFF, Role::none},
+    {0xF9400268, 0xFFFFFFFF, Role::none}, {0xB84003A1, 0xFFE00FFF, Role::requested1},
+    {0x2A0003F5, 0xFFFFFFFF, Role::none}, {0xAA1303E0, 0xFFFFFFFF, Role::none},
+    {0x2A1403E2, 0xFFFFFFFF, Role::none}, {0xF9400108, 0xFFC003FF, Role::core_slot},
+    {0xD63F0100, 0xFFFFFFFF, Role::none}, {0xF9400268, 0xFFFFFFFF, Role::none},
+    {0xB84003A9, 0xFFE00FFF, Role::requested2}, {0xAA1303E0, 0xFFFFFFFF, Role::none},
+    {0xF9400108, 0xFFC003FF, Role::notify_slot}, {0x4B150121, 0xFFFFFFFF, Role::none},
+    {0xD63F0100, 0xFFFFFFFF, Role::none},
+};
+inline constexpr Word base_set_state[] = {
+    {0xF9400268, 0xFFFFFFFF, Role::none}, {0xAA1303E0, 0xFFFFFFFF, Role::none},
+    {0xF9400108, 0xFFC003FF, Role::state_slot}, {0xD63F0100, 0xFFFFFFFF, Role::none},
+    {0x12001C08, 0xFFFFFFFF, Role::none}, {0x7100051F, 0xFFFFFFFF, Role::none},
+    {0x54000000, 0xFF00001F, Role::none},
 };
 inline constexpr Word other_resource_low_watermark[] = {
     {0xF9400008, 0xFFC003FF, Role::count_field}, {0xF100011F, 0xFFC003FF, Role::watermark},

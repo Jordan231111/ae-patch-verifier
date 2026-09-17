@@ -12,6 +12,7 @@ builder/signing/
 native/engine.js
 native/engine.wasm
 native/build.json
+.native-staging-*/
 __pycache__/
 *.pyc
 

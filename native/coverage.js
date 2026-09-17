@@ -1,5 +1,5 @@
 (function(s){const value={
-  "schemaVersion": 2,
+  "schemaVersion": 3,
   "targets": [
     "final.itemWriter.patch",
     "final.rewardWriter.patch",
@@ -46,8 +46,7 @@
     "achievement.get",
     "achievement.dispatch",
     "userdata.push",
-    "dialogue.renderChecker",
-    "mass.ownedCount"
+    "dialogue.renderChecker"
   ],
   "checks": [
     "injection.resolver",
@@ -75,6 +74,44 @@
     "injection.equipment_master",
     "injection.embedded_id",
     "injection.queue",
+    "injection.character_ready_slot",
+    "injection.character_bss_bounds",
+    "injection.currency_writer",
+    "injection.currency_exclusion",
+    "injection.equipment_instances",
+    "injection.pet_instances",
+    "injection.buddy_instances",
+    "injection.unknown_instances",
+    "injection.pet_storage",
+    "injection.pet_survivors",
+    "injection.pet_creation_transaction",
+    "injection.fish_pool",
+    "injection.fish_storage",
+    "injection.lottery_semantics",
+    "injection.growth_semantics",
+    "runtime.mp_cost",
+    "runtime.mp_delta",
+    "runtime.mp_current",
+    "runtime.mp_max",
+    "runtime.damage",
+    "runtime.dungeon",
+    "runtime.encounter",
+    "runtime.ad_context",
+    "runtime.team_context",
+    "mass.currency_token",
+    "mass.token_shop",
+    "mass.appraisal_shop",
+    "mass.canonical_label",
+    "mass.state_lifetime",
+    "director.delta",
+    "models.missing_capture",
+    "models.zero_match",
+    "models.ambiguous_match",
+    "models.moved_target",
+    "models.unwind_extents",
+    "models.unwind_gaps",
+    "models.speed_math",
+    "models.lua_registration_rows",
     "dialogue.layout_fields"
   ],
   "optionalTargets": [
@@ -90,43 +127,13 @@
     "lua.resetPlaySpeedAndAutoText",
     "lua.isTalking"
   ],
-  "bytePatches": [
-    {
-      "feature": "battle.mp.cost",
-      "variants": [
-        "battle.mp.cost"
-      ]
-    },
-    {
-      "feature": "battle.mp.delta",
-      "variants": [
-        "battle.mp.delta"
-      ]
-    },
-    {
-      "feature": "battle.mp.current",
-      "variants": [
-        "battle.mp.current"
-      ]
-    },
-    {
-      "feature": "battle.mp.max",
-      "variants": [
-        "battle.mp.max"
-      ]
-    },
-    {
-      "feature": "damage.x524288",
-      "variants": [
-        "damage.x524288"
-      ]
-    },
-    {
-      "feature": "dungeon.skip",
-      "variants": [
-        "dungeon.skip",
-        "dungeon.skip.v316"
-      ]
-    }
+  "runtimeChecks": [
+    "Live objects and native ABI calls",
+    "Actual additions/removals and instance identity",
+    "Resource supply and memory pressure",
+    "Save acknowledgement and persistence",
+    "Android lifecycle and feature isolation",
+    "ShadowHook install/disable/unhook",
+    "Shop ownership and restoration"
   ]
 };s.AENativeCoverage=value;if(typeof module!=="undefined")module.exports=value;})(globalThis);

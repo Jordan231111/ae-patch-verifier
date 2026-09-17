@@ -47,5 +47,38 @@ bool audit_item_injection(const std::vector<MemoryRange> &readable,
     check("injection.embedded_id", resolved && layout.unknown_factory,
           "field=" + std::to_string(layout.borrowed_id_field));
     check("injection.queue", audit_injection_queue(), "Production parser and queue contracts, including 20000 IDs");
+    check("injection.character_ready_slot",range_contains(readable,layout.character_ready_slot,sizeof(uintptr_t)),
+          "Fresh character-repository readiness prevents implicit equipment rewards during initialization");
+    check("injection.character_bss_bounds",injection_writable_image_slot(readable,layout.character_ready_slot),
+          "Writable PT_LOAD memory extent includes the anonymous BSS tail");
+    target("injection.currency_writer",layout.currency_core);
+    check("injection.currency_exclusion",layout.forbidden_currency!=0,"Native forbidden currency ID="+std::to_string(layout.forbidden_currency));
+    const auto &equipment=g_instance_layouts[static_cast<size_t>(InstanceKind::Equipment)];
+    const auto &pet=g_instance_layouts[static_cast<size_t>(InstanceKind::Pet)];
+    const auto &buddy=g_instance_layouts[static_cast<size_t>(InstanceKind::Buddy)];
+    const auto &unknown=g_instance_layouts[static_cast<size_t>(InstanceKind::Unknown)];
+    check("injection.equipment_instances",equipment.ready && equipment.count.valid && equipment.create_one,
+          "Owned query, native creation/removal, identity decoder and native count index");
+    check("injection.pet_instances",pet.ready && pet.count.valid && pet.create_one,
+          "Owned query, native factory and exact instance identity");
+    check("injection.buddy_instances",buddy.ready && buddy.count.valid && buddy.create_one && buddy.prepare,
+          "Native preparation, factory, removal and count index");
+    check("injection.unknown_instances",unknown.ready && unknown.count.valid && layout.unknown_factory,
+          "Native unidentified-instance factory, selection and removal");
+    check("injection.pet_storage",g_pet_storage.ready && g_pet_storage.append && g_pet_storage.hash_unlink && g_pet_storage.node_dispose,
+          "Authoritative live/deleted/hash transaction and typed ownership helpers");
+    check("injection.pet_survivors",g_pet_storage.ready && g_pet_storage.repository.assign &&
+          g_pet_storage.repository.destructor && g_pet_storage.repository.unlink && g_pet_storage.repository.free_node,
+          "Bindings for in-place compaction of three indexes; no runtime stock changes occur in this audit");
+    check("injection.pet_creation_transaction",g_pet_creation.ready,
+          "Native publication order, counter and three-index rollback bindings; allocation failure is a device check");
+    check("injection.fish_pool",g_fish.ready && g_fish.pool_draw && g_fish.pool_ctor && g_fish.pool_destroy && g_fish.cache_destroy,
+          "Native weighted pool, size farm, seed signature and ownership cleanup contracts");
+    check("injection.fish_storage",g_fish.ready && g_fish.fbs_push && g_fish.map_erase && g_fish.repo_remove,
+          "Independent inventory storage, capacity, identity sequence and failure rollback bindings");
+    check("injection.lottery_semantics",g_special_inventory.scalar_ready!=g_special_inventory.records_ready,
+          g_special_inventory.scalar_ready ? "Legacy scalar quantity writer" : "Server-issued expiry records; ordinary quantity writer is RET");
+    check("injection.growth_semantics",g_special_inventory.growth_non_inventory,
+          "Zero ordinary amount and RET writer; pending gift consumption changes a chosen character");
     return passed;
 }

@@ -816,7 +816,7 @@
       <header class="verifier-head">
         <div class="label">
           <h2>Verify an Another Eden libapp.so (optional)</h2>
-          <p>Check the ARM64 module’s native targets, Item Injection grant paths and batching contracts, plus patch apply/undo safety.</p>
+          <p>Read-only audit of ARM64 native targets, inventory contracts and resolver uniqueness.</p>
         </div>
       </header>
       <div class="verifier-body">
@@ -829,7 +829,7 @@
         </div>
         <input id="fileInput" type="file" accept=".apk,.xapk,.so,application/zip">
         <p id="verifierRevision" class="muted">Loading verifier source…</p>
-        <p class="muted">Your file stays in this browser. Static passes establish code compatibility; live inventory, network recovery and saving are marked RUNTIME and require the running game.</p>
+        <p class="muted">Your file stays in this browser and its bytes remain unchanged. Uploaded ARM64 game code is never executed. Live inventory, ownership, resources, saving and hook chains are marked RUNTIME and require device tests.</p>
       <div id="status">Waiting for file.</div>
         <div id="summary" class="summary hidden"></div>
         <div id="results"></div>

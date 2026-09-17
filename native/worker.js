@@ -1,4 +1,4 @@
-/* Each file receives a fresh module instance so patch ownership never crosses files. */
+/* Each file receives a fresh read-only resolver instance and private ELF image. */
 importScripts('./elf-image.js');
 async function verifiedAsset(name, digest) {
   if (!/^[a-f0-9]{64}$/.test(digest || '')) throw new Error('Missing verifier build integrity metadata');
@@ -30,8 +30,9 @@ self.onmessage = async ({ data }) => {
       print: line => lines.push(line), printErr: line => lines.push(line) });
     engine.FS.mkdir('/input');
     for (const [name, contents] of Object.entries(files)) engine.FS.writeFile('/input/' + name, contents);
-    engine.callMain(['/input']);
-    self.postMessage({ lines });
+    const exitCode = engine.callMain(['/input']);
+    if (!Number.isInteger(exitCode)) throw new Error('Native audit did not return a valid exit code');
+    self.postMessage({ lines, exitCode, ok: exitCode === 0 });
   } catch (error) {
     self.postMessage({ error: error.message || String(error) });
   }

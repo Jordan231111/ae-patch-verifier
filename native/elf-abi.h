@@ -1,5 +1,6 @@
 #pragma once
 #include <cstdint>
+#include <cstddef>
 
 // Standard ELF64 file records, for host compilers (including macOS) without elf.h.
 // The production resolver reads these records; these are not game-object layouts.
@@ -19,4 +20,7 @@ static_assert(sizeof(Elf64_Ehdr) == 64 && sizeof(Elf64_Phdr) == 56);
 constexpr char ELFMAG[] = "\177ELF";
 constexpr size_t SELFMAG = 4;
 constexpr uint16_t EM_AARCH64 = 183;
+constexpr size_t EI_CLASS = 4, EI_DATA = 5;
+constexpr unsigned char ELFCLASS64 = 2, ELFDATA2LSB = 1;
+constexpr uint32_t PT_LOAD = 1, PF_W = 2;
 constexpr uint32_t PT_GNU_EH_FRAME = 0x6474e550;

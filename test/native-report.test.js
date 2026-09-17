@@ -11,7 +11,7 @@ test('actual 3.17.0 browser-engine output covers every static contract', () => {
   const rows = nativeReport(lines);
   assert.deepEqual(failures(rows), []);
   assert.equal(rows.filter(row => row.feature.startsWith('Item Injection') && row.status === 'PASS').length, coverage.checks.filter(id => id.startsWith('injection.')).length);
-  assert.equal(rows.filter(row => row.status === 'RUNTIME').length, 5);
+  assert.equal(rows.filter(row => row.status === 'RUNTIME').length, 7);
   assert.ok(rows.filter(row => row.status === 'RUNTIME').every(row => row.klass === 'warn'));
 });
 
@@ -19,7 +19,7 @@ test('empty, truncated and pre-injection engine output cannot pass', () => {
   assert.ok(failures(nativeReport([])).length > coverage.checks.length);
   const stale = lines.filter(line => !/^(CHECK |AUDIT_VERSION |RESULT lua.changeItemAmount )/.test(line));
   assert.ok(failures(nativeReport(stale)).length >= coverage.checks.length + 1);
-  const interrupted = lines.filter(line => !/^(ROUNDTRIP |IDEMPOTENT )/.test(line));
+  const interrupted = lines.filter(line => !/^(READ_ONLY |AUDIT_COMPLETE )/.test(line));
   assert.equal(failures(nativeReport(interrupted)).length, 2);
 });
 
@@ -59,33 +59,26 @@ test('ambiguous optional bindings remain failures, and required targets cannot c
   assert.equal(failures(nativeReport(required)).length, 1);
 });
 
-function withWrites(change) {
-  const roundtrip = lines.find(line => line.startsWith('ROUNDTRIP '));
-  const applied = Number(/applyWrites=(\d+)/.exec(roundtrip)[1]);
-  const writes = lines.filter(line => line.startsWith('WRITE '));
-  const batches = { apply: writes.slice(0, applied), undo: writes.slice(applied) };
-  change(batches);
-  return [...lines.filter(line => !/^(WRITE |ROUNDTRIP )/.test(line)), ...batches.apply, ...batches.undo,
-    `ROUNDTRIP item=1 applyWrites=${batches.apply.length} undoWrites=${batches.undo.length} restored=1`];
-}
 
-test('patch safety derives ownership from actual writes instead of a fixed operation count', () => {
-  const extra = withWrites(({ apply, undo }) => {
-    apply.push('WRITE 0x123000 size=8'); undo.push('WRITE 0x123000 size=8');
-  });
-  assert.deepEqual(failures(nativeReport(extra)), []);
+test('protocol 3 requires unchanged bytes and complete audit markers exactly once', () => {
+  for (const marker of ['READ_ONLY unchanged=1', 'AUDIT_COMPLETE ok=1']) {
+    assert.ok(failures(nativeReport(lines.filter(line => line !== marker))).length > 0);
+    assert.ok(failures(nativeReport([...lines, marker])).length > 0);
+  }
+  const changed = lines.map(line => line === 'READ_ONLY unchanged=1' ? 'READ_ONLY unchanged=0' : line);
+  assert.ok(failures(nativeReport(changed)).length > 0);
+  assert.ok(failures(nativeReport(lines.map(line => line === 'AUDIT_VERSION 3' ? 'AUDIT_VERSION 2' : line))).length > 0);
 });
 
-test('equivalent restoration with a different write granularity is accepted', () => {
-  const split = withWrites(({ undo }) => {
-    const match = /^WRITE (0x[0-9a-f]+) size=(\d+)$/.exec(undo[0]);
-    const at = BigInt(match[1]), size = Number(match[2]);
-    undo.splice(0, 1, `WRITE 0x${at.toString(16)} size=1`, `WRITE 0x${(at + 1n).toString(16)} size=${size - 1}`);
-  });
-  assert.deepEqual(failures(nativeReport(split)), []);
+test('every generated target is required exactly once', () => {
+  for (const target of coverage.targets) {
+    const prefix = 'RESULT ' + target + ' ';
+    assert.ok(failures(nativeReport(lines.filter(line => !line.startsWith(prefix)))).length > 0, target);
+    const result = lines.find(line => line.startsWith(prefix));
+    assert.ok(failures(nativeReport([...lines, result])).length > 0, target);
+  }
 });
 
-test('balanced counts with restoration outside the owned ranges still fail', () => {
-  const wrong = withWrites(({ undo }) => { undo[0] = 'WRITE 0x123000 size=4'; });
-  assert.ok(failures(nativeReport(wrong)).some(row => row.feature === 'Patch safety'));
+test('successful-looking output cannot override a nonzero engine exit', () => {
+  assert.ok(failures(nativeReport(lines, 7)).some(row => row.check === 'Native exit code'));
 });

@@ -5,7 +5,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
 
-async function run({ mismatchModule = false, corrupt = '', missingMetadata = false } = {}) {
+async function run({ mismatchModule = false, corrupt = '', missingMetadata = false, exitCode = 0 } = {}) {
   const assets = { 'engine.js': Buffer.from('trusted glue'), 'engine.wasm': Buffer.from('trusted wasm') };
   const commit = 'a'.repeat(40);
   const build = { moduleCommit: commit, artifacts: Object.fromEntries(Object.entries(assets)
@@ -21,7 +21,7 @@ async function run({ mismatchModule = false, corrupt = '', missingMetadata = fal
     createAENative: async options => {
       created = true;
       assert.deepEqual(Array.from(options.wasmBinary), Array.from(assets['engine.wasm']));
-      return { FS: { mkdir() {}, writeFile() {} }, callMain() { options.print('AUDIT_VERSION 2'); return 0; } };
+      return { FS: { mkdir() {}, writeFile() {} }, callMain() { options.print('AUDIT_VERSION 3'); return exitCode; } };
     },
     fetch: async url => {
       const name = url.replace(/^\.\//, '').split('?')[0];
@@ -56,4 +56,17 @@ test('stale JavaScript or WASM assets cannot produce a verification report', asy
     assert.match(result.message.error, /assets changed/);
     assert.equal(result.message.lines, undefined);
   }
+});
+
+test('worker marks nonzero exits as unsuccessful', async () => {
+  const result = await run({ exitCode: 9 });
+  assert.equal(result.message.exitCode, 9);
+  assert.equal(result.message.ok, false);
+  assert.deepEqual(Array.from(result.message.lines), ['AUDIT_VERSION 3']);
+});
+
+test('missing exit status cannot become a success result', async () => {
+  const result = await run({ exitCode: null });
+  assert.match(result.message.error, /valid exit code/);
+  assert.equal(result.message.ok, undefined);
 });

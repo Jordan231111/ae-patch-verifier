@@ -2,7 +2,7 @@
   const coverage = typeof module !== 'undefined' ? require('./coverage.js') : scope.AENativeCoverage;
   const optionalLua = new Set(coverage.optionalTargets);
   const injectionLabels = {
-    resolver: 'Complete production grant resolver', token_repository: 'Token repository',
+    resolver: 'Complete production inventory resolver', token_repository: 'Token repository',
     token_assign: 'Token assignment', token_kind: 'Item token classification', base_change: 'Shared amount change',
     ticket_writer: 'Key / ticket history wrapper', dynamic_cast: 'Game dynamic_cast',
     master_getter: 'Item master getter', type_getter: 'Semantic item type getter',
@@ -13,22 +13,35 @@
     rtti: 'Item and ticket RTTI operands', change_slot: 'Instruction-derived grant virtual slot',
     token_pool: 'Token pool member and low-water mark', other_pool: 'Additional resource field and low-water mark',
     amount_max: 'Instruction-derived inventory ceiling', equipment_master: 'Equipment eligibility member consensus',
-    embedded_id: 'Embedded item ID / secure-copy agreement', queue: 'Production input and queue contract tests'
+    embedded_id: 'Embedded item ID / secure-copy agreement', queue: 'Production input and queue contract tests',
+    character_ready_slot: 'Character repository readiness slot', currency_writer: 'Native currency writer',
+    currency_exclusion: 'Native currency restriction', equipment_instances: 'Equipment instance operations',
+    pet_instances: 'Pet equipment instance operations', buddy_instances: 'Buddy equipment instance operations',
+    unknown_instances: 'Unidentified equipment operations', pet_storage: 'Pet authoritative storage',
+    pet_survivors: 'Pet survivor preservation contracts', character_bss_bounds: 'Anonymous BSS readiness slot bounds',
+    pet_creation_transaction: 'Pet creation publication and rollback contracts',
+    fish_pool: 'Fish native pool / size / signature contracts', fish_storage: 'Fish inventory storage contracts',
+    lottery_semantics: 'Scalar versus expiry-record ticket semantics', growth_semantics: 'Character growth gift semantics'
   };
-  const runtimeChecks = [
-    ['Live item objects', 'Object lifetime, type metadata and actual ABI calls require the running game.'],
-    ['Exact grants and special types', 'Real inventory deltas, keys, equipment instances and rollback cannot be established from a .so.'],
-    ['Adaptive batching', 'Token supply, instance cost, timing and memory pressure are runtime state; decoded thresholds are checked above.'],
-    ['Network and saving', 'Replenishment, reconnection, server acknowledgement and persistence require runtime verification.'],
-    ['Android integration', 'GL-thread scheduling, focus, input persistence and existing-feature isolation require the installed module.']
-  ];
-  function nativeReport(lines) {
+  const runtimeDetails = {
+    'Live objects and native ABI calls': 'File contracts do not establish the lifetime of a running game object.',
+    'Actual additions/removals and instance identity': 'Counts, surviving owners, equipped slots and paired restoration are device checks.',
+    'Resource supply and memory pressure': 'Cooperative budgets, cancellation, seeds and token replenishment need the running host.',
+    'Save acknowledgement and persistence': 'Client saving and any server-owned transactions require runtime verification.',
+    'Android lifecycle and feature isolation': 'JNI, GL dispatch, Activity lifecycle and other modules require an installed build.',
+    'ShadowHook install/disable/unhook': 'Framework calling chains, concurrent callbacks and restored behavior cannot run inside this static WASM audit.',
+    'Shop ownership and restoration': 'A live StateManager owner and its destruction must be observed on the game thread.'
+  };
+  const runtimeChecks = coverage.runtimeChecks.map(name => [name, runtimeDetails[name]]);
+  function nativeReport(lines, exitCode = 0) {
+    if (!Array.isArray(lines) || lines.some(line => typeof line !== 'string')) throw new Error('Invalid native verifier output');
     const rows = [];
     const row = (feature, check, count, detail, pass = count === 1) => rows.push({ feature, check, count, detail, status: pass ? 'PASS' : 'FAIL', klass: pass ? 'ok' : 'fail' });
+    if (exitCode !== 0) row('Static audit integrity', 'Native exit code', 0, 'Engine exited with code ' + exitCode);
     const targetCounts = new Map(), checkCounts = new Map();
     const absent = new Set(lines.flatMap(line => /^OPTIONAL_ABSENT (\S+)$/.exec(line)?.slice(1) || []));
-    row('Verifier coverage', 'Current engine protocol', lines.filter(line => line === 'AUDIT_VERSION 2').length,
-      'Requires the engine version that includes Item Injection; stale or incomplete output cannot pass.');
+    row('Verifier coverage', 'Current engine protocol', lines.filter(line => line === 'AUDIT_VERSION 3').length,
+      'Requires the current resolver-only protocol; old byte-patch simulations cannot pass.');
     for (const line of lines) {
       const r = /^RESULT (\S+) (0x[0-9a-f]+)$/i.exec(line);
       if (r) {
@@ -41,10 +54,10 @@
             diagnostic ? diagnostic.replace('AE_TRACE ', '') : 'RVA ' + r[2]);
         }
       }
-      const check = /^CHECK ((?:injection|dialogue)\.\w+) ([01])(?: (.*))?$/.exec(line);
+      const check = /^CHECK ((?:injection|dialogue|runtime|mass|director|models)\.\w+) ([01])(?: (.*))?$/.exec(line);
       if (check) {
         checkCounts.set(check[1], (checkCounts.get(check[1]) || 0) + 1);
-        row(check[1].startsWith('dialogue.') ? 'Dialogue · static' : check[1] === 'injection.queue' ? 'Item Injection · module logic' : 'Item Injection · static',
+        row(check[1].startsWith('injection.') ? (check[1] === 'injection.queue' ? 'Item Injection · module logic' : 'Item Injection · static') : check[1].split('.')[0] + ' · static',
           injectionLabels[check[1].slice(10)] || check[1], Number(check[2]), check[3] || '');
       }
       if (line.startsWith('LAYOUT layout_resolved ')) row('Item dump', 'Instruction-derived catalog and name ABI', 1, line.slice(23));
@@ -59,54 +72,19 @@
     for (const target of coverage.targets) if (targetCounts.get(target) !== 1)
       row(target, 'Required resolver coverage', 0, 'Missing or duplicate production resolver output.');
     for (const check of coverage.checks) if (checkCounts.get(check) !== 1)
-      row(check.startsWith('dialogue.') ? 'Dialogue · static' : 'Item Injection · static', injectionLabels[check.slice(10)] || check, 0, 'Required check was not emitted exactly once.');
+      row(check.startsWith('injection.') ? 'Item Injection · static' : check.split('.')[0] + ' · static', injectionLabels[check.slice(10)] || check, 0, 'Required check was not emitted exactly once.');
     for (const marker of ['LAYOUT layout_resolved ', 'LAYOUT object_layouts ', 'LAYOUT live_shop_layout '])
-      if (!lines.some(line => line.startsWith(marker))) row('Layout coverage', marker.trim(), 0, 'Required production layout report is missing.');
-    for (const { feature: name, variants } of coverage.bytePatches) {
-      for (const enable of [1, 0]) {
-        const escaped = variants.map(value => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|');
-        const re = new RegExp('AE_TRACE byte patch (?:' + escaped + ') enable=' + enable + ' addr=(0x[0-9a-f]+) ok=1');
-        const hits = new Set(lines.flatMap(line => { const m = re.exec(line); return m ? [m[1]] : []; }));
-        row(name, enable ? 'Apply: unique site' : 'Undo: same owned site', hits.size, 'Uses the module matcher; undo restores captured original bytes.');
-      }
-    }
-    const special = [
-      ['Team God Mode', /AE_TRACE team god enable=(\d) cave=(0x[0-9a-f]+).*ok=1/],
-      ['Ad bypass', /AE_TRACE ad bypass (enable|disable) availability=(0x[0-9a-f]+).*ok=1/],
-      ['Speedy', /AE_TRACE speed constant enable=(\d) addr=(0x[0-9a-f]+) ok=1/],
-      ['Mass Purchase owned-count patch', /AE_MPTRACE TOKEN_PURCHASE_OWNED_COUNT_PATCH trigger=audit enable=(\d) addr=(0x[0-9a-f]+) ok=1/],
-      ['Encounter mode', /AE_TRACE encounter judge patch desired=(\d).*addr=(0x[0-9a-f]+) ok=1/]
-    ];
-    for (const [name, re] of special) for (const enable of [1, 0]) {
-      const hits = new Set(lines.flatMap(line => { const m = re.exec(line); return m && (m[1] === String(enable) || m[1] === (enable ? 'enable' : 'disable')) ? [m[2]] : []; }));
-      row(name, enable ? 'Apply: unique site' : 'Undo: same validated site', hits.size, 'Validated using production patch code on a private image.');
-    }
-    const repeat = lines.some(line => line === 'IDEMPOTENT on=1 off=1 owned=1');
-    row('Patch safety', 'Repeated apply / undo make no extra writes', repeat ? 1 : 0, 'Second apply and second undo must both be no-ops.');
-    const result = lines.map(line => /^ROUNDTRIP item=(\d+) applyWrites=(\d+) undoWrites=(\d+) restored=(\d+)$/.exec(line)).find(Boolean);
-    const events = lines.flatMap(line => {
-      const write = /^WRITE (0x[0-9a-f]+) size=(\d+)$/.exec(line);
-      return write ? [{ start: BigInt(write[1]), size: BigInt(write[2]) }] : [];
-    });
-    const applied = result ? Number(result[2]) : 0, undone = result ? Number(result[3]) : 0;
-    const ownedRanges = writes => {
-      const sorted = writes.map(w => [w.start, w.start + w.size]).sort((a, b) => a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0);
-      const merged = [];
-      for (const [start, end] of sorted) {
-        const previous = merged[merged.length - 1];
-        if (previous && start <= previous[1]) previous[1] = end > previous[1] ? end : previous[1];
-        else merged.push([start, end]);
-      }
-      return merged.map(([start, end]) => start.toString(16) + ':' + end.toString(16)).join(',');
-    };
-    const sameOwnedWrites = applied > 0 && undone > 0 && events.every(w => w.size > 0n) &&
-      events.length === applied + undone && ownedRanges(events.slice(0, applied)) === ownedRanges(events.slice(applied));
-    const exact = Boolean(result && result[1] === '1' && result[4] === '1' && sameOwnedWrites);
-    row('Patch safety', 'Complete image restored byte-for-byte', exact ? 1 : 0,
-      result ? `${applied} apply writes / ${undone} undo writes; same owned ranges=${sameOwnedWrites}; restored=${result[4]}` : 'Native verification did not complete.');
+      if (lines.filter(line => line.startsWith(marker)).length !== 1) row('Layout coverage', marker.trim(), 0, 'Required production layout report is missing or duplicated.');
+    const readOnly = lines.filter(line => line === 'READ_ONLY unchanged=1').length;
+    row('Static audit integrity', 'Uploaded image remains byte-identical', readOnly,
+      'Resolvers and synthetic models run locally; uploaded ARM64 instructions are never executed.');
+    row('Static audit integrity', 'Engine completed every audit group',
+      lines.filter(line => line === 'AUDIT_COMPLETE ok=1').length, 'Interrupted or failed native checks cannot pass.');
+    if (lines.some(line => /^(WRITE |ROUNDTRIP |IDEMPOTENT )/.test(line)))
+      row('Static audit integrity', 'Unexpected legacy mutation output', 0, 'The current engine performs no apply/undo byte writes.');
     if (!rows.some(r => r.feature === 'Item dump')) row('Item dump', 'Catalog resolver', 0, 'The full catalog/name contract did not resolve.');
     for (const [check, detail] of runtimeChecks)
-      rows.push({ feature: 'Item Injection · runtime', check, count: '—', detail, status: 'RUNTIME', klass: 'warn' });
+      rows.push({ feature: 'Module · runtime', check, count: '—', detail, status: 'RUNTIME', klass: 'warn' });
     return rows;
   }
   function verifyNative(data) {
@@ -118,7 +96,7 @@
       worker.onmessage = ({ data: result }) => {
         try {
           if (result.error) throw new Error(result.error);
-          const rows = nativeReport(result.lines);
+          const rows = nativeReport(result.lines, Number.isInteger(result.exitCode) ? result.exitCode : -1);
           finish();
           resolve(rows);
         } catch (error) {
