@@ -196,9 +196,17 @@ If no matching prebuilt exists, it returns a retryable error instead of a slow b
 Downloaded source identity, patcher digest, signing identity and install alignment
 remain checked. Redundant ZIP rescans of files just hashed or created are omitted.
 
-Temporary APKS publishing uses a streaming HTTP/1.1 upload with a 28-second publishing
-budget, at most two attempts, and reconciliation before retrying an uncertain upload.
-A listed draft/partial asset is not ready for download. The janitor measures age from
-publication or upload time, not the target commit's older creation timestamp.
-A cold 30–40 second build is the target, not a promise about GitHub queueing or network
-availability; a stalled upload now fails promptly instead of waiting several minutes.
+Another Eden uploads the already-built APKS directly through the pinned
+`actions/upload-artifact` v7.0.1 action with `archive: false`. This avoids both the
+slow Release-assets upload route and a redundant outer ZIP. The status endpoint
+selects only a finalized, unexpired artifact matching the request nonce. The download
+endpoint redirects to signed artifact storage; it never buffers or repackages APKs.
+Legacy completed releases remain downloadable until their normal expiry.
+
+The polling client remembers the resolved run ID and checks at most every three
+seconds rather than repeatedly listing every recent run or waiting eight seconds
+after a build finishes. No downloaded game/module cache is required. A cold
+30–40 second build is the target; GitHub queue/network availability remains external.
+Artifacts have a one-day platform retention ceiling and the janitor removes our
+APKS outputs after one hour. The janitor uses upload/publication timestamps, not
+the older source commit timestamp, when expiring temporary releases.

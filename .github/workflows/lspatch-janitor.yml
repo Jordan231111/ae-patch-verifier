@@ -21,6 +21,7 @@ on:
 
 permissions:
   contents: write
+  actions: write
 
 concurrency:
   group: lspatch-janitor
@@ -142,6 +143,19 @@ jobs:
           done
 
           echo
+          # Raw APKS artifacts use the same short-lived policy as old releases.
+          artifact_list="$RUNNER_TEMP/ae-apks-artifacts.tsv"
+          gh api --paginate "repos/$REPO/actions/artifacts?per_page=100" \
+            --jq '.artifacts[] | select(.name | startswith("AnotherEden_") and endswith(".apks")) | [.id, .created_at] | @tsv' > "$artifact_list"
+          while IFS=$'\t' read -r artifact_id created_at; do
+            [[ "$artifact_id" =~ ^[0-9]+$ ]] || continue
+            created_epoch=$(date -u -d "$created_at" +%s)
+            if [ "$purge_all" = "true" ] || [ "$(( now_epoch - created_epoch ))" -ge "$max_age_seconds" ]; then
+              gh api -X DELETE "repos/$REPO/actions/artifacts/$artifact_id" >/dev/null || failures=$(( failures + 1 ))
+            fi
+          done < "$artifact_list"
+          rm -f "$artifact_list"
+
           echo "Summary: releases_deleted=$deleted_releases releases_kept=$kept_releases tags_deleted=$deleted_tags failures=$failures"
 
           # Don't fail the run on individual delete errors; the next sweep will retry.

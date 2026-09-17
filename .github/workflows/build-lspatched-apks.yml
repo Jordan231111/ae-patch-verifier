@@ -326,15 +326,10 @@ jobs:
             echo "TARGET_SUFFIX=$TARGET_SUFFIX"
           } >> "$GITHUB_ENV"
 
-      - name: Publish short-lived release
-        env:
-          GH_TOKEN: ${{ github.token }}
-          REGION: ${{ inputs.region }}
-          VARIANT: ${{ inputs.variant }}
-          NONCE: ${{ inputs.nonce }}
-        run: |
-          set -euo pipefail
-          TAG="lspatch-${NONCE}"
-          python3 scripts/publish-release.py --file "$OUT" --tag "$TAG" \
-            --title "Another Eden ${VERSION_NAME} ${REGION} ${RUNTIME_TARGET}" \
-            --notes "Temporary ${SOURCE_KIND} LSPatch build for ${PACKAGE_NAME}. Target ${RUNTIME_TARGET}, guest ABI ${ARCHITECTURE}. Module ${MODULE_SHA_SHORT}. Automatically removed by the lspatch janitor."
+      - name: Publish raw APKS artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          path: ${{ env.OUT }}
+          archive: false
+          if-no-files-found: error
+          retention-days: 1

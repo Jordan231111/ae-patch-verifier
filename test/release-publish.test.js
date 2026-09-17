@@ -1,6 +1,5 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { spawnSync } = require('node:child_process');
 const path = require('node:path');
 const { readyApksAsset } = require('../api/_shared/release.js');
 
@@ -15,11 +14,6 @@ test('drafts and incomplete uploads cannot become downloadable APKS', () => {
   }
 });
 
-test('publisher reconciles lost acknowledgements and retries only incomplete owned assets', () => {
-  const result = spawnSync('python3', [path.join(__dirname, 'publish-release-test.py')], { encoding: 'utf8' });
-  assert.equal(result.status, 0, result.stdout + result.stderr);
-});
-
 const fs = require('node:fs');
 const vm = require('node:vm');
 function handler(file, github, extras = {}) {
@@ -27,28 +21,49 @@ function handler(file, github, extras = {}) {
   vm.runInNewContext(fs.readFileSync(path.join(__dirname, '..', file), 'utf8'), {
     module, URL, process, Buffer,
     require: name => name === '../_shared/github.js' ? github
-      : name === '../_shared/release.js' ? { readyApksAsset } : extras[name]
+      : name === '../_shared/release.js' ? { readyApksAsset }
+      : name === '../_shared/build-artifact.js' ? extras[name] : extras[name]
   });
   return module.exports;
 }
 function response() {
   return { headers: {}, setHeader(k,v) { this.headers[k] = v; }, end(text) { this.body = text; } };
 }
-test('status and download routes reject a listed but unfinished upload', async () => {
+test('status and download routes reject an unfinished legacy upload', async () => {
   const github = {
     config: () => ({ builderMode: 'github', githubOwner: 'owner', githubRepo: 'repo', githubWorkflow: 'build.yml', githubRef: 'main' }),
-    githubJson: async (_, method, url) => url.includes('/releases/')
-      ? { draft: true, assets: [{ id: 1, name: 'build.apks', state: 'starter', size: 0 }] }
-      : { workflow_runs: [{ display_title: 'request-1', status: 'in_progress' }] },
+    githubJson: async () => ({ draft: true, assets: [{ id: 1, name: 'build.apks', state: 'starter', size: 0 }] }),
     githubRequest: async () => assert.fail('An unfinished upload must never get a download redirect')
   };
+  const extra = { '../_shared/build-artifact.js': {
+    findBuildRun: async () => ({ id: 10, status: 'in_progress' }), findBuildArtifact: async () => null
+  } };
   const status = response();
-  await handler('api/lspatch/status.js', github)({ method: 'GET', url: '/?nonce=request-1' }, status);
+  await handler('api/lspatch/status.js', github, extra)({ method: 'GET', url: '/?nonce=request-1' }, status);
   assert.equal(JSON.parse(status.body).status, 'running');
-  assert.equal(JSON.parse(status.body).runStatus, 'publishing');
   const download = response();
-  await handler('api/lspatch/download.js', github)({ method: 'GET', url: '/?nonce=request-1' }, download);
+  await handler('api/lspatch/download.js', github, extra)({ method: 'GET', url: '/?nonce=request-1' }, download);
   assert.equal(download.statusCode, 404);
+});
+
+test('raw APKS artifacts keep their filename and redirect without repackaging', async () => {
+  const asset = { id: 20, name: 'AnotherEden_test_request-1.apks', expired: false, size_in_bytes: 123 };
+  const github = {
+    config: () => ({ builderMode: 'github', githubOwner: 'owner', githubRepo: 'repo' }),
+    githubRequest: async (_, request) => {
+      assert.equal(request.apiPath, '/repos/owner/repo/actions/artifacts/20/zip');
+      return { status: 302, headers: { location: 'https://storage.example/signed.apks' } };
+    }
+  };
+  const extra = { '../_shared/build-artifact.js': {
+    findBuildRun: async () => ({ id: 10 }), findBuildArtifact: async () => asset
+  } };
+  const status = response();
+  await handler('api/lspatch/status.js', github, extra)({ method: 'GET', url: '/?nonce=request-1' }, status);
+  assert.equal(JSON.parse(status.body).downloadUrl, '/api/lspatch/download?nonce=request-1&runId=10');
+  const download = response();
+  await handler('api/lspatch/download.js', github, extra)({ method: 'GET', url: '/?nonce=request-1' }, download);
+  assert.equal(download.statusCode, 302); assert.equal(download.headers['x-asset-name'], asset.name);
 });
 
 test('missing prebuilt returns a retryable error without dispatching module compilation', async () => {
@@ -67,4 +82,13 @@ test('missing prebuilt returns a retryable error without dispatching module comp
   await build({ method: 'POST', body: { region: 'global' } }, res);
   assert.equal(res.statusCode, 503);
   assert.match(JSON.parse(res.body).message, /precompiled module is not ready/);
+});
+
+test('artifact selection rejects expired, empty and other-request files', () => {
+  const { readyApksArtifact } = require('../api/_shared/build-artifact.js');
+  const good = { id: 1, name: 'AnotherEden_test_request-1.apks', expired: false, size_in_bytes: 123 };
+  assert.equal(readyApksArtifact({ artifacts: [good] }, 'request-1'), good);
+  for (const wrong of [{ ...good, expired: true }, { ...good, size_in_bytes: 0 },
+    { ...good, name: 'AnotherEden_test_request-2.apks' }, { ...good, name: 'private_request-1.apks' }])
+    assert.equal(readyApksArtifact({ artifacts: [wrong] }, 'request-1'), null);
 });

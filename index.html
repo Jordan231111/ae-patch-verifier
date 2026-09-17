@@ -1291,18 +1291,19 @@
     async function pollBuildStatus(nonce, source) {
       const sourceText = sourceLabel(source);
       const startedAt = Date.now();
-      // Wait a beat before the first poll so the workflow run can register.
-      let delay = 4000;
-      const maxDelay = 8000;
+      let runId = 0;
+      let delay = 2000;
+      const maxDelay = 3000;
       for (;;) {
         await sleep(delay);
         delay = Math.min(maxDelay, delay + 500);
 
-        const response = await fetch(`/api/lspatch/status?nonce=${encodeURIComponent(nonce)}`, { cache: "no-store" });
+        const response = await fetch(`/api/lspatch/status?nonce=${encodeURIComponent(nonce)}${runId ? "&runId=" + runId : ""}`, { cache: "no-store" });
         const body = await readJsonSafe(response) || {};
         if (!response.ok && body.status !== "running" && body.status !== "queued") {
           throw new Error(body.message || ("Status check failed HTTP " + response.status));
         }
+        if (Number.isSafeInteger(body.runId) && body.runId > 0) runId = body.runId;
         const elapsed = Math.round((Date.now() - startedAt) / 1000);
         switch (body.status) {
           case "ready":
@@ -1379,10 +1380,10 @@
         const sizeMb = ready.sizeBytes ? ` · ${(ready.sizeBytes / 1024 / 1024).toFixed(1)} MB` : "";
         setBuilderStatus(`Download starting (direct from GitHub)${sizeMb}`, "ok");
 
-        // Redirect the browser to /api/lspatch/download which 302s to GitHub's signed S3 URL.
+        // Redirect directly to GitHub's signed artifact storage; Vercel never proxies APKS bytes.
         // Using an <a download> click instead of window.location keeps the user on the page.
         const link = document.createElement("a");
-        link.href = `/api/lspatch/download?nonce=${encodeURIComponent(body.nonce)}`;
+        link.href = sameOriginApiUrl(ready.downloadUrl, `/api/lspatch/download?nonce=${encodeURIComponent(body.nonce)}`);
         link.download = ready.filename || body.filename || "";
         link.rel = "noopener";
         document.body.appendChild(link);

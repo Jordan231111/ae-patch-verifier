@@ -1,108 +1,50 @@
-const { readyApksAsset } = require("../_shared/release.js");
-const { config, githubJson } = require("../_shared/github.js");
-
-function parseNonce(value) {
-  if (!value || typeof value !== "string") return "";
-  if (!/^[A-Za-z0-9._-]{1,128}$/.test(value)) return "";
-  return value;
-}
-
-async function findRun(cfg, nonce) {
-  const ownerRepo = `/repos/${cfg.githubOwner}/${cfg.githubRepo}`;
-  const runsPath = `${ownerRepo}/actions/workflows/${encodeURIComponent(cfg.githubWorkflow)}/runs?event=workflow_dispatch&branch=${encodeURIComponent(cfg.githubRef)}&per_page=100`;
-  const data = await githubJson(cfg, "GET", runsPath);
-  const runs = Array.isArray(data.workflow_runs) ? data.workflow_runs : [];
-  return runs.find(candidate => (candidate.display_title || candidate.name || "").includes(nonce)) || null;
-}
-
-async function findRelease(cfg, nonce) {
-  const ownerRepo = `/repos/${cfg.githubOwner}/${cfg.githubRepo}`;
-  try {
-    return await githubJson(cfg, "GET", `${ownerRepo}/releases/tags/lspatch-${encodeURIComponent(nonce)}`);
-  } catch (error) {
-    if (error.status === 404) return null;
-    throw error;
-  }
-}
+const { config, githubJson } = require('../_shared/github.js');
+const { readyApksAsset } = require('../_shared/release.js');
+const { findBuildRun, findBuildArtifact } = require('../_shared/build-artifact.js');
 
 module.exports = async function handler(req, res) {
-  if (req.method !== "GET") {
-    res.statusCode = 405;
-    res.setHeader("allow", "GET");
-    res.end("Method Not Allowed");
-    return;
+  res.setHeader('content-type', 'application/json');
+  res.setHeader('cache-control', 'no-store');
+  if (req.method !== 'GET') {
+    res.statusCode = 405; res.setHeader('allow', 'GET'); res.end('Method Not Allowed'); return;
   }
-
-  res.setHeader("content-type", "application/json");
-  res.setHeader("cache-control", "no-store");
-
   try {
-    const requestUrl = new URL(req.url || "/", "http://localhost");
-    const nonce = parseNonce(requestUrl.searchParams.get("nonce"));
-    if (!nonce) {
-      res.statusCode = 400;
-      res.end(JSON.stringify({ status: "error", message: "Missing or invalid nonce" }));
-      return;
+    const url = new URL(req.url || '/', 'http://localhost');
+    const nonce = url.searchParams.get('nonce') || '';
+    if (!/^[A-Za-z0-9._-]{1,128}$/.test(nonce)) {
+      res.statusCode = 400; res.end(JSON.stringify({ status: 'error', message: 'Missing or invalid nonce' })); return;
     }
-
     const cfg = config();
-    if (cfg.builderMode !== "github") {
-      res.statusCode = 200;
-      res.end(JSON.stringify({ status: "ready", message: "Local builder returns the file directly from /api/lspatch/build" }));
-      return;
+    if (cfg.builderMode !== 'github') {
+      res.statusCode = 409; res.end(JSON.stringify({ status: 'error', message: 'GitHub builder is required' })); return;
     }
-
-    const release = await findRelease(cfg, nonce);
-    const asset = readyApksAsset(release);
-    if (asset) {
-      res.statusCode = 200;
-      res.end(JSON.stringify({
-        status: "ready",
-        filename: asset.name,
-        sizeBytes: asset.size || 0,
-        downloadUrl: `/api/lspatch/download?nonce=${encodeURIComponent(nonce)}`
-      }));
-      return;
-    }
-
-    const run = await findRun(cfg, nonce);
+    const run = await findBuildRun(cfg, nonce, Number(url.searchParams.get('runId')));
     if (!run) {
+      res.statusCode = 200; res.end(JSON.stringify({ status: 'queued', message: 'Waiting for GitHub Actions to register the run' })); return;
+    }
+    const artifact = await findBuildArtifact(cfg, nonce, run);
+    if (artifact) {
       res.statusCode = 200;
-      res.end(JSON.stringify({ status: "queued", message: "Waiting for GitHub Actions to register the run" }));
+      res.end(JSON.stringify({ status: 'ready', runId: run.id, filename: artifact.name,
+        sizeBytes: artifact.size_in_bytes, downloadUrl: `/api/lspatch/download?nonce=${encodeURIComponent(nonce)}&runId=${run.id}` }));
       return;
     }
-
-    if (run.status === "completed") {
-      if (run.conclusion === "success") {
-        // A successful Actions run can become visible milliseconds before its
-        // release asset does. Keep polling until the release lookup above sees
-        // the actual downloadable file instead of sending the browser to a 404.
-        res.statusCode = 200;
-        res.end(JSON.stringify({
-          status: "running",
-          runStatus: "publishing",
-          runUrl: run.html_url || ""
-        }));
-        return;
+    // Preserve downloads from builds started before the artifact migration.
+    if (run.status === 'completed' && run.conclusion === 'success') {
+      let release;
+      try { release = await githubJson(cfg, 'GET', `/repos/${cfg.githubOwner}/${cfg.githubRepo}/releases/tags/lspatch-${encodeURIComponent(nonce)}`); }
+      catch (error) { if (error.status !== 404) throw error; }
+      const asset = readyApksAsset(release);
+      if (asset) {
+        res.statusCode = 200; res.end(JSON.stringify({ status: 'ready', runId: run.id,
+          filename: asset.name, sizeBytes: asset.size, downloadUrl: `/api/lspatch/download?nonce=${encodeURIComponent(nonce)}&runId=${run.id}` })); return;
       }
-      res.statusCode = 200;
-      res.end(JSON.stringify({
-        status: "failed",
-        conclusion: run.conclusion || "unknown",
-        runUrl: run.html_url || ""
-      }));
-      return;
     }
-
     res.statusCode = 200;
-    res.end(JSON.stringify({
-      status: "running",
-      runStatus: release ? "publishing" : run.status,
-      runUrl: run.html_url || "",
-      startedAt: run.run_started_at || run.created_at || ""
-    }));
+    res.end(JSON.stringify(run.status === 'completed'
+      ? { status: 'failed', conclusion: run.conclusion === 'success' ? 'artifact expired or unavailable' : run.conclusion, runId: run.id, runUrl: run.html_url || '' }
+      : { status: 'running', runStatus: run.status, runId: run.id, runUrl: run.html_url || '', startedAt: run.run_started_at || run.created_at || '' }));
   } catch (error) {
-    res.statusCode = 502;
-    res.end(JSON.stringify({ status: "error", message: error.message }));
+    res.statusCode = 502; res.end(JSON.stringify({ status: 'error', message: error.message }));
   }
 };
