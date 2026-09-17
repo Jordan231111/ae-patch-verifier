@@ -1378,13 +1378,20 @@
 
         const ready = await pollBuildStatus(body.nonce, moduleSource);
         const sizeMb = ready.sizeBytes ? ` · ${(ready.sizeBytes / 1024 / 1024).toFixed(1)} MB` : "";
+        // Negotiate before clicking a download link: API errors must stay on this
+        // page, not navigate the user into a failed-request document.
+        const downloadEndpoint = new URL(sameOriginApiUrl(ready.downloadUrl,
+          `/api/lspatch/download?nonce=${encodeURIComponent(body.nonce)}`), location.href);
+        downloadEndpoint.searchParams.set("format", "json");
+        const downloadResponse = await fetch(downloadEndpoint, { cache: "no-store" });
+        const download = await readJsonSafe(downloadResponse) || {};
+        if (!downloadResponse.ok || typeof download.url !== "string" || new URL(download.url).protocol !== "https:") {
+          throw new Error(download.message || "Download is unavailable. Please retry.");
+        }
         setBuilderStatus(`Download starting (direct from GitHub)${sizeMb}`, "ok");
-
-        // Redirect directly to GitHub's signed artifact storage; Vercel never proxies APKS bytes.
-        // Using an <a download> click instead of window.location keeps the user on the page.
         const link = document.createElement("a");
-        link.href = sameOriginApiUrl(ready.downloadUrl, `/api/lspatch/download?nonce=${encodeURIComponent(body.nonce)}`);
-        link.download = ready.filename || body.filename || "";
+        link.href = download.url;
+        link.download = download.filename || ready.filename || body.filename || "";
         link.rel = "noopener";
         document.body.appendChild(link);
         link.click();

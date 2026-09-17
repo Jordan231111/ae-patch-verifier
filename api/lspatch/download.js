@@ -33,9 +33,17 @@ module.exports = async function handler(req, res) {
       if (!asset) { res.statusCode = 404; res.end(JSON.stringify({ message: 'Build is not ready for download' })); return; }
       apiPath = `${base}/releases/assets/${asset.id}`; name = asset.name;
     }
-    const signed = await githubRequest(cfg, { method: 'GET', apiPath, accept: 'application/octet-stream' });
+    const signed = await githubRequest(cfg, { method: 'GET', apiPath,
+      accept: artifact ? 'application/vnd.github+json' : 'application/octet-stream' });
     const location = signed.headers?.location;
-    if (!location) { res.statusCode = 502; res.end(JSON.stringify({ message: 'GitHub did not return a download URL' })); return; }
+    if (signed.status < 300 || signed.status >= 400 || !location || new URL(location).protocol !== 'https:') {
+      res.statusCode = 502;
+      res.end(JSON.stringify({ message: `GitHub download negotiation failed (HTTP ${signed.status}). Please retry.` })); return;
+    }
+    if (url.searchParams.get('format') === 'json') {
+      res.statusCode = 200; res.setHeader('content-type', 'application/json');
+      res.end(JSON.stringify({ url: location, filename: name })); return;
+    }
     res.statusCode = 302; res.setHeader('location', location); res.setHeader('x-asset-name', name); res.end();
   } catch (error) {
     res.statusCode = 502; res.end(JSON.stringify({ message: error.message }));

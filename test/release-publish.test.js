@@ -52,6 +52,7 @@ test('raw APKS artifacts keep their filename and redirect without repackaging', 
     config: () => ({ builderMode: 'github', githubOwner: 'owner', githubRepo: 'repo' }),
     githubRequest: async (_, request) => {
       assert.equal(request.apiPath, '/repos/owner/repo/actions/artifacts/20/zip');
+      assert.equal(request.accept, 'application/vnd.github+json', 'Actions artifact negotiation rejects octet-stream with HTTP 415');
       return { status: 302, headers: { location: 'https://storage.example/signed.apks' } };
     }
   };
@@ -64,6 +65,15 @@ test('raw APKS artifacts keep their filename and redirect without repackaging', 
   const download = response();
   await handler('api/lspatch/download.js', github, extra)({ method: 'GET', url: '/?nonce=request-1' }, download);
   assert.equal(download.statusCode, 302); assert.equal(download.headers['x-asset-name'], asset.name);
+  const negotiated = response();
+  await handler('api/lspatch/download.js', github, extra)({ method: 'GET', url: '/?nonce=request-1&format=json' }, negotiated);
+  assert.equal(negotiated.statusCode, 200);
+  assert.equal(JSON.parse(negotiated.body).url, 'https://storage.example/signed.apks');
+  github.githubRequest = async () => ({ status: 415, headers: {}, body: 'Unsupported Accept' });
+  const rejected = response();
+  await handler('api/lspatch/download.js', github, extra)({ method: 'GET', url: '/?nonce=request-1&format=json' }, rejected);
+  assert.equal(rejected.statusCode, 502); assert.match(JSON.parse(rejected.body).message, /HTTP 415/);
+
 });
 
 test('missing prebuilt returns a retryable error without dispatching module compilation', async () => {
