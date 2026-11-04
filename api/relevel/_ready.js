@@ -4,11 +4,15 @@ const SHA = /^[a-f0-9]{64}$/;
 const COMMIT = /^[a-f0-9]{40}$/;
 const positive = n => Number.isSafeInteger(n) && n > 0;
 
-function validatedReady(state, cfg) {
-  const ready = state?.ready;
+function hasFreshCheck(state) {
   const checkedAt = Date.parse(state?.checkedAt);
   const age = Date.now() - checkedAt;
-  if (!Number.isFinite(age) || age < -300000 || age > 60 * 60 * 1000) return null;
+  return Number.isFinite(age) && age >= -300000 && age <= 60 * 60 * 1000;
+}
+
+function validatedReady(state, cfg) {
+  const ready = state?.ready;
+  if (!hasFreshCheck(state)) return null;
   if (state?.schema !== 1 || state.packageName !== cfg.packageName || state.architecture !== cfg.architecture
       || state.state !== 'ready' || !ready || ready.validated !== true
       || !COMMIT.test(ready.moduleSha || '')
@@ -35,4 +39,4 @@ async function resolveReady(cfg) {
   const module = { sha: COMMIT.test(sha || '') ? sha : null, prebuilt: COMMIT.test(sha || '') };
   return { ready: validatedReady(state, cfg), module, state };
 }
-module.exports = { resolveReady, validatedReady };
+module.exports = { resolveReady, validatedReady, hasFreshCheck };

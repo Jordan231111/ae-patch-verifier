@@ -36,8 +36,12 @@ It does not dispatch Actions, download Play inputs, compile a module, or recover
 never pass through Vercel. This targets a download start within a minute; transfer time depends on
 the recipient's connection.
 Vercel reads the fresh verified public index; private ReLevel source/module access remains in CI.
-The scheduled Play API check is the source of version information. Download clicks do not scrape
-the Play website or repeat version discovery.
+The Play API check in CI is the source of version information. When an active page sees a check
+over 15 minutes old, its status request can dispatch a background recheck to recover from a missed
+cron event. Requests share a five-minute cooldown, with recent workflow history covering separate
+serverless instances and workflow concurrency serializing races. The request awaits only dispatch,
+never APK preparation. An unchanged input refreshes only the index; changed inputs follow the
+normal background validation path. No Play credentials or game downloads enter Vercel.
 
 `relevel-ready.yml` checks the dedicated account's current Google Play **versionCode** and the
 newest completed `main` module prebuilt on a best-effort 15-minute schedule. Each Actions summary
@@ -84,8 +88,11 @@ Actions allowance; Play checks never trigger that build. See [GitHub Actions bil
 and [Release storage/bandwidth limits](https://docs.github.com/en/repositories/releasing-projects-on-github/about-releases).
 
 GitHub may delay or drop cron events and can disable schedules after prolonged repository inactivity.
-The site rejects an observation older than one hour. Re-enable/run the workflow if scheduling is
-interrupted. Changing the cron expression re-registers the schedule, but cannot guarantee delivery.
+The site rejects an observation older than one hour and requests an overdue check automatically.
+An expired ready index displays **checking for updates**, rather than claiming a build is running.
+The visible page polls even after becoming ready and refreshes its status after a refused download.
+Retry deadlines and compatibility-review limits still apply; web refreshes never set **force**.
+Changing the cron expression re-registers the schedule, but cannot guarantee delivery.
 A strict 15-minute clock requires an independent scheduler dispatching this workflow; no external
 scheduler is configured by this repository. Detection follows delivered polls rather than instant store-page changes. Failed or pending
 updates cannot relabel an older bundle as current. Publication rechecks both Play and the module

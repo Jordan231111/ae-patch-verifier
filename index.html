@@ -1040,7 +1040,10 @@
         latestRelevel = body.status === "ready" ? body : null;
         relevelVersion.textContent = body.versionName ? "v" + body.versionName : "preparing";
         relevelVersion.className = "commit-chip " + (latestRelevel ? "ok" : "warn");
-        relevelVersionMeta.textContent = latestRelevel ? "Verified release · " + Math.round(body.sizeBytes / 1048576) + " MB" : "Update verification in progress";
+        relevelVersionMeta.textContent = latestRelevel ? "Verified release · " + Math.round(body.sizeBytes / 1048576) + " MB"
+          : body.status === "checking" ? "Checking for updates"
+          : body.status === "requires_review" ? "Compatibility review required"
+          : body.status === "retry_pending" ? "Waiting to retry verification" : "Update verification in progress";
         relevelModule.textContent = body.moduleSha ? body.moduleSha.slice(0, 7) : "preparing";
         relevelModule.className = "commit-chip " + (latestRelevel ? "ok" : "warn");
         relevelModuleMeta.textContent = latestRelevel ? "Embedded release module" : "A verified download will appear here";
@@ -1051,8 +1054,8 @@
         latestRelevel = null; relevelButton.disabled = true;
         setRelevelStatus(error.message, "warn");
       } finally {
-        if (sequence === relevelRefreshSequence && !document.hidden && !relevelPanel.classList.contains("hidden") && !latestRelevel) {
-          relevelRefreshTimer = window.setTimeout(refreshRelevel, 30000);
+        if (sequence === relevelRefreshSequence && !document.hidden && !relevelPanel.classList.contains("hidden")) {
+          relevelRefreshTimer = window.setTimeout(refreshRelevel, latestRelevel ? 60000 : 15000);
         }
       }
     }
@@ -1070,7 +1073,12 @@
         const link = document.createElement("a"); link.href = body.url; link.download = body.filename || ready.filename;
         document.body.appendChild(link); link.click(); link.remove();
         setRelevelStatus("Your download has started. Install with SAI and keep re-signing disabled.", "ok");
-      } catch (error) { setRelevelStatus(error.message, "warn"); }
+      } catch (error) {
+        setRelevelStatus(error.message, "warn");
+        latestRelevel = null;
+        relevelDownloading = false;
+        await refreshRelevel();
+      }
       finally { relevelDownloading = false; relevelButton.disabled = !latestRelevel; }
     }
 

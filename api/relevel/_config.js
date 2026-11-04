@@ -8,6 +8,7 @@ function relevelConfig() {
     packageName: 'work.ponix.relevel',
     architecture: 'arm64-v8a',
     readyTag: process.env.RELEVEL_READY_TAG || 'relevel-ready',
+    relevelWorkflow: process.env.RELEVEL_GITHUB_WORKFLOW_FILE || 'relevel-ready.yml',
     certificateSha256: '29b04c032802179a86374c8a13dba9ddbe8d9303f4909ac03766cb77de17c027'
   };
 }
