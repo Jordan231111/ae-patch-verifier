@@ -49,6 +49,7 @@ jobs:
           mkdir "$RUNNER_TEMP/relevel-tools"
           openssl enc -d -aes-256-cbc -pbkdf2 -iter 200000 -pass env:RELEVEL_CI_TRANSFER_KEY -in "$RUNNER_TEMP/relevel-inputs/tools.enc" | tar -xz -C "$RUNNER_TEMP/relevel-tools"
           cp "$RUNNER_TEMP/relevel-inputs/app-release.apk" "$RUNNER_TEMP/relevel-module.apk"
+          gh run download "$GITHUB_RUN_ID" --repo "$GITHUB_REPOSITORY" --name relevel-source-helper --dir "$RUNNER_TEMP/relevel-helper"
           curl --fail --silent --show-error https://api.github.com/repos/zer0def/undetected-frida/releases/latest > "$RUNNER_TEMP/frida-release.json"
           VERSION=$(jq -r .tag_name "$RUNNER_TEMP/frida-release.json")
           URL=$(jq -r '.assets[] | select(.name | test("server-.*-android-arm64.xz$")) | .browser_download_url' "$RUNNER_TEMP/frida-release.json")
@@ -71,7 +72,7 @@ jobs:
         run: |
           python "$RUNNER_TEMP/relevel-tools/tools/cloud/capture.py" --serial 127.0.0.1:5555 \
             --source "$RUNNER_TEMP/relevel-play" --module "$RUNNER_TEMP/relevel-module.apk" \
-            --output "$RUNNER_TEMP/relevel-capture" --late
+            --output "$RUNNER_TEMP/relevel-capture" --helper "$RUNNER_TEMP/relevel-helper/librelevel_ci_capture.so"
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: relevel-capture
@@ -137,6 +138,19 @@ jobs:
           (root/'play-provenance.json').write_text(json.dumps(m,indent=2))
           print(json.dumps(m,indent=2))
           PY
+      - uses: android-actions/setup-android@v4.0.0
+        with:
+          packages: ndk;29.0.14206865
+      - name: Compile the disposable pre-init capture helper
+        run: |
+          python -m pip install --disable-pip-version-check --quiet pyelftools==0.33
+          python relevel-tools/tools/cloud/build_capture_helper.py --source "$RUNNER_TEMP/relevel-play" --output "$RUNNER_TEMP/librelevel_ci_capture.so"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: relevel-source-helper
+          path: ${{ runner.temp }}/librelevel_ci_capture.so
+          retention-days: 1
+          if-no-files-found: error
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: relevel-play-source
