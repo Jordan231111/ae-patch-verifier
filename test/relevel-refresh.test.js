@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
-const { needsRefresh } = require('../api/relevel/_refresh.js');
+const { needsRefresh, needsTimerCheck } = require('../api/relevel/_refresh.js');
 const { validatedReady, hasFreshCheck } = require('../api/relevel/_ready.js');
 
 const cfg = { githubOwner: 'owner', githubRepo: 'builder', githubRef: 'main',
@@ -61,6 +61,16 @@ test('retry deadlines are respected and become eligible without another cron eve
   state.checkedAt = new Date().toISOString();
   state.retryAt = new Date(Date.now() - 1).toISOString();
   assert.equal(needsRefresh(state), true);
+});
+
+test('CI completion latency does not turn the 15-minute timer into a 30-minute poll', () => {
+  const afterCi = readyState(14 * 60 * 1000);
+  assert.equal(needsRefresh(afterCi), false);
+  assert.equal(needsTimerCheck(afterCi), true);
+  assert.equal(needsTimerCheck(readyState(2 * 60 * 1000)), false);
+  afterCi.state = 'retry_pending';
+  afterCi.retryAt = new Date(Date.now() + 60000).toISOString();
+  assert.equal(needsTimerCheck(afterCi), false);
 });
 
 test('concurrent status requests share one public workflow dispatch and never force builds', async () => {

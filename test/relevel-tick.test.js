@@ -8,7 +8,7 @@ function handler({ due = true, ready = null, state = { state: 'ready' }, dispatc
   const mod = { exports: {} }, dependencies = {
     './_config.js': { relevelConfig: () => ({}) },
     './_ready.js': { resolveReady: async () => ({ ready, state }) },
-    './_refresh.js': { needsRefresh: () => due, requestDirectRefresh: dispatch }
+    './_refresh.js': { needsTimerCheck: () => due, requestDirectRefresh: dispatch }
   };
   vm.runInNewContext(fs.readFileSync(path.join(__dirname, '../api/relevel/tick.js'), 'utf8'), {
     module: mod, require: id => { assert.ok(dependencies[id], id); return dependencies[id]; }, JSON

@@ -4,15 +4,19 @@ const CHECK_INTERVAL_MS = 15 * 60 * 1000;
 const DISPATCH_COOLDOWN_MS = 5 * 60 * 1000;
 const requests = new Map();
 
-function needsRefresh(state) {
+function needsRefresh(state, minimumAge = CHECK_INTERVAL_MS) {
   const now = Date.now();
   if (state?.state === 'retry_pending') {
     const retryAt = Date.parse(state.retryAt);
     if (Number.isFinite(retryAt)) return retryAt <= now;
   }
   const checkedAt = Date.parse(state?.checkedAt);
-  return !Number.isFinite(checkedAt) || checkedAt > now + 300000 || now - checkedAt >= CHECK_INTERVAL_MS;
+  return !Number.isFinite(checkedAt) || checkedAt > now + 300000 || now - checkedAt >= minimumAge;
 }
+
+// CI completes after the timer fires. Requiring a full 15-minute-old completion
+// would accidentally skip every second 15-minute tick. Reuse the dispatch cooldown.
+const needsTimerCheck = state => needsRefresh(state, DISPATCH_COOLDOWN_MS);
 
 async function dispatchIfDue(cfg) {
   if (!cfg.githubOwner || !cfg.githubRepo || !cfg.githubRef || !cfg.relevelWorkflow) {
@@ -67,4 +71,4 @@ async function requestRefresh(cfg) {
   });
 }
 
-module.exports = { needsRefresh, requestRefresh, requestDirectRefresh };
+module.exports = { needsRefresh, needsTimerCheck, requestRefresh, requestDirectRefresh };
