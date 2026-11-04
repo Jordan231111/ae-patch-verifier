@@ -12,6 +12,7 @@ sudo mkdir -p /dev/binderfs
 mountpoint -q /dev/binderfs || sudo mount -t binder binder /dev/binderfs
 cc -O2 -Wall -Wextra -Werror -x c - -o "$RUNNER_TEMP/binderfs-add" <<'C'
 #include <fcntl.h>
+#include <errno.h>
 #include <linux/android/binderfs.h>
 #include <stdio.h>
 #include <string.h>
@@ -24,7 +25,10 @@ int main(void) {
     for (unsigned int i = 0; i < sizeof(names) / sizeof(names[0]); ++i) {
         struct binderfs_device device = {0};
         snprintf(device.name, sizeof(device.name), "%s", names[i]);
-        if (ioctl(fd, BINDER_CTL_ADD, &device) < 0) { perror(names[i]); close(fd); return 1; }
+        if (ioctl(fd, BINDER_CTL_ADD, &device) < 0) {
+            if (errno == EEXIST) continue;
+            perror(names[i]); close(fd); return 1;
+        }
         printf("%s: %u:%u\n", device.name, device.major, device.minor);
     }
     close(fd);
