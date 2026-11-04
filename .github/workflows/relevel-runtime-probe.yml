@@ -35,17 +35,14 @@ jobs:
           adb -s 127.0.0.1:5555 install-multiple -r "${APKS[@]}"
           adb -s 127.0.0.1:5555 shell dumpsys package work.ponix.relevel | grep -E 'versionCode=|versionName='
       - name: Fetch the verified prebuilt module and matching instrumentation stack
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -Eeuo pipefail
-          git clone --depth 1 --branch codex/relevel-cloud https://github.com/Jordan231111/ReLevel.git "$RUNNER_TEMP/relevel-tools"
-          for attempt in $(seq 1 24); do
-            curl --fail --silent --show-error https://api.github.com/repos/Jordan231111/ReLevel/releases?per_page=30 > "$RUNNER_TEMP/modules.json"
-            MODULE_URL=$(jq -r '[.[] | select(.draft == false and (.tag_name | test("^module-[a-f0-9]{40}$"))) | .assets[] | select(.name == "app-release.apk" and .state == "uploaded")][0].browser_download_url // empty' "$RUNNER_TEMP/modules.json")
-            [ -n "$MODULE_URL" ] && break
-            sleep 5
-          done
-          test -n "$MODULE_URL"
-          curl --fail -L --silent --show-error "$MODULE_URL" -o "$RUNNER_TEMP/relevel-module.apk"
+          gh run download "$GITHUB_RUN_ID" --repo "$GITHUB_REPOSITORY" --name relevel-runtime-inputs --dir "$RUNNER_TEMP/relevel-inputs"
+          mkdir "$RUNNER_TEMP/relevel-tools"
+          tar -xzf "$RUNNER_TEMP/relevel-inputs/tools.tar.gz" -C "$RUNNER_TEMP/relevel-tools"
+          cp "$RUNNER_TEMP/relevel-inputs/app-release.apk" "$RUNNER_TEMP/relevel-module.apk"
           curl --fail --silent --show-error https://api.github.com/repos/zer0def/undetected-frida/releases/latest > "$RUNNER_TEMP/frida-release.json"
           VERSION=$(jq -r .tag_name "$RUNNER_TEMP/frida-release.json")
           URL=$(jq -r '.assets[] | select(.name | test("server-.*-android-arm64.xz$")) | .browser_download_url' "$RUNNER_TEMP/frida-release.json")
@@ -74,6 +71,29 @@ jobs:
       - uses: actions/setup-python@v6.1.0
         with:
           python-version: '3.12'
+      - uses: actions/checkout@v7.0.1
+        with:
+          repository: Jordan231111/ReLevel
+          ref: codex/relevel-cloud
+          path: relevel-tools
+          token: ${{ secrets.AE_MODULE_REPO_TOKEN }}
+          persist-credentials: false
+      - name: Stage private module inputs outside the privileged runtime
+        env:
+          GH_TOKEN: ${{ secrets.AE_MODULE_REPO_TOKEN }}
+        run: |
+          set -Eeuo pipefail
+          mkdir "$RUNNER_TEMP/relevel-inputs"
+          TAG=$(gh api 'repos/Jordan231111/ReLevel/releases?per_page=30' --jq '[.[] | select(.draft == false and (.tag_name | test("^module-[a-f0-9]{40}$"))) | select(any(.assets[]; .name == "app-release.apk" and .state == "uploaded"))][0].tag_name')
+          [[ "$TAG" =~ ^module-[a-f0-9]{40}$ ]]
+          gh release download "$TAG" --repo Jordan231111/ReLevel --pattern app-release.apk --dir "$RUNNER_TEMP/relevel-inputs"
+          tar --exclude=.git -czf "$RUNNER_TEMP/relevel-inputs/tools.tar.gz" -C relevel-tools .
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: relevel-runtime-inputs
+          path: ${{ runner.temp }}/relevel-inputs/*
+          retention-days: 1
+          if-no-files-found: error
       - name: Fetch ReLevel from Google Play
         env:
           GPLAYDL_API_KEY: ${{ secrets.GPLAYDL_API_KEY }}
