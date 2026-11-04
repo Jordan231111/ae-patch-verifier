@@ -1,0 +1,321 @@
+name: Prepare verified ReLevel download
+on:
+  schedule:
+    - cron: '7,22,37,52 * * * *'
+  workflow_dispatch:
+    inputs:
+      force:
+        description: Retry an input which previously required review
+        type: boolean
+        default: false
+  push:
+    branches: [main, codex/relevel-online]
+    paths:
+      - .github/workflows/relevel-ready.yml
+      - scripts/relevel/**
+permissions:
+  contents: read
+concurrency:
+  group: relevel-ready
+  cancel-in-progress: false
+env:
+  RELEVEL_MODULE_REPO: Jordan231111/ReLevel
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    outputs:
+      changed: ${{ steps.plan.outputs.changed }}
+      cache_key: ${{ steps.plan.outputs.cache_key }}
+      version_name: ${{ steps.plan.outputs.version_name }}
+      recovered_tag: ${{ steps.plan.outputs.recovered_tag }}
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v6.1.0
+        with:
+          python-version: '3.12'
+      - name: Check the current Google Play versionCode
+        env:
+          GPLAYDL_API_KEY: ${{ secrets.GPLAYDL_API_KEY }}
+          PLAY_ACCOUNT_EMAIL: ${{ secrets.GPLAYDL_GLOBAL_EMAIL }}
+        run: |
+          python -m pip install --disable-pip-version-check --quiet gplaydl==4.2.1
+          python scripts/download-play-apks.py --package work.ponix.relevel --architecture arm64-v8a \
+            --metadata-source google-play --account-email "$PLAY_ACCOUNT_EMAIL" \
+            --metadata-only --output "$RUNNER_TEMP/play-version"
+      - name: Resolve completed module builds and update the ready index
+        id: plan
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEVEL_MODULE_TOKEN: ${{ secrets.AE_MODULE_REPO_TOKEN }}
+          FORCE: ${{ inputs.force && 'true' || 'false' }}
+        run: |
+          ARGS=()
+          if [ "$FORCE" = true ]; then ARGS+=(--force); fi
+          python scripts/relevel/releases.py inspect --version "$RUNNER_TEMP/play-version/play-version.json" \
+            --plan "$RUNNER_TEMP/plan.json" "${ARGS[@]}"
+      - uses: actions/checkout@v7.0.1
+        if: steps.plan.outputs.changed == 'true'
+        with:
+          repository: Jordan231111/ReLevel
+          ref: ${{ github.ref_name == 'main' && steps.plan.outputs.module_sha || 'codex/relevel-cloud' }}
+          token: ${{ secrets.AE_MODULE_REPO_TOKEN }}
+          path: relevel-tools
+          persist-credentials: false
+      - uses: actions/setup-java@v6.1.0
+        if: steps.plan.outputs.changed == 'true'
+        with:
+          distribution: temurin
+          java-version: '25'
+      - uses: android-actions/setup-android@v4.0.0
+        if: steps.plan.outputs.changed == 'true'
+        with:
+          packages: build-tools;37.0.0
+      - name: Fetch and verify the exact prebuilt module
+        if: steps.plan.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.AE_MODULE_REPO_TOKEN }}
+          MODULE_SHA: ${{ steps.plan.outputs.module_sha }}
+          RELEVEL_CI_TRANSFER_KEY: ${{ secrets.RELEVEL_CI_TRANSFER_KEY }}
+        run: |
+          set -Eeuo pipefail
+          mkdir -p "$RUNNER_TEMP/private/module" "$RUNNER_TEMP/inputs"
+          gh release download "module-$MODULE_SHA" --repo "$RELEVEL_MODULE_REPO" \
+            --pattern app-release.apk --pattern module.json --pattern SHA256SUMS --dir "$RUNNER_TEMP/private/module"
+          python -m pip install --disable-pip-version-check --quiet pyelftools==0.33
+          python relevel-tools/tools/verify-prebuilt-module.py "$RUNNER_TEMP/private/module/app-release.apk" \
+            --commit "$MODULE_SHA" --output "$RUNNER_TEMP/verified-module.json"
+          cp "$RUNNER_TEMP/plan.json" "$RUNNER_TEMP/inputs/plan.json"
+          cp "$RUNNER_TEMP/play-version/play-version.json" "$RUNNER_TEMP/inputs/play-version.json"
+          tar --exclude=.git -cf - -C relevel-tools . | tar -xf - -C "$RUNNER_TEMP/private"
+          tar -czf - -C "$RUNNER_TEMP/private" . | openssl enc -aes-256-cbc -salt -pbkdf2 -iter 200000 \
+            -pass env:RELEVEL_CI_TRANSFER_KEY -out "$RUNNER_TEMP/inputs/private.enc"
+      - name: Download changed Play source or verified recovered inputs
+        if: steps.plan.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GPLAYDL_API_KEY: ${{ secrets.GPLAYDL_API_KEY }}
+          PLAY_ACCOUNT_EMAIL: ${{ secrets.GPLAYDL_GLOBAL_EMAIL }}
+          EXPECTED_VERSION: ${{ steps.plan.outputs.version_name }}
+          RECOVERED_TAG: ${{ steps.plan.outputs.recovered_tag }}
+          RELEVEL_SOURCE_CERT_SHA256S: ${{ vars.RELEVEL_SOURCE_CERT_SHA256S }}
+        run: |
+          set -Eeuo pipefail
+          if [ -n "$RECOVERED_TAG" ]; then
+            gh release download "$RECOVERED_TAG" --repo "$GITHUB_REPOSITORY" --pattern recovered.tar --dir "$RUNNER_TEMP/inputs"
+          else
+            command -v aria2c >/dev/null || { sudo apt-get update -qq; sudo apt-get install -y -qq aria2; }
+            SOURCE="$RUNNER_TEMP/inputs/play"
+            trap 'rm -f "$SOURCE/aria2-input"' EXIT
+            python scripts/download-play-apks.py --package work.ponix.relevel --architecture arm64-v8a --locale en-US \
+              --account-email "$PLAY_ACCOUNT_EMAIL" --expected-version "$EXPECTED_VERSION" --metadata-source google-play --output "$SOURCE"
+            python - "$SOURCE" <<'PY'
+          import hashlib,json,sys
+          from pathlib import Path
+          root=Path(sys.argv[1]); metadata=json.loads((root/'manifest.json').read_text())
+          metadata['sha256']={p.name:hashlib.file_digest(p.open('rb'),'sha256').hexdigest() for p in root.glob('*.apk')}
+          (root/'play-provenance.json').write_text(json.dumps(metadata,indent=2))
+          sys.path.insert(0,'relevel-tools/tools/cloud')
+          from assemble import verify_source
+          verify_source(root, {'original_apks':[entry['file'] for entry in metadata['split_apks']],
+                              'version_code':metadata['version_code'],'version':metadata['version_name']})
+          PY
+          fi
+      - uses: android-actions/setup-android@v4.0.0
+        if: steps.plan.outputs.changed == 'true' && steps.plan.outputs.recovered_tag == ''
+        with:
+          packages: ndk;29.0.14206865
+      - name: Build the disposable pre-init capture helper
+        if: steps.plan.outputs.changed == 'true' && steps.plan.outputs.recovered_tag == ''
+        run: |
+          python relevel-tools/tools/cloud/build_capture_helper.py --source "$RUNNER_TEMP/inputs/play" \
+            --output "$RUNNER_TEMP/inputs/librelevel_ci_capture.so"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        if: steps.plan.outputs.changed == 'true'
+        with:
+          name: relevel-inputs
+          path: ${{ runner.temp }}/inputs
+          retention-days: 1
+          compression-level: 0
+          if-no-files-found: error
+  capture:
+    needs: inspect
+    if: needs.inspect.outputs.changed == 'true' && needs.inspect.outputs.recovered_tag == ''
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 12
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v6.1.0
+        with:
+          python-version: '3.12'
+      - name: Receive inputs and boot disposable ARM64 Android
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEVEL_CI_TRANSFER_KEY: ${{ secrets.RELEVEL_CI_TRANSFER_KEY }}
+        run: |
+          set -Eeuo pipefail
+          gh run download "$GITHUB_RUN_ID" --repo "$GITHUB_REPOSITORY" --name relevel-inputs --dir "$RUNNER_TEMP/inputs"
+          mkdir "$RUNNER_TEMP/tools"
+          openssl enc -d -aes-256-cbc -pbkdf2 -iter 200000 -pass env:RELEVEL_CI_TRANSFER_KEY \
+            -in "$RUNNER_TEMP/inputs/private.enc" | tar -xz -C "$RUNNER_TEMP/tools"
+          bash scripts/relevel/boot-android.sh
+          bash scripts/relevel/prepare-frida.sh
+          python -m pip install --disable-pip-version-check --quiet androguard==4.1.3
+          mapfile -t APKS < <(find "$RUNNER_TEMP/inputs/play" -name '*.apk' -type f | sort)
+          adb -s 127.0.0.1:5555 install-multiple -r "${APKS[@]}"
+      - name: Capture two launches before IL2CPP initialization
+        timeout-minutes: 6
+        run: |
+          python "$RUNNER_TEMP/tools/tools/cloud/capture.py" --serial 127.0.0.1:5555 \
+            --source "$RUNNER_TEMP/inputs/play" --helper "$RUNNER_TEMP/inputs/librelevel_ci_capture.so" \
+            --output "$RUNNER_TEMP/capture"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: relevel-capture
+          path: ${{ runner.temp }}/capture
+          retention-days: 1
+          compression-level: 0
+          if-no-files-found: error
+      - name: Remove disposable Android
+        if: always()
+        run: docker rm -f relevel-android 2>/dev/null || true
+  assemble:
+    needs: [inspect, capture]
+    if: always() && needs.inspect.outputs.changed == 'true' && (needs.capture.result == 'success' || needs.inspect.outputs.recovered_tag != '')
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v6.1.0
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-java@v6.1.0
+        with:
+          distribution: temurin
+          java-version: '25'
+      - uses: android-actions/setup-android@v4.0.0
+        with:
+          packages: build-tools;37.0.0 ndk;29.0.14206865
+      - name: Assemble with the established signing identity
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEVEL_CI_TRANSFER_KEY: ${{ secrets.RELEVEL_CI_TRANSFER_KEY }}
+          KEYSTORE_BASE64: ${{ secrets.RELEVEL_HOST_KEYSTORE_BASE64 }}
+          RELEVEL_SOURCE_CERT_SHA256S: ${{ vars.RELEVEL_SOURCE_CERT_SHA256S }}
+          VERSION: ${{ needs.inspect.outputs.version_name }}
+          RECOVERED_TAG: ${{ needs.inspect.outputs.recovered_tag }}
+        run: bash scripts/relevel/assemble.sh
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: relevel-candidate
+          path: ${{ runner.temp }}/candidate
+          retention-days: 1
+          compression-level: 0
+          if-no-files-found: error
+  validate:
+    needs: [inspect, assemble]
+    if: always() && needs.assemble.result == 'success'
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v6.1.0
+        with:
+          python-version: '3.12'
+      - name: Receive candidate and boot disposable ARM64 Android
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEVEL_CI_TRANSFER_KEY: ${{ secrets.RELEVEL_CI_TRANSFER_KEY }}
+        run: |
+          set -Eeuo pipefail
+          gh run download "$GITHUB_RUN_ID" --repo "$GITHUB_REPOSITORY" --name relevel-inputs --dir "$RUNNER_TEMP/inputs"
+          gh run download "$GITHUB_RUN_ID" --repo "$GITHUB_REPOSITORY" --name relevel-candidate --dir "$RUNNER_TEMP/candidate"
+          mkdir "$RUNNER_TEMP/tools"
+          openssl enc -d -aes-256-cbc -pbkdf2 -iter 200000 -pass env:RELEVEL_CI_TRANSFER_KEY \
+            -in "$RUNNER_TEMP/inputs/private.enc" | tar -xz -C "$RUNNER_TEMP/tools"
+          bash scripts/relevel/boot-android.sh
+          bash scripts/relevel/prepare-frida.sh
+      - name: Validate cold startup, every binding, imports, Home/resume and stability
+        env:
+          VERSION: ${{ needs.inspect.outputs.version_name }}
+        run: |
+          python "$RUNNER_TEMP/tools/tools/cloud/validate.py" --serial 127.0.0.1:5555 \
+            --bundle "$RUNNER_TEMP/candidate/ReLevel-${VERSION}-arm64-lspatched.apks" \
+            --metadata "$RUNNER_TEMP/candidate/bundle.json" \
+            --output "$RUNNER_TEMP/validation.json"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: relevel-validation
+          path: ${{ runner.temp }}/validation.json
+          retention-days: 1
+          if-no-files-found: error
+      - name: Remove disposable Android
+        if: always()
+        run: docker rm -f relevel-android 2>/dev/null || true
+  finish:
+    needs: [inspect, capture, assemble, validate]
+    if: always() && needs.inspect.outputs.changed == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    permissions:
+      contents: write
+      actions: write
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v6.1.0
+        with:
+          python-version: '3.12'
+      - name: Publish only an exact passing candidate
+        if: needs.validate.result == 'success'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEVEL_MODULE_TOKEN: ${{ secrets.AE_MODULE_REPO_TOKEN }}
+          GPLAYDL_API_KEY: ${{ secrets.GPLAYDL_API_KEY }}
+          PLAY_ACCOUNT_EMAIL: ${{ secrets.GPLAYDL_GLOBAL_EMAIL }}
+          VERSION: ${{ needs.inspect.outputs.version_name }}
+        run: |
+          set -Eeuo pipefail
+          gh run download "$GITHUB_RUN_ID" --repo "$GITHUB_REPOSITORY" --name relevel-inputs --dir "$RUNNER_TEMP/inputs"
+          gh run download "$GITHUB_RUN_ID" --repo "$GITHUB_REPOSITORY" --name relevel-candidate --dir "$RUNNER_TEMP/candidate"
+          gh run download "$GITHUB_RUN_ID" --repo "$GITHUB_REPOSITORY" --name relevel-validation --dir "$RUNNER_TEMP/report"
+          python -m pip install --disable-pip-version-check --quiet gplaydl==4.2.1
+          python scripts/download-play-apks.py --package work.ponix.relevel --architecture arm64-v8a \
+            --metadata-source google-play --account-email "$PLAY_ACCOUNT_EMAIL" --metadata-only --output "$RUNNER_TEMP/current"
+          ARGS=()
+          if [ -f "$RUNNER_TEMP/candidate/recovered.tar" ]; then ARGS+=(--recovered "$RUNNER_TEMP/candidate/recovered.tar"); fi
+          python scripts/relevel/releases.py publish --plan "$RUNNER_TEMP/inputs/plan.json" \
+            --version "$RUNNER_TEMP/current/play-version.json" --metadata "$RUNNER_TEMP/candidate/bundle.json" \
+            --report "$RUNNER_TEMP/report/validation.json" --bundle "$RUNNER_TEMP/candidate/ReLevel-${VERSION}-arm64-lspatched.apks" "${ARGS[@]}"
+      - name: Mark failures for review without retrying the same input every 15 minutes
+        if: failure() || needs.validate.result != 'success'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python scripts/relevel/releases.py failure
+      - name: Delete temporary artifacts from this run
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/artifacts?per_page=100" --jq '.artifacts[].id' |
+            while read -r ID; do gh api --method DELETE "repos/$GITHUB_REPOSITORY/actions/artifacts/$ID"; done

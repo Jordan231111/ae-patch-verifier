@@ -91,7 +91,7 @@
 
     .launchpad {
       display: grid;
-      grid-template-columns: 1.12fr 1fr;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
       gap: 10px;
       margin-bottom: 14px;
     }
@@ -668,9 +668,9 @@
 <body>
   <main>
     <header class="hero">
-      <span class="eyebrow">Release workbench &middot; two games</span>
+      <span class="eyebrow">Release workbench &middot; three games</span>
       <h1>LSPatch Workshop</h1>
-      <p class="lede">Build a ready-to-install .apks from the latest source bundle and precompiled module. Choose the one-click OnceWorld release or configure an Another Eden target.</p>
+      <p class="lede">Build a ready-to-install .apks from the latest source bundle and precompiled module. Download the prepared ReLevel release, build OnceWorld, or configure an Another Eden target.</p>
     </header>
 
     <nav class="launchpad" role="tablist" aria-label="Choose a game to build">
@@ -688,6 +688,14 @@
           <span class="launch-title">Another Eden <span class="route-tag">Configure</span></span>
           <span class="launch-desc">Choose phone or emulator, game region, and module flavor.</span>
           <span class="launch-meta">global / japan &middot; arm64 / x86_64</span>
+        </span>
+      </button>
+      <button id="relevelTab" class="launch-tab" type="button" role="tab" aria-selected="false" aria-controls="relevelPanel" data-game="relevel" tabindex="-1">
+        <span class="launch-mark" aria-hidden="true">RL</span>
+        <span class="launch-copy">
+          <span class="launch-title">ReLevel <span class="route-tag">Ready release</span></span>
+          <span class="launch-desc">A verified ARM64 release, prepared ahead of your download.</span>
+          <span class="launch-meta">work.ponix.relevel</span>
         </span>
       </button>
     </nav>
@@ -740,6 +748,34 @@
           <li class="build-stage" data-stage="patch"><span class="stage-index">2</span><span>Patch</span></li>
           <li class="build-stage" data-stage="download"><span class="stage-index">3</span><span>Download</span></li>
         </ol>
+      </div>
+    </section>
+
+    <section id="relevelPanel" class="card builder game-panel hidden" role="tabpanel" aria-labelledby="relevelTab" aria-hidden="true">
+      <div class="builder-main">
+        <div>
+          <span class="panel-kicker">Prepared &amp; verified</span>
+          <h2>ReLevel ARM64 release</h2>
+          <p class="builder-sub">Updates are prepared automatically. The download uses the completed release with the module already embedded.</p>
+        </div>
+        <dl class="build-spec">
+          <div><dt>Package</dt><dd><code>work.ponix.relevel</code></dd></div>
+          <div><dt>Target</dt><dd>ARM64 &middot; Android 12L or newer</dd></div>
+          <div><dt>Install</dt><dd>Use SAI with re-signing disabled.</dd></div>
+        </dl>
+      </div>
+      <div class="builder-side">
+        <div class="field">
+          <div class="field-label">Latest verified release</div>
+          <div class="commit-row"><span id="relevelVersion" class="commit-chip">loading</span><span id="relevelVersionMeta">Checking the prepared release...</span></div>
+        </div>
+        <div class="field">
+          <div class="field-label">Embedded release module</div>
+          <div class="commit-row"><span id="relevelModule" class="commit-chip">loading</span><span id="relevelModuleMeta">Checking the verified module...</span></div>
+        </div>
+        <button id="relevelButton" class="primary" type="button" disabled>Download ReLevel .apks</button>
+        <p class="estimate">The download starts when the verified release is ready. Transfer time depends on your connection.</p>
+        <div id="relevelStatus" class="status" aria-live="polite"><span class="dot"></span><span class="text">Checking for a verified release.</span></div>
       </div>
     </section>
 
@@ -873,6 +909,18 @@
     const onceworldVersion = document.getElementById("onceworldVersion");
     const onceworldVersionMeta = document.getElementById("onceworldVersionMeta");
 
+    const relevelPanel = document.getElementById("relevelPanel");
+    const relevelButton = document.getElementById("relevelButton");
+    const relevelStatus = document.getElementById("relevelStatus");
+    const relevelVersion = document.getElementById("relevelVersion");
+    const relevelVersionMeta = document.getElementById("relevelVersionMeta");
+    const relevelModule = document.getElementById("relevelModule");
+    const relevelModuleMeta = document.getElementById("relevelModuleMeta");
+    let latestRelevel = null;
+    let relevelDownloading = false;
+    let relevelRefreshTimer = null;
+    let relevelRefreshSequence = 0;
+
     let latestModuleCommit = null;
     let latestOnceworldVersion = null;
     let latestOnceworldModule = null;
@@ -918,6 +966,7 @@
       buildLspatchBundle();
     });
     onceworldButton.addEventListener("click", () => buildOnceworldBundle());
+    relevelButton.addEventListener("click", () => downloadRelevel());
     gameTabs.forEach((tab, index) => {
       tab.addEventListener("click", () => selectGame(tab.dataset.game));
       tab.addEventListener("keydown", event => {
@@ -949,6 +998,8 @@
 
     function selectGame(game) {
       const showOnceworld = game === "onceworld";
+      const showAnotherEden = game === "anothereden";
+      const showRelevel = game === "relevel";
       gameTabs.forEach(tab => {
         const selected = tab.dataset.game === game;
         tab.classList.toggle("active", selected);
@@ -957,8 +1008,11 @@
       });
       onceworldPanel.classList.toggle("hidden", !showOnceworld);
       onceworldPanel.setAttribute("aria-hidden", showOnceworld ? "false" : "true");
-      builderForm.classList.toggle("hidden", showOnceworld);
-      builderForm.setAttribute("aria-hidden", showOnceworld ? "true" : "false");
+      builderForm.classList.toggle("hidden", !showAnotherEden);
+      builderForm.setAttribute("aria-hidden", showAnotherEden ? "false" : "true");
+      relevelPanel.classList.toggle("hidden", !showRelevel);
+      relevelPanel.setAttribute("aria-hidden", showRelevel ? "false" : "true");
+      if (showRelevel) refreshRelevel();
     }
 
     function syncPickSelection() {
@@ -967,7 +1021,57 @@
 
     function refreshAllMetadata() {
       lastMetadataRefreshAt = Date.now();
-      return Promise.all([refreshModuleCommit(), refreshOnceworldModule(), refreshOnceworldVersion()]);
+      return Promise.all([refreshModuleCommit(), refreshOnceworldModule(), refreshOnceworldVersion(), refreshRelevel()]);
+    }
+
+    function setRelevelStatus(text, kind = "info") {
+      relevelStatus.querySelector(".text").textContent = text;
+      relevelStatus.className = "status " + kind;
+    }
+
+    async function refreshRelevel() {
+      const sequence = ++relevelRefreshSequence;
+      if (relevelRefreshTimer) window.clearTimeout(relevelRefreshTimer);
+      try {
+        const response = await fetch("/api/relevel/status", { cache: "no-store" });
+        const body = await readJsonSafe(response);
+        if (!response.ok || !body) throw new Error(body?.message || "The verified release is temporarily unavailable.");
+        if (sequence !== relevelRefreshSequence) return;
+        latestRelevel = body.status === "ready" ? body : null;
+        relevelVersion.textContent = body.versionName ? "v" + body.versionName : "preparing";
+        relevelVersion.className = "commit-chip " + (latestRelevel ? "ok" : "warn");
+        relevelVersionMeta.textContent = latestRelevel ? "Verified release · " + Math.round(body.sizeBytes / 1048576) + " MB" : "Update verification in progress";
+        relevelModule.textContent = body.moduleSha ? body.moduleSha.slice(0, 7) : "preparing";
+        relevelModule.className = "commit-chip " + (latestRelevel ? "ok" : "warn");
+        relevelModuleMeta.textContent = latestRelevel ? "Embedded release module" : "A verified download will appear here";
+        relevelButton.disabled = relevelDownloading || !latestRelevel;
+        if (!relevelDownloading) setRelevelStatus(latestRelevel ? "Ready to download. No separate module or root is required." : body.message, latestRelevel ? "ok" : "info");
+      } catch (error) {
+        if (sequence !== relevelRefreshSequence) return;
+        latestRelevel = null; relevelButton.disabled = true;
+        setRelevelStatus(error.message, "warn");
+      } finally {
+        if (sequence === relevelRefreshSequence && !document.hidden && !relevelPanel.classList.contains("hidden") && !latestRelevel) {
+          relevelRefreshTimer = window.setTimeout(refreshRelevel, 30000);
+        }
+      }
+    }
+
+    async function downloadRelevel() {
+      if (!latestRelevel || relevelDownloading) return;
+      const ready = latestRelevel;
+      relevelDownloading = true; relevelButton.disabled = true;
+      setRelevelStatus("Opening the verified download...");
+      try {
+        const endpoint = sameOriginApiUrl(ready.downloadUrl, "/api/relevel/download?id=" + encodeURIComponent(ready.cacheKey));
+        const response = await fetch(endpoint + "&format=json", { cache: "no-store" });
+        const body = await readJsonSafe(response);
+        if (!response.ok || !body?.url || new URL(body.url).protocol !== "https:") throw new Error(body?.message || "The release changed. Please refresh and retry.");
+        const link = document.createElement("a"); link.href = body.url; link.download = body.filename || ready.filename;
+        document.body.appendChild(link); link.click(); link.remove();
+        setRelevelStatus("Your download has started. Install with SAI and keep re-signing disabled.", "ok");
+      } catch (error) { setRelevelStatus(error.message, "warn"); }
+      finally { relevelDownloading = false; relevelButton.disabled = !latestRelevel; }
     }
 
     function setOnceworldStatus(text, className = "") {

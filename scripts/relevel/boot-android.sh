@@ -39,15 +39,16 @@ sudo "$RUNNER_TEMP/binderfs-add"
 sudo chmod 666 /dev/binderfs/binder /dev/binderfs/hwbinder /dev/binderfs/vndbinder
 getconf PAGE_SIZE
 ls -l /dev/binderfs
-timeout 180s docker pull --platform linux/arm64 redroid/redroid:13.0.0_64only-latest
-docker image inspect redroid/redroid:13.0.0_64only-latest --format '{{json .RepoDigests}}'
+ANDROID_IMAGE=redroid/redroid@sha256:5a42a569ee1d7c71796c0385e906cbaa4c3e0a162a56d9f26b29bdb1befac13b
+timeout 180s docker pull --platform linux/arm64 "$ANDROID_IMAGE"
+docker image inspect "$ANDROID_IMAGE" --format '{{json .RepoDigests}}'
 docker run -d --name relevel-android --privileged \
   --platform linux/arm64 \
   -p 127.0.0.1:5555:5555 \
   -v /dev/binderfs/binder:/dev/binder \
   -v /dev/binderfs/hwbinder:/dev/hwbinder \
   -v /dev/binderfs/vndbinder:/dev/vndbinder \
-  redroid/redroid:13.0.0_64only-latest \
+  "$ANDROID_IMAGE" \
   androidboot.redroid_width=720 androidboot.redroid_height=1280 \
   androidboot.redroid_dpi=240 androidboot.redroid_gpu_mode=guest
 DEADLINE=$((SECONDS + 180))

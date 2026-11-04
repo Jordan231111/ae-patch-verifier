@@ -63,6 +63,8 @@ def main() -> None:
     parser.add_argument("--expected-version", default="unknown")
     parser.add_argument("--metadata-source", required=True)
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--metadata-only", action="store_true",
+                        help="Check the account's current Play version without purchasing or downloading")
     args = parser.parse_args()
 
     auth_arch = {"arm64-v8a": "arm64", "x86_64": "x86_64"}.get(args.architecture)
@@ -72,6 +74,13 @@ def main() -> None:
     if not auth:
         raise RuntimeError("Google Play authentication failed")
     app = get_details(args.package, auth)
+    if args.metadata_only:
+        args.output.mkdir(parents=True, exist_ok=True)
+        metadata = {"package_name": args.package, "version_code": app.version_code,
+                    "version_name": app.version_string, "architecture": args.architecture}
+        (args.output / "play-version.json").write_text(json.dumps(metadata, separators=(",", ":")))
+        print(json.dumps(metadata))
+        return
     delivery = get_delivery(
         args.package,
         app.version_code,

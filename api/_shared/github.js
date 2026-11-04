@@ -46,7 +46,7 @@ function moduleFilenamePart(moduleSource) {
   return moduleSource === "houdini-x64-rewrite" ? "_emulator-x86_64" : "";
 }
 
-function githubRequest(cfg, { method, apiPath, body, accept, followRedirect = false }) {
+function githubRequest(cfg, { method, apiPath, body, accept, followRedirect = false, headersOnly = false }) {
   if (!cfg.githubToken) {
     return Promise.reject(new Error("GITHUB_TOKEN is required"));
   }
@@ -68,6 +68,11 @@ function githubRequest(cfg, { method, apiPath, body, accept, followRedirect = fa
       }
     }, response => {
       const status = response.statusCode || 0;
+      if (headersOnly) {
+        resolve({ status, headers: response.headers, body: "" });
+        response.destroy();
+        return;
+      }
       if (!followRedirect && status >= 300 && status < 400 && response.headers.location) {
         response.resume();
         resolve({ status, headers: response.headers, body: "" });
