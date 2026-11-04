@@ -36,6 +36,9 @@ int main(void) {
 }
 C
 sudo "$RUNNER_TEMP/binderfs-add"
+sudo chmod 666 /dev/binderfs/binder /dev/binderfs/hwbinder /dev/binderfs/vndbinder
+getconf PAGE_SIZE
+ls -l /dev/binderfs
 timeout 180s docker pull --platform linux/arm64 redroid/redroid:13.0.0_64only-latest
 docker image inspect redroid/redroid:13.0.0_64only-latest --format '{{json .RepoDigests}}'
 docker run -d --name relevel-android --privileged \
@@ -60,6 +63,9 @@ while [ "$SECONDS" -lt "$DEADLINE" ]; do
   fi
   sleep 2
 done
+docker inspect relevel-android --format '{{json .State}}' || true
+timeout 12s docker exec relevel-android /system/bin/sh -c 'getprop; ps -A; logcat -b all -d -t 180' || true
+sudo dmesg | tail -80 || true
 docker logs --tail 200 relevel-android || true
 timeout 10s adb -s 127.0.0.1:5555 logcat -d -t 200 || true
 exit 1
