@@ -6,7 +6,7 @@ function sleep(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
-function requestListing(packageName, country, language, timeoutMs = 15000) {
+function requestListing(packageName, country, language) {
   const query = new URLSearchParams({ id: packageName, gl: country, hl: language });
   return new Promise((resolve, reject) => {
     const request = https.get(`https://play.google.com/store/apps/details?${query}`, {
@@ -23,7 +23,7 @@ function requestListing(packageName, country, language, timeoutMs = 15000) {
         resolve(html);
       });
     });
-    request.setTimeout(timeoutMs, () => request.destroy(new Error("Google Play listing timed out")));
+    request.setTimeout(15000, () => request.destroy(new Error("Google Play listing timed out")));
     request.on("error", reject);
   });
 }
@@ -59,12 +59,10 @@ async function resolveLatestPlayListing(packageName, options = {}) {
     : "en";
 
   let lastError;
-  const delays = options.attempts === 1 ? [0] : RETRY_DELAYS_MS;
-  const timeoutMs = Math.min(15000, Math.max(1000, Number(options.timeoutMs) || 15000));
-  for (const delay of delays) {
+  for (const delay of RETRY_DELAYS_MS) {
     if (delay) await sleep(delay);
     try {
-      const listing = listingVersion(await requestListing(packageName, country, language, timeoutMs));
+      const listing = listingVersion(await requestListing(packageName, country, language));
       const versionName = listing.versionName;
       if (!versionName || /^varies with device$/i.test(versionName)) {
         throw new Error("Google Play did not expose a concrete version name");

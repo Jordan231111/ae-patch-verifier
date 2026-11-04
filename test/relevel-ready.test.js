@@ -14,30 +14,28 @@ function state() {
       filename: 'ReLevel-1.1.3-arm64-lspatched.apks', sizeBytes: 1024, releaseAssetId: 123 } };
 }
 test('only the current verified source, module and signing identity are ready', () => {
-  assert.equal(validatedReady(state(), cfg, moduleInfo, {versionName:'1.1.3'}).versionCode, 44);
+  assert.equal(validatedReady(state(), cfg).versionCode, 44);
   for (const change of [s => s.state = 'preparing', s => s.ready.validated = false,
-    s => s.ready.moduleSha = 'b'.repeat(40), s => s.observed.versionCode++,
+    s => s.ready.moduleSha = 'b'.repeat(40), s => s.observed.versionCode++, s => s.observed.versionName = 'next',
     s => s.ready.certificateSha256 = 'f'.repeat(64), s => s.ready.filename = '../wrong.apks',
     s => s.ready.sizeBytes = 0, s => s.ready.releaseAssetId = 0]) {
-    const s = state(); change(s); assert.equal(validatedReady(s, cfg, moduleInfo, {versionName:'1.1.3'}), null);
+    const s = state(); change(s); assert.equal(validatedReady(s, cfg), null);
   }
-  assert.equal(validatedReady(state(), cfg, moduleInfo, {versionName:'1.1.4'}), null);
 });
-test('an unavailable Play listing cannot make stale observation metadata current', () => {
+test('stale or future observations cannot be advertised as current', () => {
   const s = state(); s.checkedAt = new Date(Date.now() - 7200000).toISOString();
-  assert.equal(validatedReady(s, cfg, moduleInfo, null), null);
-  assert.ok(validatedReady(state(), cfg, moduleInfo, null));
+  assert.equal(validatedReady(s, cfg), null);
+  assert.ok(validatedReady(state(), cfg));
   s.checkedAt = new Date(Date.now() + 3600000).toISOString();
-  assert.equal(validatedReady(s, cfg, moduleInfo, {versionName:'1.1.3'}), null);
+  assert.equal(validatedReady(s, cfg), null);
 });
-test('web requests consume the verified public index without private module access', async () => {
+test('web requests only consume the verified index without store scraping or private module access', async () => {
   const mod={exports:{}},paths=[];
   const dependencies={
-    '../_shared/github.js':{githubJson:async(_,method,path)=>{paths.push(path);return {draft:false,body:JSON.stringify(state())};}},
-    '../_shared/googleplay.js':{resolveLatestPlayListing:async()=>({versionName:'1.1.3'})}
+    '../_shared/github.js':{githubJson:async(_,method,path)=>{paths.push(path);return {draft:false,body:JSON.stringify(state())};}}
   };
   vm.runInNewContext(fs.readFileSync(path.join(__dirname,'../api/relevel/_ready.js'),'utf8'),{
-    module:mod,require:id=>dependencies[id],Date,Number,Promise,JSON
+    module:mod,require:id=>{assert.ok(dependencies[id],`unexpected dependency: ${id}`);return dependencies[id];},Date,Number,Promise,JSON
   });
   const result=await mod.exports.resolveReady(cfg);
   assert.equal(result.ready.moduleSha,moduleInfo.sha);
@@ -51,14 +49,13 @@ function handler(ready, request) {
   return mod.exports;
 }
 function response(){return {headers:{},setHeader(k,v){this.headers[k]=v;},end(body){this.body=body;}};}
-test('downloads use headers-only artifact negotiation with a durable fallback',async()=>{
-  const ready=state().ready;ready.artifactId=456;ready.artifactExpiresAt=new Date(Date.now()+3600000).toISOString();
+test('downloads negotiate the durable release once without buffering APK bytes',async()=>{
+  const ready=state().ready;
   const calls=[];
-  const run=handler(ready,async(_,options)=>{calls.push(options);return calls.length===1?{status:404,headers:{}}:{status:302,headers:{location:'https://storage.example/package.apks'}};});
+  const run=handler(ready,async(_,options)=>{calls.push(options);return {status:302,headers:{location:'https://storage.example/package.apks'}};});
   const res=response();await run({method:'GET',url:'/api/relevel/download?id='+ready.cacheKey},res);
-  assert.equal(res.statusCode,302);assert.equal(calls.length,2);
-  assert.equal(calls[0].apiPath,'/repos/owner/builder/actions/artifacts/456/zip');
-  assert.equal(calls[1].apiPath,'/repos/owner/builder/releases/assets/123');
+  assert.equal(res.statusCode,302);assert.equal(calls.length,1);
+  assert.equal(calls[0].apiPath,'/repos/owner/builder/releases/assets/123');
   assert.ok(calls.every(x=>x.headersOnly===true));
 });
 test('changed and malformed download identities never negotiate a file',async()=>{

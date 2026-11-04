@@ -18,15 +18,7 @@ module.exports = async function handler(req, res) {
       res.end(JSON.stringify({ message: 'The verified release changed or is still being prepared. Refresh and retry.' })); return;
     }
     const base = `/repos/${cfg.githubOwner}/${cfg.githubRepo}`;
-    const artifactReady = Number.isSafeInteger(ready.artifactId) && ready.artifactId > 0
-      && Number.isFinite(Date.parse(ready.artifactExpiresAt)) && Date.parse(ready.artifactExpiresAt) > Date.now() + 60000;
-    let result;
-    if (artifactReady) {
-      result = await githubRequest(cfg, { method: 'GET', apiPath: `${base}/actions/artifacts/${ready.artifactId}/zip`, accept: 'application/vnd.github+json', headersOnly: true });
-    }
-    if (!result || [404, 410].includes(result.status)) {
-      result = await githubRequest(cfg, { method: 'GET', apiPath: `${base}/releases/assets/${ready.releaseAssetId}`, accept: 'application/octet-stream', headersOnly: true });
-    }
+    const result = await githubRequest(cfg, { method: 'GET', apiPath: `${base}/releases/assets/${ready.releaseAssetId}`, accept: 'application/octet-stream', headersOnly: true });
     const location = result.headers?.location;
     if (result.status < 300 || result.status >= 400 || !location || new URL(location).protocol !== 'https:') {
       res.statusCode = 502; res.end('Download negotiation failed. Please retry.'); return;

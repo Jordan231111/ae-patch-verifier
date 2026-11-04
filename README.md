@@ -36,6 +36,8 @@ It does not dispatch Actions, download Play inputs, compile a module, or recover
 never pass through Vercel. This targets a download start within a minute; transfer time depends on
 the recipient's connection.
 Vercel reads the fresh verified public index; private ReLevel source/module access remains in CI.
+The scheduled Play API check is the source of version information. Download clicks do not scrape
+the Play website or repeat version discovery.
 
 `relevel-ready.yml` checks the dedicated account's current Google Play **versionCode** and the
 newest completed `main` module prebuilt every 15 minutes. An unchanged check only refreshes the
@@ -51,6 +53,9 @@ import helper, cold startup, Home/resume, and delayed stability must pass before
 to `ready`. Unknown VM callbacks, changed contracts, nonrepeatable native data, and failed hooks
 require review. The same failing input is not rebuilt on every poll. Maintainers can retry it with
 the workflow's **force** option after investigation.
+
+Each candidate gets one binding/hook audit. Home/resume checks process continuity and stability
+without repeating that audit. Capture digests are checked once and reused in the recovery manifest.
 
 The disposable Android runtime uses a root-configured wrapper and a separate native helper to
 save Unity's writable data before its `JNI_OnLoad` and capture remaining segments just before
@@ -70,8 +75,8 @@ Actions allowance; Play checks never trigger that build. See [GitHub Actions bil
 and [Release storage/bandwidth limits](https://docs.github.com/en/repositories/releasing-projects-on-github/about-releases).
 
 GitHub may delay scheduled jobs and can disable schedules after prolonged repository inactivity.
-The site rejects an observation older than one hour, even if the public listing still shows the
-same display version. Re-enable/run the workflow if scheduling is interrupted. Failed or pending
+The site rejects an observation older than one hour. Re-enable/run the workflow if scheduling is
+interrupted. Detection follows the polling interval rather than instant store-page changes. Failed or pending
 updates cannot relabel an older bundle as current. Publication rechecks both Play and the module
 to catch updates arriving while a candidate is being prepared.
 

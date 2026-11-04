@@ -10,7 +10,7 @@ module.exports = async function handler(req, res) {
   }
   try {
     const cfg = relevelConfig();
-    const { ready, module, state, listing } = await resolveReady(cfg);
+    const { ready, module, state } = await resolveReady(cfg);
     res.statusCode = 200;
     if (ready) {
       res.end(JSON.stringify({ status: 'ready', packageName: cfg.packageName, architecture: cfg.architecture,
@@ -20,7 +20,7 @@ module.exports = async function handler(req, res) {
         downloadUrl: `/api/relevel/download?id=${ready.cacheKey}` }));
     } else {
       res.end(JSON.stringify({ status: state?.state === 'requires_review' ? 'requires_review' : 'preparing',
-        versionName: listing?.versionName || state?.observed?.versionName || null,
+        versionName: state?.observed?.versionName || null,
         moduleSha: module.sha, checkedAt: state?.checkedAt || null,
         message: state?.state === 'requires_review'
           ? 'The latest update needs a compatibility review. Downloads will resume after it passes.'
