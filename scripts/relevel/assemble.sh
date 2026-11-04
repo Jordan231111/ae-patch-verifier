@@ -15,7 +15,10 @@ curl --fail --location --silent --show-error --retry 2 \
   https://github.com/JingMatrix/LSPatch/releases/download/v1.2/lspatch-v1.2-487-release.jar -o "$RELEVEL_LSPATCH_JAR"
 sudo apt-get update -qq
 sudo apt-get install -y -qq patchelf ripgrep maven
-python -m pip install --disable-pip-version-check --quiet androguard==4.1.3 pyelftools==0.33
+python -m pip install --disable-pip-version-check --quiet pyelftools==0.33
+if [ -z "$RECOVERED_TAG" ]; then
+  python -m pip install --disable-pip-version-check --quiet androguard==4.1.3
+fi
 mvn -q -f scripts/relevel/smali-pom.xml dependency:copy-dependencies -DoutputDirectory="$RUNNER_TEMP/smali"
 for TOOL in smali baksmali; do
   MAIN=$TOOL

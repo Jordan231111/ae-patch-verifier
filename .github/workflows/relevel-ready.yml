@@ -209,7 +209,7 @@ jobs:
           java-version: '25'
       - uses: android-actions/setup-android@v4.0.0
         with:
-          packages: build-tools;37.0.0 ndk;29.0.14206865
+          packages: build-tools;37.0.0 ${{ needs.inspect.outputs.recovered_tag == '' && 'ndk;29.0.14206865' || '' }}
       - name: Assemble with the established signing identity
         env:
           GH_TOKEN: ${{ github.token }}

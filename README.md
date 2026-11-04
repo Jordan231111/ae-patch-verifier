@@ -56,6 +56,7 @@ the workflow's **force** option after investigation.
 
 Each candidate gets one binding/hook audit. Home/resume checks process continuity and stability
 without repeating that audit. Capture digests are checked once and reused in the recovery manifest.
+Module-only updates skip the unused native compiler/sysroot and DEX analysis dependencies.
 
 The disposable Android runtime uses a root-configured wrapper and a separate native helper to
 save Unity's writable data before its `JNI_OnLoad` and capture remaining segments just before
