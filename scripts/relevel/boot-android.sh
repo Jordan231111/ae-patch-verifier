@@ -36,7 +36,7 @@ int main(void) {
 }
 C
 sudo "$RUNNER_TEMP/binderfs-add"
-docker pull --platform linux/arm64 redroid/redroid:13.0.0_64only-latest
+timeout 180s docker pull --platform linux/arm64 redroid/redroid:13.0.0_64only-latest
 docker image inspect redroid/redroid:13.0.0_64only-latest --format '{{json .RepoDigests}}'
 docker run -d --name relevel-android --privileged \
   --platform linux/arm64 \
@@ -47,9 +47,10 @@ docker run -d --name relevel-android --privileged \
   redroid/redroid:13.0.0_64only-latest \
   androidboot.redroid_width=720 androidboot.redroid_height=1280 \
   androidboot.redroid_dpi=240 androidboot.redroid_gpu_mode=guest
-for attempt in $(seq 1 90); do
-  adb connect 127.0.0.1:5555 >/dev/null 2>&1 || true
-  if [ "$(adb -s 127.0.0.1:5555 shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')" = 1 ]; then
+DEADLINE=$((SECONDS + 180))
+while [ "$SECONDS" -lt "$DEADLINE" ]; do
+  timeout 8s adb connect 127.0.0.1:5555 >/dev/null 2>&1 || true
+  if [ "$(timeout 8s adb -s 127.0.0.1:5555 shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')" = 1 ]; then
     adb -s 127.0.0.1:5555 shell getprop ro.product.cpu.abi
     adb -s 127.0.0.1:5555 shell getprop ro.build.version.sdk
     adb -s 127.0.0.1:5555 shell id
@@ -59,6 +60,6 @@ for attempt in $(seq 1 90); do
   fi
   sleep 2
 done
-docker logs relevel-android || true
-adb -s 127.0.0.1:5555 logcat -d -t 200 || true
+docker logs --tail 200 relevel-android || true
+timeout 10s adb -s 127.0.0.1:5555 logcat -d -t 200 || true
 exit 1
