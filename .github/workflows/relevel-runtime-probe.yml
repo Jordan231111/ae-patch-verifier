@@ -27,7 +27,6 @@ jobs:
       - name: Install the original Google Play split set
         env:
           GH_TOKEN: ${{ github.token }}
-          RELEVEL_CI_TRANSFER_KEY: ${{ secrets.RELEVEL_CI_TRANSFER_KEY }}
         run: |
           set -Eeuo pipefail
           gh run download "$GITHUB_RUN_ID" --repo "$GITHUB_REPOSITORY" --name relevel-play-source --dir "$RUNNER_TEMP/relevel-play"
@@ -38,6 +37,7 @@ jobs:
       - name: Fetch the verified prebuilt module and matching instrumentation stack
         env:
           GH_TOKEN: ${{ github.token }}
+          RELEVEL_CI_TRANSFER_KEY: ${{ secrets.RELEVEL_CI_TRANSFER_KEY }}
         run: |
           set -Eeuo pipefail
           gh run download "$GITHUB_RUN_ID" --repo "$GITHUB_REPOSITORY" --name relevel-runtime-inputs --dir "$RUNNER_TEMP/relevel-inputs"
