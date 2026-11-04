@@ -37,14 +37,16 @@ never pass through Vercel. This targets a download start within a minute; transf
 the recipient's connection.
 Vercel reads the fresh verified public index; private ReLevel source/module access remains in CI.
 The Play API check in CI is the source of version information. When an active page sees a check
-over 15 minutes old, its status request can dispatch a background recheck to recover from a missed
-cron event. Requests share a five-minute cooldown, with recent workflow history covering separate
-serverless instances and workflow concurrency serializing races. The request awaits only dispatch,
-never APK preparation. An unchanged input refreshes only the index; changed inputs follow the
-normal background validation path. No Play credentials or game downloads enter Vercel.
+over 15 minutes old, its status request wakes the same persistent timer used for unattended checks.
+It does not start another scheduling loop. The timer calls the bounded `/api/relevel/tick` endpoint;
+recent workflow history, request coalescing and workflow concurrency prevent competing preparation.
+An unchanged input refreshes only the index; changed inputs follow the normal background
+validation path. No Play credentials or game downloads enter Vercel.
 
 `relevel-ready.yml` checks the dedicated account's current Google Play **versionCode** and the
-newest completed `main` module prebuilt on a best-effort 15-minute schedule. Each Actions summary
+newest completed `main` module prebuilt every 15 minutes through one Cloudflare Durable Object
+alarm. The timer runs with no visitors and re-arms itself persistently; ReLevel has no GitHub cron
+trigger. See [timer operation and deployment](workers/relevel-timer/README.md). Each Actions summary
 records the current and previous check times, decision, attempt count and next retry time.
 An unchanged check only refreshes the
 small `relevel-ready` release index. A module update reuses verified recovered inputs for the same
@@ -78,23 +80,24 @@ snapshots contained process pointers and were rejected. Neither workaround nor r
 guards is shipped: the helper stays outside the module and APKs, and the existing two-capture
 repeatability, pointer, signing, and alignment checks remain mandatory.
 
-Scheduled runs use only the public repository's standard `ubuntu-latest` and `ubuntu-24.04-arm`
+Background runs use only the public repository's standard `ubuntu-latest` and `ubuntu-24.04-arm`
 runners, with one ReLevel preparation at a time and bounded job timeouts. The workflow refuses
 private-repository polling. Durable bundles and recovered inputs use GitHub Releases; temporary
 Actions artifacts are deleted at completion. The current and previous bundle and their recovered
-inputs are retained; older ReLevel caches are pruned. No paid runner, always-on server, Vercel Cron, or
-Vercel blob storage is required. Existing private module CI still uses the owner's normal included
+inputs are retained; older ReLevel caches are pruned. The timer uses Workers Free with SQLite,
+one small record, 96 normal checks/day and a hard cap of 200 outbound checks/day. Network calls
+have a 25-second deadline; failed calls back off for 1, 2, 4, 8, then at most 15 minutes. No paid
+runner, always-on server, Vercel Cron, or Vercel blob storage is required. Existing private module CI still uses the owner's normal included
 Actions allowance; Play checks never trigger that build. See [GitHub Actions billing](https://docs.github.com/en/billing/concepts/product-billing/github-actions)
 and [Release storage/bandwidth limits](https://docs.github.com/en/repositories/releasing-projects-on-github/about-releases).
 
-GitHub may delay or drop cron events and can disable schedules after prolonged repository inactivity.
 The site rejects an observation older than one hour and requests an overdue check automatically.
 An expired ready index displays **checking for updates**, rather than claiming a build is running.
 The visible page polls even after becoming ready and refreshes its status after a refused download.
 Retry deadlines and compatibility-review limits still apply; web refreshes never set **force**.
-Changing the cron expression re-registers the schedule, but cannot guarantee delivery.
-A strict 15-minute clock requires an independent scheduler dispatching this workflow; no external
-scheduler is configured by this repository. Detection follows delivered polls rather than instant store-page changes. Failed or pending
+The clock is independent of GitHub cron. GitHub API/runner availability can still delay the
+requested check, and the timer retries failures without duplicating its alarm. Detection follows
+completed polls rather than instant store-page changes. Failed or pending
 updates cannot relabel an older bundle as current. Publication rechecks both Play and the module
 to catch updates arriving while a candidate is being prepared.
 

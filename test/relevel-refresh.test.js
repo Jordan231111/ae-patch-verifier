@@ -19,11 +19,11 @@ function readyState(age = 0) {
       filename: 'ReLevel-1.1.6-arm64-lspatched.apks', sizeBytes: 100, releaseAssetId: 123 } };
 }
 
-function loadRefresh(githubJson) {
+function loadRefresh(githubJson, fetch) {
   const mod = { exports: {} };
   vm.runInNewContext(fs.readFileSync(path.join(__dirname, '../api/relevel/_refresh.js'), 'utf8'), {
     module: mod, require: id => { assert.equal(id, '../_shared/github.js'); return { githubJson }; },
-    Date, Number, Map, Error, encodeURIComponent
+    Date, Number, Map, Error, encodeURIComponent, URL, AbortSignal, fetch
   });
   return mod.exports;
 }
@@ -38,6 +38,19 @@ test('missed polls are refreshed before expiration without relaxing download fre
   assert.equal(validatedReady(stale, cfg), null);
   assert.equal(needsRefresh(null), true);
   assert.equal(needsRefresh({ checkedAt: new Date(Date.now() + 3600000).toISOString() }), true);
+});
+
+test('browser requests share a wake of the one durable timer instead of dispatching competing jobs', async () => {
+  let wakes = 0;
+  const refresh = loadRefresh(async () => { throw new Error('GitHub must be reached by the timer tick'); }, async (url, options) => {
+    wakes++;
+    assert.equal(url.href, 'https://timer.workers.dev/wake');
+    assert.equal(options.method, 'POST');
+    return Response.json({ scheduled: true, nextCheckAt: Date.now() + 1000 });
+  });
+  const timerCfg = { ...cfg, relevelTimerUrl: 'https://timer.workers.dev' };
+  await Promise.all(Array.from({ length: 30 }, () => refresh.requestRefresh(timerCfg)));
+  assert.equal(wakes, 1);
 });
 
 test('retry deadlines are respected and become eligible without another cron event', () => {

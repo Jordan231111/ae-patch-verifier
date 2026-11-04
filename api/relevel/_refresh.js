@@ -35,12 +35,11 @@ async function dispatchIfDue(cfg) {
   return { requested: true };
 }
 
-async function requestRefresh(cfg) {
-  const key = `${cfg.githubOwner}/${cfg.githubRepo}/${cfg.githubRef}/${cfg.relevelWorkflow}`;
+async function coalesce(key, operation) {
   const now = Date.now();
   const existing = requests.get(key);
   if (existing && existing.until > now) return existing.promise;
-  const entry = { until: now + DISPATCH_COOLDOWN_MS, promise: dispatchIfDue(cfg) };
+  const entry = { until: now + DISPATCH_COOLDOWN_MS, promise: operation() };
   requests.set(key, entry);
   try {
     return await entry.promise;
@@ -50,4 +49,22 @@ async function requestRefresh(cfg) {
   }
 }
 
-module.exports = { needsRefresh, requestRefresh };
+function requestDirectRefresh(cfg) {
+  const key = `${cfg.githubOwner}/${cfg.githubRepo}/${cfg.githubRef}/${cfg.relevelWorkflow}`;
+  return coalesce(key, () => dispatchIfDue(cfg));
+}
+
+async function requestRefresh(cfg) {
+  if (!cfg.relevelTimerUrl) return requestDirectRefresh(cfg);
+  const target = new URL('/wake', cfg.relevelTimerUrl);
+  if (target.protocol !== 'https:') throw new Error('HTTPS timer endpoint required');
+  return coalesce(target.href, async () => {
+    const response = await fetch(target, { method: 'POST', signal: AbortSignal.timeout(8000) });
+    if (!response.ok) throw new Error('The background timer could not be reached');
+    const body = await response.json();
+    if (body.scheduled !== true || !Number.isFinite(body.nextCheckAt)) throw new Error('The background timer did not schedule a check');
+    return body;
+  });
+}
+
+module.exports = { needsRefresh, requestRefresh, requestDirectRefresh };

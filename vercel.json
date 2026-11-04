@@ -32,6 +32,9 @@
     },
     "api/relevel/download.js": {
       "maxDuration": 60
+    },
+    "api/relevel/tick.js": {
+      "maxDuration": 60
     }
   },
   "headers": [

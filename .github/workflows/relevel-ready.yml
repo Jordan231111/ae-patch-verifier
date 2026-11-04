@@ -1,8 +1,5 @@
 name: Prepare verified ReLevel download
 on:
-  schedule:
-    # Best-effort GitHub delivery. Updating this also re-registers the schedule.
-    - cron: '11,26,41,56 * * * *'
   workflow_dispatch:
     inputs:
       force:

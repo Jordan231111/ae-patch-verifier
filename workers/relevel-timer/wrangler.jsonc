@@ -1,0 +1,15 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "relevel-release-timer",
+  "account_id": "4c3c4d8737a69380ac6dd94acca0915d",
+  "main": "src/index.mjs",
+  "compatibility_date": "2026-11-04",
+  "workers_dev": true,
+  "durable_objects": {
+    "bindings": [{ "name": "RELEASE_TIMER", "class_name": "ReleaseTimer" }]
+  },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["ReleaseTimer"] }],
+  "vars": {
+    "CHECK_URL": "https://verify-ae-modmenu.vercel.app/api/relevel/tick"
+  }
+}

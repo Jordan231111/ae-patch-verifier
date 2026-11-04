@@ -1,5 +1,6 @@
 .vercel
 node_modules/
+.wrangler/
 .claude/
 .DS_Store
 .playwright-mcp/
