@@ -1,7 +1,8 @@
 name: Prepare verified ReLevel download
 on:
   schedule:
-    - cron: '7,22,37,52 * * * *'
+    # Best-effort GitHub delivery. Updating this also re-registers the schedule.
+    - cron: '11,26,41,56 * * * *'
   workflow_dispatch:
     inputs:
       force:
@@ -52,7 +53,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           RELEVEL_MODULE_TOKEN: ${{ secrets.AE_MODULE_REPO_TOKEN }}
-          FORCE: ${{ inputs.force && 'true' || 'false' }}
+          FORCE: ${{ (inputs.force || github.event_name == 'push') && 'true' || 'false' }}
         run: |
           ARGS=()
           if [ "$FORCE" = true ]; then ARGS+=(--force); fi
@@ -268,6 +269,14 @@ jobs:
           path: ${{ runner.temp }}/validation.json
           retention-days: 1
           if-no-files-found: error
+      - name: Retain failed runtime diagnostics
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: relevel-runtime-diagnostics
+          path: ${{ runner.temp }}/validation.failure.*
+          retention-days: 1
+          if-no-files-found: ignore
       - name: Remove disposable Android
         if: always()
         run: docker rm -f relevel-android 2>/dev/null || true
@@ -307,7 +316,7 @@ jobs:
           python scripts/relevel/releases.py publish --plan "$RUNNER_TEMP/inputs/plan.json" \
             --version "$RUNNER_TEMP/current/play-version.json" --metadata "$RUNNER_TEMP/candidate/bundle.json" \
             --report "$RUNNER_TEMP/report/validation.json" --bundle "$RUNNER_TEMP/candidate/ReLevel-${VERSION}-arm64-lspatched.apks" "${ARGS[@]}"
-      - name: Mark failures for review without retrying the same input every 15 minutes
+      - name: Back off failed inputs and require review after bounded retries
         if: failure() || needs.validate.result != 'success'
         env:
           GH_TOKEN: ${{ github.token }}
@@ -317,5 +326,5 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh api "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/artifacts?per_page=100" --jq '.artifacts[].id' |
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/artifacts?per_page=100" --jq '.artifacts[] | select(.name != "relevel-runtime-diagnostics") | .id' |
             while read -r ID; do gh api --method DELETE "repos/$GITHUB_REPOSITORY/actions/artifacts/$ID"; done

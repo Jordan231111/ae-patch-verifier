@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import argparse
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 import hashlib
 import json
 import os
@@ -17,6 +17,8 @@ PACKAGE = 'work.ponix.relevel'
 CERT = '29b04c032802179a86374c8a13dba9ddbe8d9303f4909ac03766cb77de17c027'
 INDEX_TAG = 'relevel-ready'
 RECOVERY_SCHEMA = 1
+MAX_ATTEMPTS = 3
+RETRY_DELAY_SECONDS = 15 * 60
 
 
 def now(): return datetime.now(timezone.utc).isoformat()
@@ -39,7 +41,10 @@ def api(path, *, method='GET', data=None, module=False, missing=False):
             return json.loads(body) if body else None
     except urllib.error.HTTPError as error:
         if missing and error.code == 404: return None
-        raise RuntimeError(f'GitHub {method} {path.split("?")[0]} returned {error.code}') from None
+        try: reason = json.loads(error.read(8192)).get('message', '')
+        except (ValueError, AttributeError): reason = ''
+        reason = ' '.join(str(reason).split())[:500]
+        raise RuntimeError(f'GitHub {method} {path.split("?")[0]} returned {error.code}: {reason}') from None
 
 
 def repository():
@@ -107,16 +112,29 @@ def inspect(args):
     key = digest({'observed': current, 'recoverySchema': RECOVERY_SCHEMA})
     _, previous = index()
     previous = previous or {'schema': 1, 'packageName': PACKAGE, 'architecture': 'arm64-v8a'}
-    previous['checkedAt'] = now()
+    checked_at = now()
+    last_check = previous.get('checkedAt')
     old = previous.get('ready', {})
     same = old.get('validated') is True and old.get('cacheKey') == key and previous.get('state') == 'ready'
     if same:
         asset = api(f'repos/{repository()}/releases/assets/{old["releaseAssetId"]}', missing=True)
         same = bool(asset and asset['state'] == 'uploaded' and asset['size'] == old['sizeBytes'])
-    blocked = previous.get('state') == 'requires_review' and previous.get('failedKey') == key and not args.force
-    changed = not same and not blocked
+    attempts = previous.get('attemptCount', 0) if previous.get('attemptKey') == key else 0
+    blocked = not args.force and not same and (
+        (previous.get('state') == 'requires_review' and previous.get('failedKey') == key)
+        or attempts >= MAX_ATTEMPTS)
+    waiting = False
+    if not args.force and previous.get('state') == 'retry_pending' and previous.get('failedKey') == key:
+        try: waiting = datetime.fromisoformat(previous['retryAt']) > datetime.fromisoformat(checked_at)
+        except (KeyError, TypeError, ValueError): pass
+    changed = not same and not blocked and not waiting
+    previous['checkedAt'] = checked_at
     previous['observed'] = current
-    if changed: previous.update(state='preparing', attemptRunId=int(os.environ['GITHUB_RUN_ID']))
+    if blocked: previous.update(state='requires_review', failedKey=key)
+    if changed:
+        previous.update(state='preparing', attemptRunId=int(os.environ['GITHUB_RUN_ID']), attemptKey=key,
+                        attemptCount=1 if args.force else attempts + 1)
+        previous.pop('retryAt', None)
     write_index(previous)
     recovered = ''
     if old.get('versionCode') == current['versionCode'] and old.get('versionName') == current['versionName']:
@@ -125,8 +143,21 @@ def inspect(args):
             cache = api(f'repos/{repository()}/releases/tags/{tag}', missing=True)
             if cache and any(a['name'] == 'recovered.tar' and a['state'] == 'uploaded' for a in cache['assets']): recovered = tag
     args.plan.write_text(json.dumps({'observed': current, 'cacheKey': key, 'recoveredTag': recovered}, indent=2))
-    emit({'changed': str(changed).lower(), 'module_sha': current['moduleSha'], 'cache_key': key,
-          'version_code': current['versionCode'], 'version_name': current['versionName'], 'recovered_tag': recovered})
+    decision = 'prepare' if changed else 'ready' if same else 'requires_review' if blocked else 'retry_wait'
+    values = {'changed': str(changed).lower(), 'module_sha': current['moduleSha'], 'cache_key': key,
+              'version_code': current['versionCode'], 'version_name': current['versionName'],
+              'recovered_tag': recovered, 'decision': decision,
+              'attempt_count': previous.get('attemptCount', 0), 'retry_at': previous.get('retryAt', '')}
+    summary = os.environ.get('GITHUB_STEP_SUMMARY')
+    if summary:
+        with open(summary, 'a') as stream:
+            stream.write(f'### ReLevel Play check\n\nChecked: {checked_at}\n\n'
+                         f'Previous check: {last_check or "none"}\n\n'
+                         f'Play: {current["versionName"]} ({current["versionCode"]})\n\n'
+                         f'Module: `{current["moduleSha"]}`\n\nDecision: **{decision}**\n\n'
+                         f'Preparation attempt: {values["attempt_count"]}/{MAX_ATTEMPTS}\n\n'
+                         f'Next retry after: {values["retry_at"] or "not waiting"}\n')
+    emit(values)
 
 
 def release_asset(tag, filename, *, description):
@@ -184,6 +215,7 @@ def publish(args):
         data={'body':json.dumps({'schema':1,'ready':ready},sort_keys=True), 'make_latest':'false'})
     state.update(state='ready', ready=ready, checkedAt=now())
     state.pop('failedKey', None)
+    state.pop('retryAt', None)
     write_index(state)
     print('Published verified bundle ' + plan['cacheKey'])
     prune(bundle_tag)
@@ -222,8 +254,16 @@ def failure(args):
         key = digest({'observed': state['observed'], 'recoverySchema': RECOVERY_SCHEMA})
         if state.get('state') == 'ready' and state.get('ready',{}).get('cacheKey') == key:
             return  # A completed atomic publication survives a later cleanup/network failure.
-        state.update(state='requires_review', failedKey=key)
+        attempts = state.get('attemptCount', 1)
+        state.update(failedKey=key)
+        if attempts < MAX_ATTEMPTS:
+            retry_at = datetime.fromisoformat(now()) + timedelta(seconds=RETRY_DELAY_SECONDS * 2 ** (attempts - 1))
+            state.update(state='retry_pending', retryAt=retry_at.isoformat())
+        else:
+            state.update(state='requires_review')
+            state.pop('retryAt', None)
         write_index(state)
+        emit({'state': state['state'], 'attempt_count': attempts, 'retry_at': state.get('retryAt', '')})
         partial = api(f'repos/{repository()}/releases/tags/relevel-bundle-{key}',missing=True)
         if partial and state.get('ready',{}).get('cacheKey') != key: remove_release(partial)
 

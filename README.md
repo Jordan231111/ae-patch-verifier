@@ -40,7 +40,9 @@ The scheduled Play API check is the source of version information. Download clic
 the Play website or repeat version discovery.
 
 `relevel-ready.yml` checks the dedicated account's current Google Play **versionCode** and the
-newest completed `main` module prebuilt every 15 minutes. An unchanged check only refreshes the
+newest completed `main` module prebuilt on a best-effort 15-minute schedule. Each Actions summary
+records the current and previous check times, decision, attempt count and next retry time.
+An unchanged check only refreshes the
 small `relevel-ready` release index. A module update reuses verified recovered inputs for the same
 Play version. A game update fetches the complete split set and runs fresh recovery. Versions,
 native ranges, String holders, imports, and binding addresses come from the current inputs;
@@ -51,9 +53,15 @@ capture two independent original-app launches in native ARM64 Android; recover a
 then install the exact candidate in a separate Android container. Every current binding and
 import helper, cold startup, Home/resume, and delayed stability must pass before the index changes
 to `ready`. Unknown VM callbacks, changed contracts, nonrepeatable native data, and failed hooks
-require review. The same failing input is not rebuilt on every poll. Maintainers can retry it with
-the workflow's **force** option after investigation.
+cannot publish. A failed preparation retries after 15 minutes, then 30 minutes, on the next
+delivered poll, with at most three attempts per input. Exhausted inputs require review. The
+workflow's **force** option resets that budget; a relevant workflow/code push also permits a
+fresh retry. A different Play version or module commit gets its own budget.
 
+Native validation waits up to 60 seconds for installed hooks and a real intercepted security
+startup callback before its metadata audit. A zero callback count remains pending; failed hooks,
+imports, or binding contracts remain failures. Failed disposable runtimes retain a screenshot
+and activity/crash diagnostics for one day; private transfer artifacts are still deleted.
 Each candidate gets one binding/hook audit. Home/resume checks process continuity and stability
 without repeating that audit. Capture digests are checked once and reused in the recovery manifest.
 Module-only updates skip the unused native compiler/sysroot and DEX analysis dependencies.
@@ -75,9 +83,11 @@ Vercel blob storage is required. Existing private module CI still uses the owner
 Actions allowance; Play checks never trigger that build. See [GitHub Actions billing](https://docs.github.com/en/billing/concepts/product-billing/github-actions)
 and [Release storage/bandwidth limits](https://docs.github.com/en/repositories/releasing-projects-on-github/about-releases).
 
-GitHub may delay scheduled jobs and can disable schedules after prolonged repository inactivity.
+GitHub may delay or drop cron events and can disable schedules after prolonged repository inactivity.
 The site rejects an observation older than one hour. Re-enable/run the workflow if scheduling is
-interrupted. Detection follows the polling interval rather than instant store-page changes. Failed or pending
+interrupted. Changing the cron expression re-registers the schedule, but cannot guarantee delivery.
+A strict 15-minute clock requires an independent scheduler dispatching this workflow; no external
+scheduler is configured by this repository. Detection follows delivered polls rather than instant store-page changes. Failed or pending
 updates cannot relabel an older bundle as current. Publication rechecks both Play and the module
 to catch updates arriving while a candidate is being prepared.
 

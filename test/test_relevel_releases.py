@@ -70,6 +70,66 @@ class ReleaseStateTests(unittest.TestCase):
         self.assertEqual(self.inspect(failed)[0]['changed'],'false')
         self.assertEqual(self.inspect(failed,force=True)[0]['changed'],'true')
 
+    def test_failed_preparations_retry_with_backoff_then_require_review(self):
+        state = self.ready()
+        state.update(state='preparing', attemptRunId=123, attemptKey=self.key)
+        for attempt in range(1, releases.MAX_ATTEMPTS + 1):
+            state['attemptCount'] = attempt
+            with patch.object(releases, 'index', return_value=(None, deepcopy(state))), \
+                 patch.object(releases, 'write_index') as write, patch.object(releases, 'api', return_value=None), \
+                 patch.object(releases, 'emit'), patch.object(releases, 'now', return_value='2026-11-04T12:00:00+00:00'):
+                releases.failure(None)
+                failed = write.call_args.args[0]
+            self.assertEqual(failed['failedKey'], self.key)
+            self.assertEqual(failed['state'], 'requires_review' if attempt == releases.MAX_ATTEMPTS else 'retry_pending')
+            if attempt < releases.MAX_ATTEMPTS:
+                self.assertEqual(failed['retryAt'], '2026-11-04T12:' + ('15' if attempt == 1 else '30') + ':00+00:00')
+            else:
+                self.assertNotIn('retryAt', failed)
+
+    def test_retry_wait_does_not_extend_the_deadline_or_start_another_build(self):
+        failed = self.ready()
+        failed.update(state='retry_pending', failedKey=self.key, attemptKey=self.key,
+                      attemptCount=1, retryAt='2026-11-04T12:15:00+00:00')
+        with patch.object(releases, 'now', return_value='2026-11-04T12:14:59+00:00'):
+            output, state = self.inspect(failed)
+        self.assertEqual(output['changed'], 'false')
+        self.assertEqual(output['decision'], 'retry_wait')
+        self.assertEqual(state['retryAt'], failed['retryAt'])
+        with patch.object(releases, 'now', return_value='2026-11-04T12:15:00+00:00'):
+            output, state = self.inspect(failed)
+        self.assertEqual(output['changed'], 'true')
+        self.assertEqual(state['attemptCount'], 2)
+        self.assertNotIn('retryAt', state)
+
+    def test_manual_retry_resets_budget_and_new_inputs_do_not_inherit_failure(self):
+        failed = self.ready()
+        failed.update(state='requires_review', failedKey=self.key, attemptKey=self.key,
+                      attemptCount=releases.MAX_ATTEMPTS)
+        output, state = self.inspect(failed, force=True)
+        self.assertEqual(output['changed'], 'true')
+        self.assertEqual(state['attemptCount'], 1)
+        self.module = 'd' * 40
+        output, state = self.inspect(failed)
+        self.assertEqual(output['changed'], 'true')
+        self.assertEqual(state['attemptCount'], 1)
+
+    def test_unfinished_failed_attempts_cannot_bypass_the_retry_budget(self):
+        failed = self.ready()
+        failed.update(state='preparing', attemptKey=self.key, attemptCount=releases.MAX_ATTEMPTS)
+        output, state = self.inspect(failed)
+        self.assertEqual(output['changed'], 'false')
+        self.assertEqual(state['state'], 'requires_review')
+
+    def test_a_published_ready_bundle_survives_later_cleanup_failure(self):
+        state = self.ready()
+        state['attemptRunId'] = 123
+        with patch.object(releases, 'index', return_value=(None, state)), \
+             patch.object(releases, 'write_index') as write, patch.object(releases, 'api') as api:
+            releases.failure(None)
+            write.assert_not_called()
+            api.assert_not_called()
+
     def test_private_repositories_cannot_silently_enable_paid_polling(self):
         with patch.object(releases,'api',return_value={'private':True}), patch.object(releases,'latest_module') as module:
             with self.assertRaisesRegex(RuntimeError,'public'): releases.inspect(self.args)
