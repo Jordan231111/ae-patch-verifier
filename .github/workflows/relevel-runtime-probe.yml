@@ -9,8 +9,10 @@ on:
   workflow_dispatch:
 permissions:
   contents: read
+  actions: read
 jobs:
   arm-host:
+    needs: play-source
     runs-on: ubuntu-24.04-arm
     timeout-minutes: 12
     steps:
@@ -19,6 +21,48 @@ jobs:
         run: bash scripts/relevel/probe-host.sh
       - name: Boot native ARM64 Android
         run: bash scripts/relevel/boot-android.sh
+      - uses: actions/setup-python@v6.1.0
+        with:
+          python-version: '3.12'
+      - name: Install the original Google Play split set
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -Eeuo pipefail
+          gh run download "$GITHUB_RUN_ID" --repo "$GITHUB_REPOSITORY" --name relevel-play-source --dir "$RUNNER_TEMP/relevel-play"
+          mapfile -t APKS < <(find "$RUNNER_TEMP/relevel-play" -name '*.apk' -type f | sort)
+          test "${#APKS[@]}" -gt 0
+          adb -s 127.0.0.1:5555 install-multiple -r "${APKS[@]}"
+          adb -s 127.0.0.1:5555 shell dumpsys package work.ponix.relevel | grep -E 'versionCode=|versionName='
+      - name: Fetch the verified prebuilt module and matching instrumentation stack
+        run: |
+          set -Eeuo pipefail
+          git clone --depth 1 --branch codex/relevel-cloud https://github.com/Jordan231111/ReLevel.git "$RUNNER_TEMP/relevel-tools"
+          for attempt in $(seq 1 24); do
+            curl --fail --silent --show-error https://api.github.com/repos/Jordan231111/ReLevel/releases?per_page=30 > "$RUNNER_TEMP/modules.json"
+            MODULE_URL=$(jq -r '[.[] | select(.draft == false and (.tag_name | test("^module-[a-f0-9]{40}$"))) | .assets[] | select(.name == "app-release.apk" and .state == "uploaded")][0].browser_download_url // empty' "$RUNNER_TEMP/modules.json")
+            [ -n "$MODULE_URL" ] && break
+            sleep 5
+          done
+          test -n "$MODULE_URL"
+          curl --fail -L --silent --show-error "$MODULE_URL" -o "$RUNNER_TEMP/relevel-module.apk"
+          curl --fail --silent --show-error https://api.github.com/repos/zer0def/undetected-frida/releases/latest > "$RUNNER_TEMP/frida-release.json"
+          VERSION=$(jq -r .tag_name "$RUNNER_TEMP/frida-release.json")
+          URL=$(jq -r '.assets[] | select(.name | test("server-.*-android-arm64.xz$")) | .browser_download_url' "$RUNNER_TEMP/frida-release.json")
+          python -m pip install --disable-pip-version-check --quiet "frida==$VERSION" frida-tools
+          curl --fail -L --silent --show-error "$URL" | xz -d > "$RUNNER_TEMP/uf-server"
+          adb -s 127.0.0.1:5555 push "$RUNNER_TEMP/uf-server" /data/local/tmp/uf-server
+          adb -s 127.0.0.1:5555 shell chmod 700 /data/local/tmp/uf-server
+          adb -s 127.0.0.1:5555 shell '/data/local/tmp/uf-server -D </dev/null >/dev/null 2>&1'
+          sha256sum "$RUNNER_TEMP/uf-server" "$RUNNER_TEMP/relevel-module.apk"
+      - name: Bootstrap the real module before Unity startup
+        run: |
+          python "$RUNNER_TEMP/relevel-tools/tools/cloud/bootstrap_probe.py" \
+            --serial 127.0.0.1:5555 --module "$RUNNER_TEMP/relevel-module.apk" \
+            --output "$RUNNER_TEMP/relevel-bootstrap.json"
+      - name: Collect disposable Android diagnostics
+        if: always()
+        run: timeout 15s docker exec relevel-android /system/bin/sh -c 'getprop sys.boot_completed; ps -A; logcat -d -t 160' || true
       - name: Remove disposable Android container
         if: always()
         run: docker rm -f relevel-android 2>/dev/null || true

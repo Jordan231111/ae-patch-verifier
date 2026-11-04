@@ -54,6 +54,9 @@ DEADLINE=$((SECONDS + 180))
 while [ "$SECONDS" -lt "$DEADLINE" ]; do
   timeout 8s adb connect 127.0.0.1:5555 >/dev/null 2>&1 || true
   if [ "$(timeout 8s adb -s 127.0.0.1:5555 shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')" = 1 ]; then
+    timeout 10s adb -s 127.0.0.1:5555 root
+    timeout 15s adb -s 127.0.0.1:5555 wait-for-device
+    test "$(timeout 8s adb -s 127.0.0.1:5555 shell id -u | tr -d '\r')" = 0
     adb -s 127.0.0.1:5555 shell getprop ro.product.cpu.abi
     adb -s 127.0.0.1:5555 shell getprop ro.build.version.sdk
     adb -s 127.0.0.1:5555 shell id
