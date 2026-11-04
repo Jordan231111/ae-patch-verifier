@@ -27,6 +27,7 @@ jobs:
       - name: Install the original Google Play split set
         env:
           GH_TOKEN: ${{ github.token }}
+          RELEVEL_CI_TRANSFER_KEY: ${{ secrets.RELEVEL_CI_TRANSFER_KEY }}
         run: |
           set -Eeuo pipefail
           gh run download "$GITHUB_RUN_ID" --repo "$GITHUB_REPOSITORY" --name relevel-play-source --dir "$RUNNER_TEMP/relevel-play"
@@ -41,7 +42,7 @@ jobs:
           set -Eeuo pipefail
           gh run download "$GITHUB_RUN_ID" --repo "$GITHUB_REPOSITORY" --name relevel-runtime-inputs --dir "$RUNNER_TEMP/relevel-inputs"
           mkdir "$RUNNER_TEMP/relevel-tools"
-          tar -xzf "$RUNNER_TEMP/relevel-inputs/tools.tar.gz" -C "$RUNNER_TEMP/relevel-tools"
+          openssl enc -d -aes-256-cbc -pbkdf2 -iter 200000 -pass env:RELEVEL_CI_TRANSFER_KEY -in "$RUNNER_TEMP/relevel-inputs/tools.enc" | tar -xz -C "$RUNNER_TEMP/relevel-tools"
           cp "$RUNNER_TEMP/relevel-inputs/app-release.apk" "$RUNNER_TEMP/relevel-module.apk"
           curl --fail --silent --show-error https://api.github.com/repos/zer0def/undetected-frida/releases/latest > "$RUNNER_TEMP/frida-release.json"
           VERSION=$(jq -r .tag_name "$RUNNER_TEMP/frida-release.json")
@@ -53,6 +54,7 @@ jobs:
           adb -s 127.0.0.1:5555 shell '/data/local/tmp/uf-server -D </dev/null >/dev/null 2>&1'
           sha256sum "$RUNNER_TEMP/uf-server" "$RUNNER_TEMP/relevel-module.apk"
       - name: Bootstrap the real module before Unity startup
+        timeout-minutes: 3
         run: |
           python "$RUNNER_TEMP/relevel-tools/tools/cloud/bootstrap_probe.py" \
             --serial 127.0.0.1:5555 --module "$RUNNER_TEMP/relevel-module.apk" \
@@ -81,13 +83,14 @@ jobs:
       - name: Stage private module inputs outside the privileged runtime
         env:
           GH_TOKEN: ${{ secrets.AE_MODULE_REPO_TOKEN }}
+          RELEVEL_CI_TRANSFER_KEY: ${{ secrets.RELEVEL_CI_TRANSFER_KEY }}
         run: |
           set -Eeuo pipefail
           mkdir "$RUNNER_TEMP/relevel-inputs"
           TAG=$(gh api 'repos/Jordan231111/ReLevel/releases?per_page=30' --jq '[.[] | select(.draft == false and (.tag_name | test("^module-[a-f0-9]{40}$"))) | select(any(.assets[]; .name == "app-release.apk" and .state == "uploaded"))][0].tag_name')
           [[ "$TAG" =~ ^module-[a-f0-9]{40}$ ]]
           gh release download "$TAG" --repo Jordan231111/ReLevel --pattern app-release.apk --dir "$RUNNER_TEMP/relevel-inputs"
-          tar --exclude=.git -czf "$RUNNER_TEMP/relevel-inputs/tools.tar.gz" -C relevel-tools .
+          tar --exclude=.git -czf - -C relevel-tools . | openssl enc -aes-256-cbc -salt -pbkdf2 -iter 200000 -pass env:RELEVEL_CI_TRANSFER_KEY -out "$RUNNER_TEMP/relevel-inputs/tools.enc"
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: relevel-runtime-inputs
