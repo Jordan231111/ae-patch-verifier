@@ -1,13 +1,13 @@
 # AE Patch Verifier and LSPatch Workshop
 
 This repository hosts the verifier UI and the short-lived GitHub Actions builders used by
-[verify-ae-modmenu.vercel.app](https://verify-ae-modmenu.vercel.app). It supports Another Eden and
-the ARM64 OnceWorld release while keeping their build inputs, release tags, and signing identities
+[verify-ae-modmenu.vercel.app](https://verify-ae-modmenu.vercel.app). It supports Another Eden,
+ARM64 OnceWorld, and ARM64 ReLevel while keeping their inputs, release tags, and signing identities
 separate. OnceWorld resolves and downloads from Google Play first through an Aurora-compatible
 client; its established APKPure path remains a guarded fallback. Another Eden Global uses Google
 Play directly, while the region-gated Japan package uses the optimized APKPure XAPK source.
 
-## Build flow
+## Another Eden and OnceWorld build flow
 
 1. The Vercel API resolves the current Google Play listing and a pinned prebuilt module commit. If
    Play listing metadata is unavailable, this lookup alone falls back to APKPure.
@@ -29,6 +29,52 @@ spending a runner or producing an incompatible package.
 The janitor workflow removes temporary `lspatch-*` and `onceworld-lspatch-*` releases. Durable
 module releases live in their module repositories and are never removed by this janitor.
 
+## ReLevel prepared downloads and updates
+
+ReLevel's Download button resolves a verified GitHub Release and redirects to its storage URL.
+It does not dispatch Actions, download Play inputs, compile a module, or recover PairIP. APK bytes
+never pass through Vercel. This targets a download start within a minute; transfer time depends on
+the recipient's connection.
+Vercel reads the fresh verified public index; private ReLevel source/module access remains in CI.
+
+`relevel-ready.yml` checks the dedicated account's current Google Play **versionCode** and the
+newest completed `main` module prebuilt every 15 minutes. An unchanged check only refreshes the
+small `relevel-ready` release index. A module update reuses verified recovered inputs for the same
+Play version. A game update fetches the complete split set and runs fresh recovery. Versions,
+native ranges, String holders, imports, and binding addresses come from the current inputs;
+there is no game-version whitelist.
+
+The expensive path runs in the background: verify Play signatures and the prebuilt module;
+capture two independent original-app launches in native ARM64 Android; recover and sign on x86;
+then install the exact candidate in a separate Android container. Every current binding and
+import helper, cold startup, Home/resume, and delayed stability must pass before the index changes
+to `ready`. Unknown VM callbacks, changed contracts, nonrepeatable native data, and failed hooks
+require review. The same failing input is not rebuilt on every poll. Maintainers can retry it with
+the workflow's **force** option after investigation.
+
+The disposable Android runtime uses a root-configured wrapper and a separate native helper to
+save Unity's writable data before its `JNI_OnLoad` and capture remaining segments just before
+`il2cpp_init`. Frida attaches afterward to capture the discovered String and
+lifecycle fields. Early Frida instrumentation interfered with protection startup; later native
+snapshots contained process pointers and were rejected. Neither workaround nor relaxed recovery
+guards is shipped: the helper stays outside the module and APKs, and the existing two-capture
+repeatability, pointer, signing, and alignment checks remain mandatory.
+
+Scheduled runs use only the public repository's standard `ubuntu-latest` and `ubuntu-24.04-arm`
+runners, with one ReLevel preparation at a time and bounded job timeouts. The workflow refuses
+private-repository polling. Durable bundles and recovered inputs use GitHub Releases; temporary
+Actions artifacts are deleted at completion. The current and previous bundle and their recovered
+inputs are retained; older ReLevel caches are pruned. No paid runner, always-on server, Vercel Cron, or
+Vercel blob storage is required. Existing private module CI still uses the owner's normal included
+Actions allowance; Play checks never trigger that build. See [GitHub Actions billing](https://docs.github.com/en/billing/concepts/product-billing/github-actions)
+and [Release storage/bandwidth limits](https://docs.github.com/en/repositories/releasing-projects-on-github/about-releases).
+
+GitHub may delay scheduled jobs and can disable schedules after prolonged repository inactivity.
+The site rejects an observation older than one hour, even if the public listing still shows the
+same display version. Re-enable/run the workflow if scheduling is interrupted. Failed or pending
+updates cannot relabel an older bundle as current. Publication rechecks both Play and the module
+to catch updates arriving while a candidate is being prepared.
+
 Both builders pin JingMatrix LSPatch `v1.2` build `487` by its release-jar SHA-256
 (`d238fdc414d121b7fa454d8b4ccf420df3a8c97d563761861ff92bd9c5da2165`) and verify the digest
 before execution. Published bundles must report Vector API 102, LSPatch 1.2, signature-bypass
@@ -45,8 +91,10 @@ The identities are intentionally different and must never be interchanged:
   fingerprint before patching.
 - **OnceWorld:** the default LSPatch host key is extracted from the exact integrity-pinned LSPatch
   jar. Its expected public certificate fingerprint is also checked before patching.
+- **ReLevel:** the existing ReLevel key signs the prebuilt module and every split. Its public
+  SHA-256 is `29b04c032802179a86374c8a13dba9ddbe8d9303f4909ac03766cb77de17c027`.
 
-Changing either identity prevents an unrooted Android installation from updating a prior build.
+Changing an identity prevents an unrooted Android installation from updating a prior build.
 Always install the complete base and split set; signing compatibility does not bypass Android's
 normal package-name and version-code rules.
 
@@ -58,6 +106,8 @@ The workflows expect these GitHub secrets:
 - `AE_HOST_KEYSTORE_BASE64`, `AE_HOST_KEYSTORE_PASSWORD`, `AE_HOST_KEY_ALIAS`
 - `AE_MODULE_REPO`, `AE_MODULE_REPO_TOKEN`
 - `ONCEWORLD_MODULE_REPO`
+- `RELEVEL_HOST_KEYSTORE_BASE64` (the existing ReLevel key, never a generated replacement)
+- `RELEVEL_CI_TRANSFER_KEY` (encrypts private module/tool inputs between public CI jobs)
 - `GPLAYDL_API_KEY` (a persistent key created once with `gplaydl link`; the short pairing code is
   not used by CI)
 - `GPLAYDL_GLOBAL_EMAIL` (the dedicated Play account selected for Global/OnceWorld downloads)
@@ -69,6 +119,8 @@ Public, non-secret identity checks use these GitHub variables:
 - `AE_JAPAN_SOURCE_CERT_SHA256`
 - `ONCEWORLD_HOST_CERT_SHA256`
 - `ONCEWORLD_SOURCE_CERT_SHA256`
+- `RELEVEL_HOST_CERT_SHA256`
+- `RELEVEL_SOURCE_CERT_SHA256S` (the reviewed complete Play signer/stamp set)
 
 The Vercel functions read repository, workflow, module, and API-token configuration from the
 environment. `.env*`, browser-test data, OS metadata, and `builder/signing/` are ignored to reduce
