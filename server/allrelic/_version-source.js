@@ -1,4 +1,4 @@
-const { resolveLatestXapk, resolveXapkVariant } = require("../_shared/apkpure.js");
+const { resolveLatestXapk, resolveXapkVariant } = require("../../api/_shared/apkpure.js");
 
 async function resolveVersion(game, { preflight = false } = {}) {
   const latest = await resolveLatestXapk(game.packageName);

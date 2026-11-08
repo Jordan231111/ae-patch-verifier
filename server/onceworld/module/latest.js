@@ -2,7 +2,7 @@ const {
   config,
   onceworldModuleConfig,
   resolveModuleCommit
-} = require("../../_shared/github.js");
+} = require("../../../api/_shared/github.js");
 const { onceworldConfig } = require("../_config.js");
 
 module.exports = async function handler(req, res) {

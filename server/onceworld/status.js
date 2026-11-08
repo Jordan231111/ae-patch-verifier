@@ -1,4 +1,4 @@
-const { config, githubJson } = require("../_shared/github.js");
+const { config, githubJson } = require("../../api/_shared/github.js");
 
 function parseNonce(value) {
   if (!value || typeof value !== "string") return "";

@@ -1,4 +1,4 @@
-const { config, githubRequest } = require("../_shared/github.js");
+const { config, githubRequest } = require("../../api/_shared/github.js");
 const { parseNonce, findRelease } = require("./_build.js");
 
 module.exports = async function handler(req, res) {

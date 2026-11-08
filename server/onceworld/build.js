@@ -4,7 +4,7 @@ const {
   onceworldModuleConfig,
   githubJson,
   resolveModuleCommit
-} = require("../_shared/github.js");
+} = require("../../api/_shared/github.js");
 const { onceworldConfig } = require("./_config.js");
 const { resolvePreferredVersion } = require("./_version-source.js");
 

@@ -1,5 +1,5 @@
-const { githubJson } = require("../_shared/github.js");
-const { readyApksAsset } = require("../_shared/release.js");
+const { githubJson } = require("../../api/_shared/github.js");
+const { readyApksAsset } = require("../../api/_shared/release.js");
 
 function parseNonce(value) {
   return typeof value === "string" && /^[0-9]{13}-[0-9a-f]{8}$/.test(value) ? value : "";

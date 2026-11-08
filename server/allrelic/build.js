@@ -1,5 +1,5 @@
 const crypto = require("crypto");
-const { config, allrelicModuleConfig, githubJson, resolveModuleCommit } = require("../_shared/github.js");
+const { config, allrelicModuleConfig, githubJson, resolveModuleCommit } = require("../../api/_shared/github.js");
 const { allrelicConfig } = require("./_config.js");
 const { resolveVersion } = require("./_version-source.js");
 

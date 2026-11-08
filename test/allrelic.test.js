@@ -19,9 +19,9 @@ function response() {
 }
 function builder({ prebuilt = true, latest = {}, fail } = {}) {
   const calls = [];
-  const route = load('api/allrelic/build.js', {
+  const route = load('server/allrelic/build.js', {
     crypto: { randomBytes: () => Buffer.from('1234abcd', 'hex') },
-    '../_shared/github.js': {
+    '../../api/_shared/github.js': {
       config: () => cfg, allrelicModuleConfig: value => value,
       resolveModuleCommit: async (_, source, options) => {
         assert.equal(options.requireAsset, 'app-release.apk');
@@ -84,8 +84,8 @@ test('AllRelic malformed requests are rejected before network dispatch', async (
 
 test('AllRelic version resolver uses APKPure only and preflights the requested ABI', async () => {
   const calls = [];
-  const { resolveVersion } = load('api/allrelic/_version-source.js', {
-    '../_shared/apkpure.js': {
+  const { resolveVersion } = load('server/allrelic/_version-source.js', {
+    '../../api/_shared/apkpure.js': {
       resolveLatestXapk: async packageName => ({ packageName, versionCode: '148', versionName: '1.2.4' }),
       resolveXapkVariant: async (...args) => calls.push(args)
     }
@@ -99,9 +99,9 @@ test('AllRelic version resolver uses APKPure only and preflights the requested A
 test('draft, partial and cross-request AllRelic assets are never ready', async () => {
   const asset = { id: 123, name: `AllRelic_1.2.4_${nonce}.apks`, size: 123, state: 'uploaded' };
   let release = { draft: false, assets: [asset] };
-  const api = load('api/allrelic/_build.js', {
-    '../_shared/github.js': { githubJson: async () => release },
-    '../_shared/release.js': require('../api/_shared/release.js')
+  const api = load('server/allrelic/_build.js', {
+    '../../api/_shared/github.js': { githubJson: async () => release },
+    '../../api/_shared/release.js': require('../api/_shared/release.js')
   });
   assert.equal((await api.findRelease(cfg, nonce)).id, 123);
   for (const wrong of [{ ...release, draft: true }, { draft: false, assets: [{ ...asset, size: 0 }] },
@@ -118,19 +118,19 @@ test('draft, partial and cross-request AllRelic assets are never ready', async (
 test('AllRelic workflow matching rejects another branch, workflow or partial nonce', async () => {
   const good = { display_title: 'AllRelic LSPatch 1.2.4 ' + nonce, event: 'workflow_dispatch',
     head_branch: 'main', path: '.github/workflows/build-allrelic-apks.yml', id: 123 };
-  const api = load('api/allrelic/_build.js', {
-    '../_shared/github.js': { githubJson: async () => ({ workflow_runs: [
+  const api = load('server/allrelic/_build.js', {
+    '../../api/_shared/github.js': { githubJson: async () => ({ workflow_runs: [
       { ...good, id: 1, head_branch: 'other' }, { ...good, id: 2, path: 'other.yml' },
       { ...good, id: 3, display_title: good.display_title + 'extra' }, good
-    ] }) }, '../_shared/release.js': {}
+    ] }) }, '../../api/_shared/release.js': {}
   });
   assert.equal((await api.findRun(cfg, nonce)).id, 123);
 });
 
 test('AllRelic negotiates storage without reading binary APK bytes', async () => {
   let location = 'https://release-assets.githubusercontent.com/signed.apks', status = 302;
-  const route = load('api/allrelic/download.js', {
-    '../_shared/github.js': { config: () => cfg, githubRequest: async (_, request) => {
+  const route = load('server/allrelic/download.js', {
+    '../../api/_shared/github.js': { config: () => cfg, githubRequest: async (_, request) => {
       assert.equal(request.headersOnly, true);
       return { status, headers: { location } };
     } },
@@ -149,8 +149,8 @@ test('AllRelic negotiates storage without reading binary APK bytes', async () =>
 });
 
 test('completed AllRelic runs without a download cannot poll as running forever', async () => {
-  const route = load('api/allrelic/status.js', {
-    '../_shared/github.js': { config: () => cfg },
+  const route = load('server/allrelic/status.js', {
+    '../../api/_shared/github.js': { config: () => cfg },
     './_build.js': { parseNonce: () => nonce, findRelease: async () => null,
       findRun: async () => ({ status: 'completed', conclusion: 'success' }) }
   });

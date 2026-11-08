@@ -35,6 +35,11 @@ The API defaults to the module repository above and `build-allrelic-apks.yml`; o
 Actions variables `ALLRELIC_SOURCE_CERT_SHA256` and `ALLRELIC_MODULE_CERT_SHA256` pin the reviewed
 original-app and dedicated ARKit certificates. No signing keys are stored in this public repo.
 
+OnceWorld and AllRelic keep their public API URLs but share `api/workshop.js` through Vercel
+rewrites. Their handlers live under `server/`. This uses eight deployment functions across all
+four games, within the Hobby plan's 12-function limit. Additional games can use the same explicit
+router without adding one deployment function per route.
+
 ## Another Eden and OnceWorld build flow
 
 1. The Vercel API resolves the current Google Play listing and a pinned prebuilt module commit. If
@@ -138,7 +143,7 @@ emulator compatibility branch retains its own loader contract.
 
 ## Signing identities
 
-The identities are intentionally different and must never be interchanged:
+Each app's signing configuration is part of its Android update contract:
 
 - **Another Eden:** the established Ashfur keystore is stored as encrypted GitHub Actions secrets.
   The workflow reconstructs it only under `$RUNNER_TEMP` and verifies its public certificate
@@ -147,6 +152,8 @@ The identities are intentionally different and must never be interchanged:
   jar. Its expected public certificate fingerprint is also checked before patching.
 - **ReLevel:** the existing ReLevel key signs the prebuilt module and every split. Its public
   SHA-256 is `29b04c032802179a86374c8a13dba9ddbe8d9303f4909ac03766cb77de17c027`.
+- **AllRelic:** the pinned LSPatch default key signs the host split set, as for OnceWorld.
+  Its embedded ARKit module uses a dedicated signing identity in the private module repository.
 
 Changing an identity prevents an unrooted Android installation from updating a prior build.
 Always install the complete base and split set; signing compatibility does not bypass Android's

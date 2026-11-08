@@ -10,10 +10,10 @@ const forbidText = (text, needle, message) => {
   if (text.includes(needle)) throw new Error(message);
 };
 
-const config = read("api/onceworld/_config.js");
-const route = read("api/onceworld/build.js");
-const versionRoute = read("api/onceworld/version.js");
-const versionSource = read("api/onceworld/_version-source.js");
+const config = read("server/onceworld/_config.js");
+const route = read("server/onceworld/build.js");
+const versionRoute = read("server/onceworld/version.js");
+const versionSource = read("server/onceworld/_version-source.js");
 const playMetadata = read("api/_shared/googleplay.js");
 const sourceFetcher = read("scripts/fetch-onceworld-source.sh");
 const playDownloader = read("scripts/download-play-apks.py");

@@ -1,5 +1,5 @@
-const { resolveLatestPlayListing } = require("../_shared/googleplay.js");
-const { resolveLatestXapk } = require("../_shared/apkpure.js");
+const { resolveLatestPlayListing } = require("../../api/_shared/googleplay.js");
+const { resolveLatestXapk } = require("../../api/_shared/apkpure.js");
 
 async function resolvePreferredVersion(game) {
   try {

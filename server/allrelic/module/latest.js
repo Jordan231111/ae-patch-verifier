@@ -1,4 +1,4 @@
-const { config, allrelicModuleConfig, resolveModuleCommit } = require("../../_shared/github.js");
+const { config, allrelicModuleConfig, resolveModuleCommit } = require("../../../api/_shared/github.js");
 const { allrelicConfig } = require("../_config.js");
 
 module.exports = async function handler(req, res) {

@@ -1,10 +1,5 @@
 {
   "functions": {
-    "api/allrelic/build.js": { "maxDuration": 60 },
-    "api/allrelic/status.js": { "maxDuration": 60 },
-    "api/allrelic/download.js": { "maxDuration": 60 },
-    "api/allrelic/version.js": { "maxDuration": 60 },
-    "api/allrelic/module/latest.js": { "maxDuration": 30 },
     "api/lspatch/build.js": {
       "maxDuration": 60
     },
@@ -17,21 +12,6 @@
     "api/module/latest.js": {
       "maxDuration": 30
     },
-    "api/onceworld/build.js": {
-      "maxDuration": 60
-    },
-    "api/onceworld/status.js": {
-      "maxDuration": 60
-    },
-    "api/onceworld/download.js": {
-      "maxDuration": 60
-    },
-    "api/onceworld/module/latest.js": {
-      "maxDuration": 30
-    },
-    "api/onceworld/version.js": {
-      "maxDuration": 30
-    },
     "api/relevel/status.js": {
       "maxDuration": 60
     },
@@ -39,6 +19,9 @@
       "maxDuration": 60
     },
     "api/relevel/tick.js": {
+      "maxDuration": 60
+    },
+    "api/workshop.js": {
       "maxDuration": 60
     }
   },
@@ -81,5 +64,47 @@
     }
   ],
   "buildCommand": "bash scripts/build-web-engine.sh",
-  "outputDirectory": "."
+  "outputDirectory": ".",
+  "rewrites": [
+    {
+      "source": "/api/allrelic/version",
+      "destination": "/api/workshop?game=allrelic&action=version"
+    },
+    {
+      "source": "/api/allrelic/module/latest",
+      "destination": "/api/workshop?game=allrelic&action=module/latest"
+    },
+    {
+      "source": "/api/allrelic/build",
+      "destination": "/api/workshop?game=allrelic&action=build"
+    },
+    {
+      "source": "/api/allrelic/status",
+      "destination": "/api/workshop?game=allrelic&action=status"
+    },
+    {
+      "source": "/api/allrelic/download",
+      "destination": "/api/workshop?game=allrelic&action=download"
+    },
+    {
+      "source": "/api/onceworld/version",
+      "destination": "/api/workshop?game=onceworld&action=version"
+    },
+    {
+      "source": "/api/onceworld/module/latest",
+      "destination": "/api/workshop?game=onceworld&action=module/latest"
+    },
+    {
+      "source": "/api/onceworld/build",
+      "destination": "/api/workshop?game=onceworld&action=build"
+    },
+    {
+      "source": "/api/onceworld/status",
+      "destination": "/api/workshop?game=onceworld&action=status"
+    },
+    {
+      "source": "/api/onceworld/download",
+      "destination": "/api/workshop?game=onceworld&action=download"
+    }
+  ]
 }
