@@ -21,6 +21,7 @@
       --once: #d2a05d;
       --once-strong: #b9783f;
       --once-soft: rgba(210, 160, 93, 0.13);
+      --allrelic: #85c9ad;
       --ok: #4ec38a;
       --fail: #ff6b6b;
       --warn: #f5b042;
@@ -91,7 +92,7 @@
 
     .launchpad {
       display: grid;
-      grid-template-columns: repeat(3, minmax(0, 1fr));
+      grid-template-columns: repeat(4, minmax(0, 1fr));
       gap: 10px;
       margin-bottom: 14px;
     }
@@ -130,6 +131,11 @@
     .launch-tab.active[data-game="onceworld"]::after { background: var(--once); }
     .launch-tab.active[data-game="anothereden"] { border-color: rgba(106, 163, 255, 0.72); background: var(--accent-soft); }
     .launch-tab.active[data-game="anothereden"]::after { background: var(--accent); }
+    .launch-tab.active[data-game="allrelic"] { border-color: var(--allrelic); background: rgba(133, 201, 173, 0.12); }
+    .launch-tab.active[data-game="allrelic"]::after { background: var(--allrelic); }
+    .launch-tab[data-game="allrelic"] .launch-mark,
+    .launch-tab.active[data-game="allrelic"] .route-tag { color: var(--allrelic); }
+    .allrelic-panel .build-spec code { color: var(--allrelic); }
 
     .launch-mark {
       display: grid;
@@ -647,6 +653,7 @@
     .foot a:hover { color: var(--accent); border-bottom-color: var(--accent); }
 
     @media (max-width: 820px) {
+      .launchpad { grid-template-columns: repeat(2, minmax(0, 1fr)); }
       .builder { grid-template-columns: 1fr; padding: 18px; }
       .cards-2 { grid-template-columns: 1fr; }
       h1 { font-size: 24px; }
@@ -668,9 +675,9 @@
 <body>
   <main>
     <header class="hero">
-      <span class="eyebrow">Release workbench &middot; three games</span>
+      <span class="eyebrow">Release workbench &middot; four games</span>
       <h1>LSPatch Workshop</h1>
-      <p class="lede">Build a ready-to-install .apks from the latest source bundle and precompiled module. Download the prepared ReLevel release, build OnceWorld, or configure an Another Eden target.</p>
+      <p class="lede">Build a ready-to-install .apks from the latest source bundle and precompiled module. Build OnceWorld or AllRelic, download ReLevel, or configure an Another Eden target.</p>
     </header>
 
     <nav class="launchpad" role="tablist" aria-label="Choose a game to build">
@@ -696,6 +703,14 @@
           <span class="launch-title">ReLevel <span class="route-tag">Ready release</span></span>
           <span class="launch-desc">A verified ARM64 release, prepared ahead of your download.</span>
           <span class="launch-meta">work.ponix.relevel</span>
+        </span>
+      </button>
+      <button id="allrelicTab" class="launch-tab" type="button" role="tab" aria-selected="false" aria-controls="allrelicPanel" data-game="allrelic" tabindex="-1">
+        <span class="launch-mark" aria-hidden="true">AR</span>
+        <span class="launch-copy">
+          <span class="launch-title">AllRelic <span class="route-tag">One click</span></span>
+          <span class="launch-desc">The latest ARM64 APKPure release with ARKit included.</span>
+          <span class="launch-meta">com.AllRelic</span>
         </span>
       </button>
     </nav>
@@ -776,6 +791,39 @@
         <button id="relevelButton" class="primary" type="button" disabled>Download ReLevel .apks</button>
         <p class="estimate">The download starts when the verified release is ready. Transfer time depends on your connection.</p>
         <div id="relevelStatus" class="status" aria-live="polite"><span class="dot"></span><span class="text">Checking for a verified release.</span></div>
+      </div>
+    </section>
+
+    <section id="allrelicPanel" class="card builder allrelic-panel game-panel hidden" role="tabpanel" aria-labelledby="allrelicTab" aria-hidden="true">
+      <div class="builder-main">
+        <div>
+          <span class="panel-kicker">APKPure &middot; ARKit included</span>
+          <h2>AllRelic ARM64 release</h2>
+          <p class="builder-sub">The latest APKPure release is paired with the latest completed ARKit module. Download the complete .apks and install it with SAI, with re-signing disabled.</p>
+        </div>
+        <dl class="build-spec">
+          <div><dt>Package</dt><dd><code>com.AllRelic</code></dd></div>
+          <div><dt>Target</dt><dd>ARM64 &middot; Android 9 or newer</dd></div>
+          <div><dt>Profile</dt><dd>Release &middot; ARKit &middot; no root required</dd></div>
+        </dl>
+      </div>
+      <div class="builder-side">
+        <div class="field">
+          <div class="field-label">Latest APKPure release</div>
+          <div class="commit-row"><span id="allrelicVersion" class="commit-chip">loading</span><span id="allrelicVersionMeta">Checking AllRelic...</span></div>
+        </div>
+        <div class="field">
+          <div class="field-label">Latest precompiled ARKit module</div>
+          <div class="commit-row"><span id="allrelicModule" class="commit-chip">loading</span><span id="allrelicModuleMeta">Checking ARKit...</span></div>
+        </div>
+        <button id="allrelicButton" class="primary" type="button" disabled>Build &amp; download AllRelic</button>
+        <p class="estimate">The download starts when packaging finishes. Runner queues and transfer time can vary.</p>
+        <div id="allrelicStatus" class="status" aria-live="polite"><span class="dot"></span><span class="text">Checking the latest release and module.</span></div>
+        <ol id="allrelicTimeline" class="build-timeline" aria-label="AllRelic build progress">
+          <li class="build-stage"><span class="stage-index">1</span><span>Queue</span></li>
+          <li class="build-stage"><span class="stage-index">2</span><span>Patch</span></li>
+          <li class="build-stage"><span class="stage-index">3</span><span>Download</span></li>
+        </ol>
       </div>
     </section>
 
@@ -881,6 +929,7 @@
   <script src="./jszip.min.js"></script>
   <script src="./native/coverage.js"></script>
   <script src="./native/report.js"></script>
+  <script src="./allrelic.js"></script>
   <script>
     const statusEl = document.getElementById("status");
     const resultsEl = document.getElementById("results");
@@ -899,6 +948,8 @@
     const builderConfigInputs = Array.from(builderForm.querySelectorAll("input, select"));
     const pickInputs = document.querySelectorAll(".pick input[type=radio]");
     const gameTabs = Array.from(document.querySelectorAll(".launch-tab[role=tab]"));
+    const allrelicPanel = document.getElementById("allrelicPanel");
+    const allrelicWorkshop = createAllrelicWorkshop({ readJsonSafe, sameOriginApiUrl, sleep });
     const onceworldPanel = document.getElementById("onceworldPanel");
     const onceworldButton = document.getElementById("onceworldButton");
     const onceworldStatus = document.getElementById("onceworldStatus");
@@ -1000,6 +1051,7 @@
       const showOnceworld = game === "onceworld";
       const showAnotherEden = game === "anothereden";
       const showRelevel = game === "relevel";
+      const showAllrelic = game === "allrelic";
       gameTabs.forEach(tab => {
         const selected = tab.dataset.game === game;
         tab.classList.toggle("active", selected);
@@ -1012,7 +1064,10 @@
       builderForm.setAttribute("aria-hidden", showAnotherEden ? "false" : "true");
       relevelPanel.classList.toggle("hidden", !showRelevel);
       relevelPanel.setAttribute("aria-hidden", showRelevel ? "false" : "true");
+      allrelicPanel.classList.toggle("hidden", !showAllrelic);
+      allrelicPanel.setAttribute("aria-hidden", showAllrelic ? "false" : "true");
       if (showRelevel) refreshRelevel();
+      if (showAllrelic) allrelicWorkshop.refresh();
     }
 
     function syncPickSelection() {
@@ -1021,7 +1076,7 @@
 
     function refreshAllMetadata() {
       lastMetadataRefreshAt = Date.now();
-      return Promise.all([refreshModuleCommit(), refreshOnceworldModule(), refreshOnceworldVersion(), refreshRelevel()]);
+      return Promise.all([refreshModuleCommit(), refreshOnceworldModule(), refreshOnceworldVersion(), refreshRelevel(), allrelicWorkshop.refresh()]);
     }
 
     function setRelevelStatus(text, kind = "info") {

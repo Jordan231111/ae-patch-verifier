@@ -16,7 +16,11 @@ function config() {
     onceworldWorkflow: process.env.ONCEWORLD_GITHUB_WORKFLOW_FILE || "build-onceworld-apks.yml",
     onceworldModuleOwner: process.env.ONCEWORLD_MODULE_REPO_OWNER || "",
     onceworldModuleRepo: process.env.ONCEWORLD_MODULE_REPO_NAME || "",
-    onceworldModuleRef: process.env.ONCEWORLD_MODULE_REF || "main"
+    onceworldModuleRef: process.env.ONCEWORLD_MODULE_REF || "main",
+    allrelicWorkflow: process.env.ALLRELIC_GITHUB_WORKFLOW_FILE || "build-allrelic-apks.yml",
+    allrelicModuleOwner: process.env.ALLRELIC_MODULE_REPO_OWNER || "Jordan231111",
+    allrelicModuleRepo: process.env.ALLRELIC_MODULE_REPO_NAME || "allrelicsmodule",
+    allrelicModuleRef: process.env.ALLRELIC_MODULE_REF || "main"
   };
 }
 
@@ -27,6 +31,16 @@ function onceworldModuleConfig(cfg) {
     moduleRepo: cfg.onceworldModuleRepo,
     moduleRef: cfg.onceworldModuleRef,
     houdiniModuleRef: cfg.onceworldModuleRef
+  };
+}
+
+function allrelicModuleConfig(cfg) {
+  return {
+    ...cfg,
+    moduleOwner: cfg.allrelicModuleOwner,
+    moduleRepo: cfg.allrelicModuleRepo,
+    moduleRef: cfg.allrelicModuleRef,
+    houdiniModuleRef: cfg.allrelicModuleRef
   };
 }
 
@@ -171,6 +185,7 @@ module.exports = {
   moduleSourceLabel,
   moduleFilenamePart,
   onceworldModuleConfig,
+  allrelicModuleConfig,
   githubRequest,
   githubJson,
   resolveModuleCommit

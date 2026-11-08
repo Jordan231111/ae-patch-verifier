@@ -1,5 +1,10 @@
 {
   "functions": {
+    "api/allrelic/build.js": { "maxDuration": 60 },
+    "api/allrelic/status.js": { "maxDuration": 60 },
+    "api/allrelic/download.js": { "maxDuration": 60 },
+    "api/allrelic/version.js": { "maxDuration": 60 },
+    "api/allrelic/module/latest.js": { "maxDuration": 30 },
     "api/lspatch/build.js": {
       "maxDuration": 60
     },

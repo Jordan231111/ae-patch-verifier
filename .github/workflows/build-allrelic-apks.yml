@@ -1,0 +1,112 @@
+name: Build AllRelic LSPatched APKS
+run-name: AllRelic LSPatch ${{ inputs.versionName }} ${{ inputs.nonce }}
+on:
+  workflow_dispatch:
+    inputs:
+      versionCode:
+        description: APKPure version code resolved by the server
+        required: true
+      versionName:
+        description: APKPure version name resolved by the server
+        required: true
+      moduleSha:
+        description: Completed ARKit prebuilt commit
+        required: true
+      nonce:
+        description: Request nonce from Vercel
+        required: true
+permissions:
+  contents: write
+concurrency:
+  group: allrelic-${{ inputs.nonce }}
+  cancel-in-progress: false
+env:
+  MODULE_REPO: Jordan231111/allrelicsmodule
+  LSPATCH_JAR_URL: https://github.com/JingMatrix/LSPatch/releases/download/v1.2/lspatch-v1.2-487-release.jar
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: actions/setup-node@v6.0.0
+        with:
+          node-version: '24'
+      - uses: actions/setup-java@v6.0.0
+        with:
+          distribution: temurin
+          java-version: '21'
+      - name: Download APKPure source, prebuilt module, and pinned patcher in parallel
+        env:
+          GH_TOKEN: ${{ secrets.AE_MODULE_REPO_TOKEN }}
+          VERSION_CODE: ${{ inputs.versionCode }}
+          VERSION_NAME: ${{ inputs.versionName }}
+          MODULE_SHA: ${{ inputs.moduleSha }}
+          NONCE: ${{ inputs.nonce }}
+        run: |
+          set -Eeuo pipefail
+          [[ "$VERSION_CODE" =~ ^[1-9][0-9]*$ ]]
+          [[ "$VERSION_NAME" =~ ^[A-Za-z0-9._+-]+$ ]]
+          [[ "$MODULE_SHA" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$NONCE" =~ ^[0-9]{13}-[0-9a-f]{8}$ ]]
+          WORK="$RUNNER_TEMP/allrelic-lspatch"
+          mkdir -p "$WORK"/{source,module,tools}
+          bash scripts/download-apkpure-xapk.sh com.AllRelic arm64-v8a \
+            "$VERSION_CODE" "$VERSION_NAME" "$WORK/source" &
+          SOURCE_PID=$!
+          gh release download "module-$MODULE_SHA" --repo "$MODULE_REPO" \
+            --pattern app-release.apk --pattern build-info.json --dir "$WORK/module" &
+          MODULE_PID=$!
+          curl --fail --location --silent --show-error --retry 3 \
+            --connect-timeout 20 --max-time 120 -o "$WORK/tools/lspatch.jar" "$LSPATCH_JAR_URL" &
+          PATCHER_PID=$!
+          wait "$SOURCE_PID"
+          wait "$MODULE_PID"
+          wait "$PATCHER_PID"
+          echo "WORK=$WORK" >> "$GITHUB_ENV"
+      - name: Verify, patch, sign, and package the complete split set
+        env:
+          VERSION_CODE: ${{ inputs.versionCode }}
+          VERSION_NAME: ${{ inputs.versionName }}
+          MODULE_SHA: ${{ inputs.moduleSha }}
+          NONCE: ${{ inputs.nonce }}
+          SOURCE_CERT: ${{ vars.ALLRELIC_SOURCE_CERT_SHA256 }}
+          MODULE_CERT: ${{ vars.ALLRELIC_MODULE_CERT_SHA256 }}
+        run: |
+          set -euo pipefail
+          SDK_ROOT="${ANDROID_HOME:-/usr/local/lib/android/sdk}"
+          if [ ! -x "$SDK_ROOT/build-tools/35.0.0/apksigner" ]; then
+            "$SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" 'build-tools;35.0.0' >/dev/null
+          fi
+          python3 - <<'PY'
+          import hashlib, json, os, pathlib
+          root = pathlib.Path(os.environ['WORK']) / 'module'
+          info = json.loads((root / 'build-info.json').read_text())
+          assert info['moduleSha'] == os.environ['MODULE_SHA']
+          assert info['certificateSha256'] == os.environ['MODULE_CERT']
+          assert info['moduleId'] == 'com.arkit.core' and info['api'] == 102
+          assert info['architecture'] == 'arm64-v8a' and info['asset'] == 'app-release.apk'
+          assert hashlib.file_digest((root / 'app-release.apk').open('rb'), 'sha256').hexdigest() == info['sha256']
+          PY
+          OUT="$GITHUB_WORKSPACE/AllRelic_${VERSION_NAME}_LSPatched_ARKit_ARM64_${MODULE_SHA:0:7}_${NONCE}.apks"
+          python3 scripts/allrelic/build_apks.py \
+            --source "$WORK/source" --module "$WORK/module/app-release.apk" \
+            --patcher "$WORK/tools/lspatch.jar" --output "$OUT" \
+            --sdk "$SDK_ROOT/build-tools/35.0.0" --module-sha "$MODULE_SHA" \
+            --version-code "$VERSION_CODE" --version-name "$VERSION_NAME" \
+            --source-cert "$SOURCE_CERT" --module-cert "$MODULE_CERT"
+          echo "OUT=$OUT" >> "$GITHUB_ENV"
+      - name: Publish a short-lived verified package
+        env:
+          GH_TOKEN: ${{ github.token }}
+          NONCE: ${{ inputs.nonce }}
+          VERSION_NAME: ${{ inputs.versionName }}
+          MODULE_SHA: ${{ inputs.moduleSha }}
+        run: |
+          set -euo pipefail
+          TAG="allrelic-lspatch-$NONCE"
+          gh release create "$TAG" --draft --target "$GITHUB_SHA" \
+            --title "AllRelic $VERSION_NAME ARKit ${MODULE_SHA:0:7}" \
+            --notes 'Temporary ARM64 AllRelic package from APKPure with the signed API-102 ARKit prebuilt embedded in LSPatch 1.2. Packaging, signatures and embedded inputs verified; rootless gameplay is not an automated CI assertion. Removed by the LSPatch janitor.'
+          gh release upload "$TAG" "$OUT"
+          gh release edit "$TAG" --draft=false

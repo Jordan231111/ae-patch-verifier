@@ -2,10 +2,38 @@
 
 This repository hosts the verifier UI and the short-lived GitHub Actions builders used by
 [verify-ae-modmenu.vercel.app](https://verify-ae-modmenu.vercel.app). It supports Another Eden,
-ARM64 OnceWorld, and ARM64 ReLevel while keeping their inputs, release tags, and signing identities
+ARM64 OnceWorld, ARM64 ReLevel, and ARM64 AllRelic while keeping their inputs and release tags
 separate. OnceWorld resolves and downloads from Google Play first through an Aurora-compatible
 client; its established APKPure path remains a guarded fallback. Another Eden Global uses Google
 Play directly, while the region-gated Japan package uses the optimized APKPure XAPK source.
+
+## AllRelic APKPure builds
+
+AllRelic is the fourth game (`com.AllRelic`, ARM64). Its version lookup and downloads use
+APKPure directly. The API preflights the exact ARM64 XAPK before dispatch and pins both its
+versionCode/name and a completed `module-<sha>` release from the private
+`Jordan231111/allrelicsmodule` repository. The website never compiles module source.
+
+The module's trusted `main` CI publishes the signed API-102 `app-release.apk` with a hash,
+certificate, and commit manifest. The AllRelic builder downloads that prebuilt, the APKPure
+split set, and integrity-pinned LSPatch 1.2 in parallel. It validates every source APK's signing
+identity, actual package/version/split identity, archive integrity, and ARM64 libraries. It
+then embeds ARKit in the base, aligns and signs the complete split set with LSPatch's default
+host key, and checks embedded origin/module hashes, loader configuration, and output signatures.
+The `.apks` contains `manifest.json`, `build-info.json`, and the complete signed split set.
+Use SAI with re-signing disabled to install it.
+
+AllRelic downloads use `allrelic-lspatch-*` short-lived releases and the existing janitor.
+Partial/draft uploads cannot become downloadable. The signed module prebuilt remains durable
+in its private module repository. Packaging verification does not claim rootless gameplay or
+license-server acceptance; `build-info.json` explicitly records `runtimeValidated: false`.
+
+The API defaults to the module repository above and `build-allrelic-apks.yml`; optional
+`ALLRELIC_MODULE_REPO_OWNER`, `ALLRELIC_MODULE_REPO_NAME`, `ALLRELIC_MODULE_REF`, and
+`ALLRELIC_GITHUB_WORKFLOW_FILE` override those choices. Vercel's existing GitHub token and
+`AE_MODULE_REPO_TOKEN` in Actions must be able to read the private AllRelic module repository.
+Actions variables `ALLRELIC_SOURCE_CERT_SHA256` and `ALLRELIC_MODULE_CERT_SHA256` pin the reviewed
+original-app and dedicated ARKit certificates. No signing keys are stored in this public repo.
 
 ## Another Eden and OnceWorld build flow
 

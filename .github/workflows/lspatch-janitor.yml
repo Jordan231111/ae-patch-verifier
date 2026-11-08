@@ -69,6 +69,7 @@ jobs:
               case "$tag_name" in
                 lspatch-*) ;;
                 onceworld-lspatch-*) ;;
+                allrelic-lspatch-*) ;;
                 *) continue ;;
               esac
 
@@ -76,7 +77,7 @@ jobs:
               # Empty drafts use our timestamped nonce until an asset exists.
               age=0
               if [ "$created_at" = "pending" ]; then
-                if [[ "$tag_name" =~ ^(onceworld-)?lspatch-([0-9]{13})- ]]; then
+                if [[ "$tag_name" =~ ^(onceworld-|allrelic-)?lspatch-([0-9]{13})- ]]; then
                   age=$(( now_epoch - BASH_REMATCH[2] / 1000 ))
                 fi
               elif [ -n "$created_at" ] && [ "$created_at" != "null" ]; then
@@ -116,6 +117,7 @@ jobs:
               case "$tag_name" in
                 lspatch-*) ;;
                 onceworld-lspatch-*) ;;
+                allrelic-lspatch-*) ;;
                 *) continue ;;
               esac
 
