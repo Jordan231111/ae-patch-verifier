@@ -55,13 +55,14 @@
     "versionCode": 1016
   },
   "epicconquest-arm64-release": {
-    "downloadUrl": "https://github.com/Jordan231111/ae-patch-verifier/releases/download/catalog-epicconquest-arm64-release-003c80fad646cfa6fd22/epicconquest-arm64-release-3.1.5.apks",
+    "downloadUrl": "https://github.com/Jordan231111/ae-patch-verifier/releases/download/catalog-epicconquest-arm64-release-572d6acf3adfc90bb187/epicconquest-arm64-release-3.1.5.apks",
     "moduleDigest": "7cfb08a65fc3d35d92ff1b732e1392cebf47baae37503ff0f278fafebdae9d80",
     "moduleVersion": "0.6.8",
-    "sha256": "003c80fad646cfa6fd22077377d95fbfc8e863670a34496511180860fa4eaa9f",
+    "requestKey": "c1352d7b60769d39c0423739de3540042a6d28abbd382f028b364b764bc1ba56",
+    "sha256": "572d6acf3adfc90bb1878d0ac862085c27c4129e75c599544d38e66983e88d6f",
     "signer": "29b04c032802179a86374c8a13dba9ddbe8d9303f4909ac03766cb77de17c027",
-    "sizeBytes": 358851225,
-    "updatedAt": "2026-11-19T22:04:30Z",
+    "sizeBytes": 358851228,
+    "updatedAt": "2026-11-19T22:27:51Z",
     "version": "3.1.5",
     "versionCode": 509
   },
