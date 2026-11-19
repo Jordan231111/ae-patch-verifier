@@ -96,3 +96,40 @@ test("an upload can become readable on a later poll without trusting incomplete 
   state.asset = good;
   assert.equal(JSON.parse((await call("status")).body).status, "ready");
 });
+
+for (const sameEdition of [false, true]) {
+  test(sameEdition ? "simultaneous visitors join the winning ticket" : "other editions can update Git without repeating store lookups", async t => {
+    let lookups = 0, writes = 0, dispatches = 0, competing = null;
+    const play = require("../api/_shared/googleplay");
+    t.mock.method(play, "resolveLatestPlayListing", async () => {
+      lookups++;
+      return { source: "google-play", versionName: "99.0", updatedAt: 123 };
+    });
+    t.mock.method(github, "config", () => ({ githubOwner: "Jordan231111", githubRepo: "ae-patch-verifier", githubRef: "main" }));
+    t.mock.method(github, "githubJson", async (_, method, path, body) => {
+      if (method === "GET") return { encoding: "base64", content: Buffer.from(JSON.stringify(
+        path.includes("requests/") && competing ? competing : {})).toString("base64") };
+      if (method === "PUT") {
+        writes++;
+        if (writes <= 3) {
+          if (sameEdition) competing = JSON.parse(Buffer.from(body.content, "base64").toString());
+          throw Object.assign(new Error("Concurrent Git update"), { status: 409 });
+        }
+        return { content: { sha: "revision" } };
+      }
+      assert.equal(method, "POST");
+      dispatches++;
+      return {};
+    });
+    delete require.cache[require.resolve("../server/catalog/requests")];
+    const { build } = require("../server/catalog/requests");
+    const res = { setHeader() {}, end(text) { this.body = JSON.parse(text); } };
+    await build({ method: "POST", url: "/api/catalog/build", headers: { "content-type": "application/json" },
+      body: { variant: variant.id } }, res);
+    assert.equal(res.statusCode, 202);
+    assert.equal(res.body.status, "preparing");
+    assert.equal(lookups, 1);
+    assert.equal(dispatches, sameEdition ? 0 : 1);
+    assert.equal(writes, sameEdition ? 1 : 4);
+  });
+}

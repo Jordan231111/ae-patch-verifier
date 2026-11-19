@@ -135,7 +135,16 @@ function currentVariant(v, records) {
   return mergeReady({ apps: [{ variants: [v] }] }, records).apps[0].variants[0];
 }
 
-async function start(cfg, app, v, attempt = 0) {
+async function joinRequest(cfg, app, variant, key, ticket) {
+  if (ticket?.key !== key) return null;
+  const transfer = await availableTransfer(cfg, variant, key, ticket);
+  if (transfer) return transfer;
+  if (await runState(cfg, app, ticket) === "pending") return waiting(variant, ticket);
+  const current = currentVariant(variant, (await readFile(cfg, "ready.json")).data);
+  return current.requestKey === key ? ready(current) : null;
+}
+
+async function start(cfg, app, v) {
   const [source, module, files] = await Promise.all([
     sourceFor(app, v), moduleFor(cfg, app, v), readFile(cfg, "ready.json")
   ]);
@@ -148,12 +157,9 @@ async function start(cfg, app, v, attempt = 0) {
   if (current.requestKey === key && current.version === source.versionName
       && (!source.versionCode || current.versionCode === Number(source.versionCode))) return ready(current);
   const path = `requests/${v.id}.json`;
-  const claim = await readFile(cfg, path);
-  if (claim.data?.key === key) {
-    const transfer = await availableTransfer(cfg, v, key, claim.data);
-    if (transfer) return transfer;
-    if (await runState(cfg, app, claim.data) === "pending") return waiting(v, claim.data);
-  }
+  let claim = await readFile(cfg, path);
+  const joined = await joinRequest(cfg, app, v, key, claim.data);
+  if (joined) return joined;
   if (source.source === "apkpure" && !inputs[app.id]) {
     await resolveXapkVariant(v.packageName, source.versionCode, "arm64-v8a", source.versionName);
   }
@@ -166,11 +172,23 @@ async function start(cfg, app, v, attempt = 0) {
     content: Buffer.from(JSON.stringify(ticket)).toString("base64"), ...(sha && { sha })
   });
   let saved;
-  try {
-    saved = await saveTicket(claim.sha);
-  } catch (error) {
-    if ([409, 422].includes(error.status) && attempt < 2) return start(cfg, app, v, attempt + 1);
-    throw error;
+  // Other editions advance the same Git branch. Retry the small ticket write
+  // without repeating store lookups or dispatching a second build.
+  for (let attempt = 0; ; attempt++) {
+    try {
+      saved = await saveTicket(claim.sha);
+      break;
+    } catch (error) {
+      if (![409, 422].includes(error.status) || attempt >= 7) throw error;
+      const delay = 50 + Math.random() * Math.min(1000, 100 * 2 ** attempt);
+      await new Promise(resolve => setTimeout(resolve, delay));
+      claim = await readFile(cfg, path);
+      const competing = await joinRequest(cfg, app, v, key, claim.data);
+      if (competing) return competing;
+      if (claim.data?.key !== key && claim.data?.time > time) {
+        return { status: "changed", variant: v.id, version: claim.data.version, message: "The upstream release changed. Retry to check the new version." };
+      }
+    }
   }
   const candidate = { app: app.id, variant: v.id, version: source.versionName, code: source.versionCode || null,
     source: source.source, module: module.sha, previous: current.sha256, key };
@@ -278,6 +296,7 @@ function handler(action) {
           if (result.status === "ready" && !result.transferUrl) recentlyReady.set(variant.id, { result, expires: Date.now() + 10000 });
         }
       }
+      if (result.status === "changed") return send(409, result);
       return send(result.status === "preparing" ? 202 : 200, result);
     } catch (error) {
       console.error("Catalog request failed", item.variant.id, error.status || error.name);

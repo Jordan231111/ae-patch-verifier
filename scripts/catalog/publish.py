@@ -5,6 +5,7 @@ import base64
 from datetime import datetime, timedelta, timezone
 import json
 import os
+import random
 from pathlib import Path
 import re
 import subprocess
@@ -112,7 +113,7 @@ def announce(variant, record):
     if asset_id <= 0 or os.environ["WORKSHOP_ARTIFACT_DIGEST"].removeprefix("sha256:") != record["sha256"]:
         raise ValueError("Uploader and verified bundle receipts disagree")
     path = f"requests/{variant}.json"
-    for attempt in range(4):
+    for attempt in range(8):
         ticket, revision = read_record(path)
         if (ticket.get("key") != record["requestKey"] or ticket.get("nonce") != os.environ["WORKSHOP_NONCE"]
                 or ticket.get("runId", run_id) != run_id or ticket.get("version") != record["version"]):
@@ -130,9 +131,9 @@ def announce(variant, record):
             print(f"Verified download available for {variant}.", flush=True)
             return
         except subprocess.CalledProcessError as error:
-            if attempt == 3 or not any(f"(HTTP {n})" in error.stderr for n in (409, 422)):
+            if attempt == 7 or not any(f"(HTTP {n})" in error.stderr for n in (409, 422)):
                 raise
-            time.sleep(0.3 * (attempt + 1))
+            time.sleep(random.uniform(0.05, min(1.0, 0.15 * 2 ** attempt)))
 
 
 def update_ready(key, record, previous_digest):
