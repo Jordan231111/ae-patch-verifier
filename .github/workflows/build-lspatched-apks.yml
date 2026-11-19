@@ -60,6 +60,7 @@ on:
         required: true
 
 permissions:
+  actions: read
   contents: write
 
 env:
@@ -135,6 +136,7 @@ jobs:
                 --locale "$PLAY_LOCALE" \
                 --account-email "$PLAY_ACCOUNT_EMAIL" \
                 --expected-version "$EXPECTED_VERSION_NAME" \
+                --fast-transfer \
                 --metadata-source google-play \
                 --output "$WORK/source"
             else
@@ -338,10 +340,19 @@ jobs:
           archive: false
           if-no-files-found: error
           retention-days: 1
-      - name: Publish the requested catalog edition
+      - name: Verify the requested catalog edition
+        id: catalog_bundle
         if: inputs.catalog != ''
         env:
           GH_TOKEN: ${{ github.token }}
           CANDIDATE: ${{ inputs.catalog }}
           MODULE_SHA: ${{ inputs.moduleSha }}
         run: python3 scripts/catalog/refresh.py existing
+      - name: Deliver the verified catalog edition
+        if: steps.catalog_bundle.outputs.file != ''
+        uses: ./.github/actions/deliver-catalog
+        with:
+          file: ${{ steps.catalog_bundle.outputs.file }}
+          nonce: ${{ inputs.nonce }}
+        env:
+          GH_TOKEN: ${{ github.token }}

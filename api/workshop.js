@@ -4,6 +4,7 @@ const handlers = Object.freeze({
   "catalog/index": require("../server/catalog/index.js"),
   "catalog/build": require("../server/catalog/requests.js").build,
   "catalog/status": require("../server/catalog/requests.js").status,
+  "catalog/download": require("../server/catalog/requests.js").download,
   "allrelic/version": require("../server/allrelic/version.js"),
   "allrelic/module/latest": require("../server/allrelic/module/latest.js"),
   "allrelic/build": require("../server/allrelic/build.js"),

@@ -22,7 +22,7 @@ def play_digest(path: Path) -> str:
     return base64.urlsafe_b64encode(digest.digest()).decode().rstrip("=")
 
 
-def download_with_aria(files, output: Path) -> None:
+def download_with_aria(files, output: Path, fast_transfer=False) -> None:
     input_file = output / "aria2-input"
     lines = []
     for item in files:
@@ -32,15 +32,32 @@ def download_with_aria(files, output: Path) -> None:
             lines.append(f"  header=Cookie: {cookie}")
     input_file.write_text("\n".join(lines) + "\n")
 
-    subprocess.run([
-        "aria2c", "--input-file", str(input_file), "--dir", str(output),
+    base = [
+        "aria2c", "--dir", str(output),
         "--console-log-level=warn", "--summary-interval=0",
         "--max-concurrent-downloads=4", "--max-connection-per-server=16",
-        "--split=16", "--min-split-size=2M", "--file-allocation=none",
-        "--max-tries=3", "--retry-wait=2", "--connect-timeout=20", "--timeout=120",
+        "--split=16", "--file-allocation=none",
         "--allow-overwrite=true", "--auto-file-renaming=false"
-    ], check=True)
-    input_file.unlink(missing_ok=True)
+    ]
+    remaining = output / "aria2-unfinished"
+    try:
+        fetch = input_file
+        if fast_transfer:
+            # Reconnect a slow CDN range instead of waiting on the last few MiB.
+            result = subprocess.run([*base, "--input-file", str(input_file), "--min-split-size=1M",
+                                     "--lowest-speed-limit=512K", "--auto-save-interval=1", "--max-tries=1",
+                                     "--connect-timeout=10", "--timeout=15", "--save-session", str(remaining)])
+            if result.returncode == 0:
+                fetch = None
+            elif remaining.is_file() and remaining.stat().st_size:
+                fetch = remaining
+                print("[source] Resuming unfinished Play transfers without a speed floor.", flush=True)
+        if fetch:
+            subprocess.run([*base, "--input-file", str(fetch), "--min-split-size=2M",
+                            "--max-tries=3", "--retry-wait=2", "--connect-timeout=20", "--timeout=120"], check=True)
+    finally:
+        input_file.unlink(missing_ok=True)
+        remaining.unlink(missing_ok=True)
 
     for item in files:
         raw = item["raw"]
@@ -63,6 +80,7 @@ def main() -> None:
     parser.add_argument("--expected-version", default="unknown")
     parser.add_argument("--metadata-source", required=True)
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--fast-transfer", action="store_true", help="Recover slow on-demand CDN transfers using partial files")
     parser.add_argument("--metadata-only", action="store_true",
                         help="Check the account's current Play version without purchasing or downloading")
     args = parser.parse_args()
@@ -123,7 +141,7 @@ def main() -> None:
     if expected_split not in {entry["id"] for entry in split_entries}:
         raise RuntimeError(f"Google Play split set is missing {expected_split}")
 
-    download_with_aria(files, args.output)
+    download_with_aria(files, args.output, args.fast_transfer)
     manifest = {
         "package_name": args.package,
         "version_code": app.version_code,

@@ -1,9 +1,9 @@
 {
   "packager": {
     "repository": "Jordan231111/epicconquest",
-    "commit": "428fd78c150ca81eab4a4aa3efedc26c87e18816",
+    "commit": "f18d11c11b6be24ea900d8477cf3709101face90",
     "files": {
-      "package-lspatch.py": "68c0a95a4992c318a0bb8dd7dc5e2ab7a412f2461fab6e59214a80e45f65a63f",
+      "package-lspatch.py": "b14fe454417be27830be5b4c45d909388483f6d08e4e7721fb75700d78825378",
       "download-lspatch.sh": "57a9062b5adb114e03068aff58f1fc1b2cfc233ca44fd7474589b1f0b195b550"
     }
   },

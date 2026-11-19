@@ -151,11 +151,10 @@ async function resolveModuleCommit(cfg, moduleSource, options = {}) {
   // List recent branch commits (newest first) instead of just HEAD, so we can hand the builder the
   // newest completed prebuilt. The website never compiles the module; that
   // belongs to module CI, outside the user's APKS build.
-  const commits = await githubJson(
-    cfg,
-    "GET",
-    `/repos/${cfg.moduleOwner}/${cfg.moduleRepo}/commits?sha=${encodeURIComponent(ref)}&per_page=30`
-  );
+  const [commits, shas] = await Promise.all([
+    githubJson(cfg, "GET", `/repos/${cfg.moduleOwner}/${cfg.moduleRepo}/commits?sha=${encodeURIComponent(ref)}&per_page=30`),
+    options.preferPrebuilt === false ? null : publishedModuleShas(cfg, options.requireAsset).catch(() => new Set())
+  ]);
   const head = Array.isArray(commits) ? commits[0] : null;
   if (!head || typeof head.sha !== "string" || head.sha.length < 7) {
     throw new Error(`Could not resolve latest ${moduleSourceLabel(moduleSource)} module commit`);
@@ -165,8 +164,7 @@ async function resolveModuleCommit(cfg, moduleSource, options = {}) {
   let prebuilt = false;
   // Main may use the newest completed build. Other variants require their
   // exact branch HEAD, never a pre-fork ancestor from main.
-  if (options.preferPrebuilt !== false) {
-    const shas = await publishedModuleShas(cfg, options.requireAsset).catch(() => new Set());
+  if (shas) {
     const withPrebuilt = moduleSource === "main"
       ? commits.find(c => c && shas.has(String(c.sha).toLowerCase()))
       : (shas.has(head.sha.toLowerCase()) ? head : null);

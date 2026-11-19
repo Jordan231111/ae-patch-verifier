@@ -3,6 +3,7 @@ const { config, githubJson, githubRequest, resolveModuleCommit, onceworldModuleC
 const { resolveLatestPlayListing } = require("../../api/_shared/googleplay");
 const { resolveLatestXapk, resolveXapkVariant } = require("../../api/_shared/apkpure");
 const { mergeReady } = require("./index");
+const { transferRecord, cachedRedirect, transferRedirect } = require("./transfer");
 const catalog = require("../../catalog.json");
 const inputs = require("../../scripts/catalog/inputs.json");
 
@@ -101,6 +102,13 @@ function waiting(v, ticket) {
     statusUrl: `/api/catalog/status?variant=${encodeURIComponent(v.id)}&key=${ticket.key}` };
 }
 
+async function availableTransfer(cfg, variant, key, ticket) {
+  const record = transferRecord(variant, key, ticket);
+  if (!record || !await transferRedirect(cfg, variant, record)) return null;
+  const query = new URLSearchParams({ variant: variant.id, key, sha256: record.sha256 });
+  return ready({ ...record, id: variant.id, downloadUrl: `/api/catalog/download?${query}` });
+}
+
 async function runState(cfg, app, ticket) {
   const age = Date.now() - ticket.time;
   if (ticket.failed) return "failed";
@@ -137,8 +145,10 @@ async function start(cfg, app, v, attempt = 0) {
       && (!source.versionCode || current.versionCode === Number(source.versionCode))) return ready(current);
   const path = `requests/${v.id}.json`;
   const claim = await readFile(cfg, path);
-  if (claim.data?.key === key && await runState(cfg, app, claim.data) === "pending") {
-    return waiting(v, claim.data);
+  if (claim.data?.key === key) {
+    const transfer = await availableTransfer(cfg, v, key, claim.data);
+    if (transfer) return transfer;
+    if (await runState(cfg, app, claim.data) === "pending") return waiting(v, claim.data);
   }
   if (source.source === "apkpure" && !inputs[app.id]) {
     await resolveXapkVariant(v.packageName, source.versionCode, "arm64-v8a", source.versionName);
@@ -181,11 +191,39 @@ async function poll(cfg, app, v, key) {
   const [file, claim] = await Promise.all([readFile(cfg, "ready.json"), readFile(cfg, `requests/${v.id}.json`)]);
   const current = currentVariant(v, file.data);
   if (current.requestKey === key) return ready(current);
+  const transfer = await availableTransfer(cfg, v, key, claim.data);
+  if (transfer) return transfer;
   if (claim.data?.key === key && await runState(cfg, app, claim.data) === "pending") return waiting(v, claim.data);
   // Publication can finish between the initial read and the Actions status response.
   const latest = currentVariant(v, (await readFile(cfg, "ready.json")).data);
   return latest.requestKey === key ? ready(latest) : { status: "failed", variant: v.id,
     message: "The release could not be prepared or has changed. Check again to retry." };
+}
+
+async function download(cfg, v, key, sha256) {
+  const cached = cachedRedirect(v, key, sha256);
+  if (cached) return cached;
+  const [files, claim] = await Promise.all([readFile(cfg, "ready.json"), readFile(cfg, `requests/${v.id}.json`)]);
+  const permanent = currentVariant(v, files.data);
+  if (permanent.requestKey === key && permanent.sha256 === sha256) return permanent.downloadUrl;
+  const record = transferRecord(v, key, claim.data);
+  if (record?.sha256 === sha256) {
+    const url = await transferRedirect(cfg, v, record);
+    if (url) return url;
+  }
+  // A previously offered file can outlive its request ticket or be promoted during this lookup.
+  const tag = `catalog-${v.id}-${sha256.slice(0, 20)}`;
+  const base = `repos/${cfg.githubOwner}/${cfg.githubRepo}`;
+  try {
+    const release = await githubJson(cfg, "GET", `/${base}/releases/tags/${tag}`);
+    const asset = release.assets?.find(a => a.digest === `sha256:${sha256}` && a.state === "uploaded"
+      && a.name.startsWith(v.id + "-") && /^[\w.-]+\.apks$/.test(a.name));
+    const expected = asset && `https://github.com/${cfg.githubOwner}/${cfg.githubRepo}/releases/download/${tag}/${asset.name}`;
+    return !release.draft && release.tag_name === tag && expected === asset?.browser_download_url ? expected : null;
+  } catch (error) {
+    if (error.status !== 404) throw error;
+    return null;
+  }
 }
 
 function handler(action) {
@@ -194,8 +232,8 @@ function handler(action) {
     res.setHeader("cache-control", "no-store");
     const send = (status, data) => { res.statusCode = status; res.end(JSON.stringify(data)); };
     const method = action === "build" ? "POST" : "GET";
-    if (req.method !== method) {
-      res.setHeader("allow", method);
+    if (req.method !== method && !(action === "download" && req.method === "HEAD")) {
+      res.setHeader("allow", action === "download" ? "GET, HEAD" : method);
       return send(405, { message: "Method not allowed" });
     }
     const url = new URL(req.url, "https://localhost");
@@ -207,9 +245,20 @@ function handler(action) {
     }
     const item = entry(action === "build" ? body?.variant : url.searchParams.get("variant"));
     const key = url.searchParams.get("key");
-    if (!item || (action === "status" && !/^[a-f0-9]{64}$/.test(key || ""))) return send(400, { message: "Invalid download request" });
+    const sha256 = url.searchParams.get("sha256");
+    if (!item || (action !== "build" && !/^[a-f0-9]{64}$/.test(key || ""))
+        || (action === "download" && !/^[a-f0-9]{64}$/.test(sha256 || ""))) {
+      return send(400, { message: "Invalid download request" });
+    }
     try {
       const { app, variant } = item;
+      if (action === "download") {
+        const location = await download(config(), variant, key, sha256);
+        if (!location) return send(409, { message: "This edition changed or is being prepared. Check the catalog again." });
+        res.statusCode = 302;
+        res.setHeader("location", location);
+        return res.end();
+      }
       let result;
       if (action === "status") {
         result = await poll(config(), app, variant, key);
@@ -233,4 +282,4 @@ function handler(action) {
   };
 }
 
-module.exports = { build: handler("build"), status: handler("status"), entry, identity, workflowInputs };
+module.exports = { build: handler("build"), status: handler("status"), download: handler("download"), entry, identity, workflowInputs };

@@ -8,7 +8,9 @@ Each download request checks the current upstream release and prebuilt module. A
 
 ReLevel keeps its separate 15-minute background checker, validation workflow, and authority over its own downloads. Browsing or searching the catalog does not queue builds for the other apps.
 
-The publishing step checks the signed split set and compares the uploaded size and SHA-256 before updating that edition's receipt on the data-only `workshop-ready` branch. Its Git configuration disables Vercel deployments. The CDN-cached `/api/catalog` feeds the searchable mobile list. The request/status endpoints independently check fresh release data and hand the download to the browser. A cached download is bound to the selected edition and its original and module identities.
+After checking the complete signed split set, the workflow uploads the finished file as a raw Actions artifact. Waiting visitors can download it as soon as its run, filename, size and SHA-256 match the verified receipt. The same job then archives the same bytes as a permanent GitHub Release. Its checksum and content-addressed URL become the cached download only after publication succeeds. If the temporary transfer is unavailable, the request continues to the permanent release. Temporary artifacts expire after a day. ReLevel uses its own established download gate.
+
+The data-only `workshop-ready` branch holds the per-edition receipts and coalesced requests. Its Git configuration disables Vercel deployments. The CDN-cached `/api/catalog` feeds the mobile list. The browser downloads files directly from storage through a short-lived redirect or a permanent release URL.
 
 ## AllRelic APKPure builds
 

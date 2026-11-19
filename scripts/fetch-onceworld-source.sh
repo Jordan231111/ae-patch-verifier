@@ -40,6 +40,7 @@ onceworld_prepare_google_play() (
     --locale en-US \
     "${account_args[@]}" \
     --expected-version "$EXPECTED_VERSION_NAME" \
+    --fast-transfer \
     --metadata-source "$METADATA_SOURCE" \
     --output "$ready_dir"
 )

@@ -1,18 +1,28 @@
 """Publish verified, immutable APKS assets and atomically advance release metadata."""
 
+import argparse
 import base64
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 import json
 import os
 from pathlib import Path
 import re
 import subprocess
-import tempfile
 import time
 
 
 BRANCH = "workshop-ready"
 REPO = os.environ.get("GITHUB_REPOSITORY", "Jordan231111/ae-patch-verifier")
+
+
+def delivery_dir():
+    return Path(os.environ["RUNNER_TEMP"]) / "workshop-delivery"
+
+
+def bundle_name(key, version):
+    if not re.fullmatch(r"[a-z0-9-]+", key) or not re.fullmatch(r"[\w.-]+", version, re.ASCII):
+        raise ValueError("Invalid variant or app version")
+    return f"{key}-{version}.apks"
 
 
 def gh(*args, **kwargs):
@@ -32,10 +42,8 @@ def api(path, method="GET", data=None):
 
 
 def stage_asset(key, version, path, fingerprint):
-    if not re.fullmatch(r"[a-z0-9-]+", key) or not re.fullmatch(r"[\w.-]+", version, re.ASCII):
-        raise ValueError("Invalid variant or app version")
     tag = f"catalog-{key}-{fingerprint[:20]}"
-    filename = f"{key}-{version}.apks"
+    filename = bundle_name(key, version)
     release = api(f"releases/tags/{tag}")
     if not release:
         # A draft interrupted before publication may only be discoverable with the CLI.
@@ -58,10 +66,9 @@ def stage_asset(key, version, path, fingerprint):
         api(f'releases/assets/{asset["id"]}', "DELETE")
         asset = None
     if not asset and release["draft"]:
-        with tempfile.TemporaryDirectory(dir=path.parent) as folder:
-            upload = Path(folder) / filename
-            os.link(path, upload)
-            gh("release", "upload", tag, str(upload), "-R", REPO)
+        if path.name != filename:
+            raise ValueError("Staged bundle has the wrong filename")
+        gh("release", "upload", tag, str(path), "-R", REPO)
         assets = api(f'releases/{release["id"]}/assets')
         asset = next((a for a in assets if a["name"] == filename), None)
     if not asset or (asset["size"], asset["digest"], asset["state"]) != (
@@ -85,12 +92,47 @@ def publish_verified(release, asset, receipt):
             "updatedAt": datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z")}
 
 
-def ready_file():
-    file = api(f"contents/ready.json?ref={BRANCH}")
+def read_record(path):
+    endpoint = f"repos/{REPO}/contents/{path}?ref={BRANCH}"
+    file = api(f"contents/{path}?ref={BRANCH}")
     if file and file.get("encoding") == "none":
-        raw = gh("api", f"repos/{REPO}/contents/ready.json?ref={BRANCH}", "-H", "Accept: application/vnd.github.raw+json")
+        raw = gh("api", endpoint, "-H", "Accept: application/vnd.github.raw+json")
         return json.loads(raw), file["sha"]
     return (json.loads(base64.b64decode(file["content"])), file["sha"]) if file else ({}, None)
+
+
+def ready_file():
+    return read_record("ready.json")
+
+
+def announce(variant, record):
+    run_id = int(os.environ["GITHUB_RUN_ID"])
+    asset_id = int(os.environ["WORKSHOP_ARTIFACT_ID"])
+    name = bundle_name(variant, record["version"])
+    if asset_id <= 0 or os.environ["WORKSHOP_ARTIFACT_DIGEST"].removeprefix("sha256:") != record["sha256"]:
+        raise ValueError("Uploader and verified bundle receipts disagree")
+    path = f"requests/{variant}.json"
+    for attempt in range(4):
+        ticket, revision = read_record(path)
+        if (ticket.get("key") != record["requestKey"] or ticket.get("nonce") != os.environ["WORKSHOP_NONCE"]
+                or ticket.get("runId", run_id) != run_id or ticket.get("version") != record["version"]):
+            print("The original request is no longer current.")
+            return
+        # GitHub's REST read replica can lag the successful upload. Readers confirm
+        # the stored object and its actual expiry before handing out a signed URL.
+        now = datetime.now(timezone.utc)
+        ticket.update(runId=run_id, transfer={**record, "variant": variant, "artifactId": asset_id,
+                      "runId": run_id, "expiresAt": (now + timedelta(hours=23)).isoformat(),
+                      "updatedAt": now.isoformat(timespec="seconds")})
+        try:
+            api("contents/" + path, "PUT", {"sha": revision, "branch": BRANCH, "message": f"Offer verified {name}",
+                                            "content": base64.b64encode(json.dumps(ticket).encode()).decode()})
+            print(f"Verified download available for {variant}.", flush=True)
+            return
+        except subprocess.CalledProcessError as error:
+            if attempt == 3 or not any(f"(HTTP {n})" in error.stderr for n in (409, 422)):
+                raise
+            time.sleep(0.3 * (attempt + 1))
 
 
 def update_ready(key, record, previous_digest):
@@ -118,3 +160,18 @@ def update_ready(key, record, previous_digest):
             if attempt == 8:
                 raise
             time.sleep(1 + attempt)
+
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser()
+    parser.add_argument("operation", choices=["announce", "archive"])
+    args = parser.parse_args()
+    payload = json.loads((delivery_dir() / "receipt.json").read_bytes())
+    key, record = payload["variant"], payload["record"]
+    if args.operation == "announce":
+        announce(key, record)
+    else:
+        path = delivery_dir() / bundle_name(key, record["version"])
+        release, asset = stage_asset(key, record["version"], path, record["sha256"])
+        published = publish_verified(release, asset, record)
+        update_ready(key, published, payload["previous"])

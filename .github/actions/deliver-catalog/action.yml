@@ -1,0 +1,33 @@
+name: Deliver verified catalog bundle
+description: Offer a verified raw APK set while saving its permanent release.
+inputs:
+  file:
+    description: Exact path to the verified APK set
+    required: true
+  nonce:
+    description: Original visitor request
+    required: true
+runs:
+  using: composite
+  steps:
+    - name: Upload verified file for waiting visitors
+      id: transfer
+      continue-on-error: true
+      uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+      with:
+        path: ${{ inputs.file }}
+        archive: false
+        if-no-files-found: error
+        retention-days: 1
+    - name: Confirm the transfer receipt
+      if: steps.transfer.outcome == 'success'
+      continue-on-error: true
+      shell: bash
+      env:
+        WORKSHOP_ARTIFACT_ID: ${{ steps.transfer.outputs.artifact-id }}
+        WORKSHOP_ARTIFACT_DIGEST: ${{ steps.transfer.outputs.artifact-digest }}
+        WORKSHOP_NONCE: ${{ inputs.nonce }}
+      run: python3 scripts/catalog/publish.py announce
+    - name: Save the permanent release
+      shell: bash
+      run: python3 scripts/catalog/publish.py archive

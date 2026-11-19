@@ -3,16 +3,19 @@
 import argparse
 from concurrent.futures import ThreadPoolExecutor
 import base64
+import errno
 import json
 import os
 from pathlib import Path
 import re
+import shutil
 import subprocess
 import sys
 import tempfile
+import time
 
 from bundle import certificate, digest, verify_bundle
-from publish import publish_verified, ready_file, stage_asset, update_ready
+from publish import bundle_name, delivery_dir, ready_file
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -29,7 +32,7 @@ def play(package, folder, *options):
     # Each subprocess gets only the credentials it uses. Its diagnostic output stays on the runner.
     subprocess.run([sys.executable, ROOT / "scripts/download-play-apks.py", "--package", package,
                     "--architecture", "arm64-v8a", "--account-email", os.getenv("PLAY_EMAIL", ""),
-                    "--metadata-source", "google-play", "--output", folder, *options],
+                    "--metadata-source", "google-play", "--fast-transfer", "--output", folder, *options],
                    check=True, capture_output=True, timeout=330,
                    env=child_env("GPLAYDL_API_KEY"))
 
@@ -83,6 +86,7 @@ def verified_originals(package, target, root, source_signer):
 
 
 def build_private(target, variant, root, output):
+    started = time.monotonic()
     spec = INPUTS[target["app"]]
     package = variant["packageName"]
     env = {**child_env(), "GH_TOKEN": os.environ["MODULE_READ_TOKEN"]}
@@ -92,16 +96,23 @@ def build_private(target, variant, root, output):
     packager = INPUTS["packager"]
     with ThreadPoolExecutor(max_workers=4) as pool:
         originals = pool.submit(verified_originals, package, target, root, spec["sourceSigner"])
-        downloads = [pool.submit(private_file, ["release", "download", "workshop-input-" + spec["moduleSha256"][:20],
-                     "-R", spec["repository"], "-p", "module.apk", "-O", "-"], env, module, spec["moduleSha256"])]
+        prebuilt = pool.submit(private_file, ["release", "download", "workshop-input-" + spec["moduleSha256"][:20],
+                              "-R", spec["repository"], "-p", "module.apk", "-O", "-"], env, module, spec["moduleSha256"])
+        downloads = []
         for name, fingerprint in packager["files"].items():
             route = f'repos/{packager["repository"]}/contents/tools/{name}?ref={packager["commit"]}'
             downloads.append(pool.submit(private_file, ["api", route, "-H", "Accept: application/vnd.github.raw+json"],
                                          env, tools / name, fingerprint))
         for download in downloads:
             download.result()
+        # The pinned packager reuses the checked JAR from this directory.
+        helper = tools / "download-lspatch.sh"
+        helper.chmod(0o700)
+        subprocess.run([helper], env=child_env(), stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, check=True, timeout=100)
+        prebuilt.result()
         apks = originals.result()
-    (tools / "download-lspatch.sh").chmod(0o700)
+    prepared = time.monotonic()
+    print(f"Original app and checked private inputs ready in {prepared - started:.2f}s.", flush=True)
     key = root / "signing.jks"
     key.write_bytes(base64.b64decode("".join(os.environ["HOST_KEYSTORE"].split()), validate=True))
     key.chmod(0o600)
@@ -109,8 +120,9 @@ def build_private(target, variant, root, output):
                "TEMPLATE_KEY_ALIAS": "androiddebugkey", "TEMPLATE_KEY_PASS": "android",
                "TEMPLATE_CERT_SHA256": variant["signer"]}
     # This is the existing pinned private packager. Only its final APK set may be published.
-    subprocess.run([sys.executable, tools / "package-lspatch.py", "--module", module, "--output", output, *apks],
+    subprocess.run([sys.executable, tools / "package-lspatch.py", "--module", module, "--output", output, "--fast-archive", *apks],
                    check=True, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, env=signing, timeout=480)
+    print(f"Signed bundle produced in {time.monotonic() - prepared:.2f}s.", flush=True)
     return {"moduleDigest": spec["moduleSha256"], "moduleVersion": spec["moduleVersion"]}
 
 
@@ -138,20 +150,30 @@ def prepare(target, existing):
             output = root / "bundle.apks"
             metadata = build_private(target, variant, root, output)
         verify_args = (output, variant["packageName"], target["version"], variant["signer"], target["code"])
-        if os.getenv("VERIFY_ONLY") == "true":
-            receipt = verify_bundle(*verify_args)
-            print(f'Verified {variant["id"]} {receipt["version"]} ({receipt["versionCode"]}).')
-            return
-        # A draft is private to repository writers. Upload the finished file while the
-        # independent APK verification runs. Both receipts are required for promotion.
-        with ThreadPoolExecutor(max_workers=1) as pool:
-            checked = pool.submit(verify_bundle, *verify_args)
-            release, asset = stage_asset(variant["id"], target["version"], output, digest(output))
-            receipt = checked.result()
+        started = time.monotonic()
+        receipt = verify_bundle(*verify_args)
+        print(f"Finished file and Android signatures verified in {time.monotonic() - started:.2f}s.", flush=True)
         if receipt["versionCode"] < current["versionCode"]:
             raise ValueError("The delivered app is older than the published version")
-        published = publish_verified(release, asset, {**receipt, **metadata, "requestKey": target["key"]})
-        update_ready(variant["id"], published, target["previous"])
+        if os.getenv("VERIFY_ONLY") == "true":
+            print(f'Verified {variant["id"]} {receipt["version"]} ({receipt["versionCode"]}).')
+            return
+        directory = delivery_dir()
+        directory.mkdir(mode=0o700, parents=True, exist_ok=True)
+        final = directory / bundle_name(variant["id"], receipt["version"])
+        # Only the verified bundle is in the upload step's exact file path.
+        try:
+            os.link(output, final)
+        except OSError as error:
+            if error.errno != errno.EXDEV:
+                raise
+            shutil.copyfile(output, final)
+        record = {**receipt, **metadata, "requestKey": target["key"]}
+        (directory / "receipt.json").write_text(json.dumps({
+            "variant": variant["id"], "previous": target["previous"], "record": record
+        }))
+        with open(os.environ["GITHUB_OUTPUT"], "a") as out:
+            print(f"file={final}", file=out)
 
 
 if __name__ == "__main__":

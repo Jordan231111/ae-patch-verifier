@@ -42,6 +42,7 @@ on:
         required: true
 
 permissions:
+  actions: read
   contents: write
 
 concurrency:
@@ -318,10 +319,19 @@ jobs:
             --repo "$GITHUB_REPOSITORY" \
             --title "OnceWorld ${VERSION_LABEL} OWKit ${MODULE_SHA_SHORT}" \
             --notes "Temporary private ARM64 OnceWorld build for ${PACKAGE_NAME}. Source ${SOURCE_KIND}. Module ${MODULE_SHA_SHORT}. Automatically removed by the lspatch janitor."
-      - name: Publish the requested catalog edition
+      - name: Verify the requested catalog edition
+        id: catalog_bundle
         if: inputs.catalog != ''
         env:
           GH_TOKEN: ${{ github.token }}
           CANDIDATE: ${{ inputs.catalog }}
           MODULE_SHA: ${{ inputs.moduleSha }}
         run: python3 scripts/catalog/refresh.py existing
+      - name: Deliver the verified catalog edition
+        if: steps.catalog_bundle.outputs.file != ''
+        uses: ./.github/actions/deliver-catalog
+        with:
+          file: ${{ steps.catalog_bundle.outputs.file }}
+          nonce: ${{ inputs.nonce }}
+        env:
+          GH_TOKEN: ${{ github.token }}
