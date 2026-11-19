@@ -78,14 +78,14 @@
     "versionCode": 156
   },
   "rustaxion-arm64-release": {
-    "downloadUrl": "https://github.com/Jordan231111/ae-patch-verifier/releases/download/catalog-rustaxion-arm64-release-2502083e3a237c2f8242/rustaxion-arm64-release-1.4.2.apks",
+    "downloadUrl": "https://github.com/Jordan231111/ae-patch-verifier/releases/download/catalog-rustaxion-arm64-release-696359ee90d6eb79c18f/rustaxion-arm64-release-1.4.2.apks",
     "moduleDigest": "401eee47216fd521ee824983fed68900bb1eb657a7523cc4f52ec1f91dfe5489",
     "moduleVersion": "0.6.2",
-    "requestKey": "e4ea3d598a90de3f82ad738d39c3fea90c5e9aa8a883eb83e9db55d3df88928e",
-    "sha256": "2502083e3a237c2f82420b5fab66906a6c436dfcf1fefd08aaf9163d65ff2695",
+    "requestKey": "3c687239751098c52417584a5eb645d625ecde0c430a646481ec633ab7b76fad",
+    "sha256": "696359ee90d6eb79c18fe40a10632c35a001694d01b8579cec9d8eb6b737edde",
     "signer": "29b04c032802179a86374c8a13dba9ddbe8d9303f4909ac03766cb77de17c027",
-    "sizeBytes": 259757860,
-    "updatedAt": "2026-11-19T23:30:45Z",
+    "sizeBytes": 260174097,
+    "updatedAt": "2026-11-19T23:37:01Z",
     "version": "1.4.2",
     "versionCode": 10402
   }
