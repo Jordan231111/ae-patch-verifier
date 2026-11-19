@@ -1,11 +1,14 @@
 # AE Patch Verifier and LSPatch Workshop
 
-This repository hosts the verifier UI and the short-lived GitHub Actions builders used by
-[verify-ae-modmenu.vercel.app](https://verify-ae-modmenu.vercel.app). It supports Another Eden,
-ARM64 OnceWorld, ARM64 ReLevel, and ARM64 AllRelic while keeping their inputs and release tags
-separate. OnceWorld resolves and downloads from Google Play first through an Aurora-compatible
-client; its established APKPure path remains a guarded fallback. Another Eden Global uses Google
-Play directly, while the region-gated Japan package uses the optimized APKPure XAPK source.
+The mobile app library at [LSPatch Workshop](https://verify-ae-modmenu.vercel.app/) serves prepared, signed ARM64 APK sets. Each entry shows the app version and download size. Another Eden editions share a selector. The [advanced workshop](https://verify-ae-modmenu.vercel.app/workshop) contains the per-app builders and native verifier.
+
+## Prepared releases
+
+The catalog workflow checks store versions twice an hour. Rust Axion and Epic Conquest 2 use pinned precompiled APKs from private releases, the existing private packaging tool, and the workshop's matching signing identity. Google Play is the preferred original source. An ARM64 APKPure fallback must match the selected release and trusted original signer. The existing region-specific builders supply OnceWorld, AllRelic, and Another Eden. ReLevel retains its own release verification and update schedule.
+
+For each changed edition the workflow checks the base and splits, package identity, version code, and signing certificate. It verifies the uploaded asset's SHA-256 and size before advancing that edition in the `workshop-ready` branch. A failed build leaves the previously verified download available. The CDN-cached `/api/catalog` overlays this small index on the deploy snapshot in `catalog.json`. The browser downloads the selected immutable APKS asset directly.
+
+To exercise a current build, run **Prepare workshop catalog** with its app ID and **verify_only**. To add a prepared app, supply its verified snapshot entry in `catalog.json` and its update inputs in `scripts/catalog/inputs.json` for the private-prebuilt method. An input change should pin the new private module version and SHA-256. Only complete signed APK sets belong in public catalog releases.
 
 ## AllRelic APKPure builds
 

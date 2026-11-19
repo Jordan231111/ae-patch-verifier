@@ -67,6 +67,14 @@
   "outputDirectory": ".",
   "rewrites": [
     {
+      "source": "/workshop",
+      "destination": "/workshop.html"
+    },
+    {
+      "source": "/api/catalog",
+      "destination": "/api/workshop?game=catalog&action=index"
+    },
+    {
       "source": "/api/allrelic/version",
       "destination": "/api/workshop?game=allrelic&action=version"
     },

@@ -9,7 +9,7 @@ const requireText = (text, needle, message) => {
 const route = read("api/lspatch/build.js");
 const workflow = read(".github/workflows/build-lspatched-apks.yml");
 const downloader = read("scripts/download-play-apks.py");
-const frontend = read("index.html");
+const frontend = read("workshop.html");
 
 for (const needle of [
   'packageName: "games.wfs.anothereden"',

@@ -1,6 +1,7 @@
 // Multiple game routes share one deployment entry point on Vercel Hobby.
 // Static imports keep bundling explicit; app handlers retain their method checks.
 const handlers = Object.freeze({
+  "catalog/index": require("../server/catalog/index.js"),
   "allrelic/version": require("../server/allrelic/version.js"),
   "allrelic/module/latest": require("../server/allrelic/module/latest.js"),
   "allrelic/build": require("../server/allrelic/build.js"),
@@ -15,6 +16,7 @@ const handlers = Object.freeze({
 
 module.exports = async function handler(req, res) {
   const url = new URL(req.url || "/", "http://localhost");
+  if (url.pathname === "/api/catalog") return handlers["catalog/index"](req, res);
   const original = /^\/api\/(allrelic|onceworld)\/([a-z]+(?:\/[a-z]+)?)$/.exec(url.pathname);
   const game = original ? original[1] : req.query?.game ?? url.searchParams.get("game");
   const action = original ? original[2] : req.query?.action ?? url.searchParams.get("action");

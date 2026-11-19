@@ -18,7 +18,7 @@ const playMetadata = read("api/_shared/googleplay.js");
 const sourceFetcher = read("scripts/fetch-onceworld-source.sh");
 const playDownloader = read("scripts/download-play-apks.py");
 const workflow = read(".github/workflows/build-onceworld-apks.yml");
-const frontend = read("index.html");
+const frontend = read("workshop.html");
 
 requireText(config, '"app-lsposed-release.apk"', "OnceWorld must request the modern prebuilt module");
 forbidText(config, "app-lspatch-release.apk", "classic OnceWorld module asset returned");

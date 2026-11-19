@@ -1,0 +1,22 @@
+{
+  "packager": {
+    "repository": "Jordan231111/epicconquest",
+    "commit": "428fd78c150ca81eab4a4aa3efedc26c87e18816",
+    "files": {
+      "package-lspatch.py": "68c0a95a4992c318a0bb8dd7dc5e2ab7a412f2461fab6e59214a80e45f65a63f",
+      "download-lspatch.sh": "57a9062b5adb114e03068aff58f1fc1b2cfc233ca44fd7474589b1f0b195b550"
+    }
+  },
+  "rustaxion": {
+    "repository": "Jordan231111/rustAxionModule",
+    "moduleVersion": "0.6.2",
+    "moduleSha256": "401eee47216fd521ee824983fed68900bb1eb657a7523cc4f52ec1f91dfe5489",
+    "sourceSigner": "94e57893b8dea2d5f1df56aa886e1c4e31c0a1ddae4ba6839b56aeb69669c9cf"
+  },
+  "epicconquest": {
+    "repository": "Jordan231111/epicconquest",
+    "moduleVersion": "0.6.8",
+    "moduleSha256": "7cfb08a65fc3d35d92ff1b732e1392cebf47baae37503ff0f278fafebdae9d80",
+    "sourceSigner": "b1223cddeff0b9c3e557e525c31af7b5c7e4a3df3570f6fca22adb78ba0ced0a"
+  }
+}

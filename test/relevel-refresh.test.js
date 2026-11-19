@@ -178,7 +178,7 @@ test('actual preparations, retry backoff and compatibility review keep their dis
 });
 
 test('the visible release panel continues polling after it becomes ready', async () => {
-  const source = fs.readFileSync(path.join(__dirname, '../index.html'), 'utf8');
+  const source = fs.readFileSync(path.join(__dirname, '../workshop.html'), 'utf8');
   const code = source.slice(source.indexOf('    async function refreshRelevel()'), source.indexOf('    async function downloadRelevel()'));
   for (const status of ['ready', 'checking']) {
     const timers = [];
@@ -196,7 +196,7 @@ test('the visible release panel continues polling after it becomes ready', async
 });
 
 test('an expired download immediately resumes readiness checks', async () => {
-  const source = fs.readFileSync(path.join(__dirname, '../index.html'), 'utf8');
+  const source = fs.readFileSync(path.join(__dirname, '../workshop.html'), 'utf8');
   const code = source.slice(source.indexOf('    async function downloadRelevel()'), source.indexOf('    function setOnceworldStatus('));
   let refreshed = 0;
   const context = { latestRelevel: readyState().ready, relevelDownloading: false, relevelButton: {},
