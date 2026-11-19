@@ -22,31 +22,41 @@ def gh(*args, **kwargs):
 def api(path, method="GET", data=None):
     args = ["api", f"repos/{REPO}/{path}", "--method", method]
     try:
-        return json.loads(gh(*args, *(["--input", "-"] if data is not None else []),
-                             input=json.dumps(data) if data is not None else None))
+        result = gh(*args, *(["--input", "-"] if data is not None else []),
+                    input=json.dumps(data) if data is not None else None)
+        return json.loads(result) if result.strip() else None
     except subprocess.CalledProcessError as error:
         if method == "GET" and "(HTTP 404)" in error.stderr:
             return None
         raise
 
 
-def publish_asset(key, path, receipt):
-    fingerprint = receipt["sha256"]
-    if not re.fullmatch(r"[a-z0-9-]+", key) or not re.fullmatch(r"[\w.-]+", receipt["version"], re.ASCII):
+def stage_asset(key, version, path, fingerprint):
+    if not re.fullmatch(r"[a-z0-9-]+", key) or not re.fullmatch(r"[\w.-]+", version, re.ASCII):
         raise ValueError("Invalid variant or app version")
     tag = f"catalog-{key}-{fingerprint[:20]}"
-    filename = f'{key}-{receipt["version"]}.apks'
+    filename = f"{key}-{version}.apks"
     release = api(f"releases/tags/{tag}")
     if not release:
-        # Unpublished drafts can be found by gh release view, including on retries.
-        exists = subprocess.run(["gh", "release", "view", tag, "-R", REPO],
-                                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).returncode == 0
-        if not exists:
-            gh("release", "create", tag, "-R", REPO, "--draft", "--latest=false",
-               "--title", f'{key} {receipt["version"]}', "--notes", f"SHA-256: {fingerprint}")
-        info = json.loads(gh("release", "view", tag, "-R", REPO, "--json", "databaseId"))
-        release = api(f'releases/{info["databaseId"]}')
+        # A draft interrupted before publication may only be discoverable with the CLI.
+        previous = subprocess.run(["gh", "release", "view", tag, "-R", REPO, "--json", "databaseId"],
+                                  capture_output=True, text=True)
+        if previous.returncode == 0:
+            release = api(f'releases/{json.loads(previous.stdout)["databaseId"]}')
+    if not release:
+        try:
+            release = api("releases", "POST", {"tag_name": tag, "draft": True, "make_latest": "false",
+                                               "name": f"{key} {version}", "body": f"SHA-256: {fingerprint}"})
+        except subprocess.CalledProcessError as error:
+            if "(HTTP 422)" not in error.stderr:
+                raise
+            info = json.loads(gh("release", "view", tag, "-R", REPO, "--json", "databaseId"))
+            release = api(f'releases/{info["databaseId"]}')
     asset = next((a for a in release["assets"] if a["name"] == filename), None)
+    if asset and asset["state"] == "starter" and release["draft"]:
+        # GitHub can leave an empty staging asset after an interrupted upload.
+        api(f'releases/assets/{asset["id"]}', "DELETE")
+        asset = None
     if not asset and release["draft"]:
         with tempfile.TemporaryDirectory(dir=path.parent) as folder:
             upload = Path(folder) / filename
@@ -55,22 +65,31 @@ def publish_asset(key, path, receipt):
         assets = api(f'releases/{release["id"]}/assets')
         asset = next((a for a in assets if a["name"] == filename), None)
     if not asset or (asset["size"], asset["digest"], asset["state"]) != (
-            receipt["sizeBytes"], f"sha256:{fingerprint}", "uploaded"):
-        raise ValueError("Published asset does not match the verified local bundle")
+            path.stat().st_size, f"sha256:{fingerprint}", "uploaded"):
+        raise ValueError("Stored asset does not match the local bundle")
+    return release, asset
+
+
+def publish_verified(release, asset, receipt):
+    if asset["digest"] != "sha256:" + receipt["sha256"] or asset["size"] != receipt["sizeBytes"]:
+        raise ValueError("Verification and storage receipts disagree")
     if release["draft"]:
-        gh("release", "edit", tag, "-R", REPO, "--draft=false", "--latest=false")
-    # Draft asset links may contain GitHub's temporary "untagged-..." placeholder.
-    published = api(f"releases/tags/{tag}")
-    final = next((a for a in published["assets"] if a["id"] == asset["id"]), None)
-    expected_url = f"https://github.com/{REPO}/releases/download/{tag}/{filename}"
-    if published["draft"] or not final or final["browser_download_url"] != expected_url:
-        raise ValueError("The release does not have its permanent download address yet")
-    return {**receipt, "downloadUrl": expected_url,
+        release = api(f'releases/{release["id"]}', "PATCH", {"draft": False, "make_latest": "false"})
+    # Draft asset links can contain a temporary untagged placeholder.
+    url = f'https://github.com/{REPO}/releases/download/{release["tag_name"]}/{asset["name"]}'
+    if not any(a["id"] == asset["id"] and a["browser_download_url"] == url for a in release["assets"]):
+        release = api(f'releases/tags/{release["tag_name"]}')
+    if release["draft"] or not any(a["id"] == asset["id"] and a["browser_download_url"] == url for a in release["assets"]):
+        raise ValueError("The verified release does not have its permanent download URL")
+    return {**receipt, "downloadUrl": url,
             "updatedAt": datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z")}
 
 
 def ready_file():
     file = api(f"contents/ready.json?ref={BRANCH}")
+    if file and file.get("encoding") == "none":
+        raw = gh("api", f"repos/{REPO}/contents/ready.json?ref={BRANCH}", "-H", "Accept: application/vnd.github.raw+json")
+        return json.loads(raw), file["sha"]
     return (json.loads(base64.b64decode(file["content"])), file["sha"]) if file else ({}, None)
 
 

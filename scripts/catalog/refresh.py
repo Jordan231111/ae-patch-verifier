@@ -1,6 +1,7 @@
 """Prepare a visitor-requested APK set and publish its verified release receipt."""
 
 import argparse
+from concurrent.futures import ThreadPoolExecutor
 import base64
 import json
 import os
@@ -11,7 +12,7 @@ import sys
 import tempfile
 
 from bundle import certificate, digest, verify_bundle
-from publish import publish_asset, ready_file, update_ready
+from publish import publish_verified, ready_file, stage_asset, update_ready
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -19,9 +20,9 @@ CATALOG = json.loads((ROOT / "catalog.json").read_bytes())["apps"]
 INPUTS = json.loads((ROOT / "scripts/catalog/inputs.json").read_bytes())
 
 
-def lookup(package, strategy):
+def mirror_version(package):
     return json.loads(subprocess.check_output(
-        ["node", ROOT / "scripts/catalog/lookup.js", package, strategy], timeout=85))
+        ["node", ROOT / "scripts/catalog/lookup.js", package], timeout=85))
 
 
 def play(package, folder, *options):
@@ -29,7 +30,7 @@ def play(package, folder, *options):
     subprocess.run([sys.executable, ROOT / "scripts/download-play-apks.py", "--package", package,
                     "--architecture", "arm64-v8a", "--account-email", os.getenv("PLAY_EMAIL", ""),
                     "--metadata-source", "google-play", "--output", folder, *options],
-                   check=True, capture_output=True, timeout=45 if "--metadata-only" in options else 330,
+                   check=True, capture_output=True, timeout=330,
                    env=child_env("GPLAYDL_API_KEY"))
 
 
@@ -46,7 +47,7 @@ def download_original(package, target, root):
             return folder
         except (OSError, subprocess.SubprocessError):
             print("Play could not deliver this release. Checking the equivalent signed ARM64 mirror.")
-    mirror = lookup(package, "apkpure")
+    mirror = mirror_version(package)
     if mirror["versionName"] != target["version"] or (target["code"] and str(target["code"]) != str(mirror["versionCode"])):
         raise ValueError("The mirror does not have the selected release")
     folder = root / "mirror"
@@ -62,9 +63,7 @@ def private_file(args, env, dest, expected):
         raise ValueError("Private build input checksum mismatch")
 
 
-def build_private(target, variant, root, output):
-    spec = INPUTS[target["app"]]
-    package = variant["packageName"]
+def verified_originals(package, target, root, source_signer):
     folder = download_original(package, target, root)
     manifest = json.loads((folder / "manifest.json").read_bytes())
     if manifest.get("expansions") or any(folder.rglob("*.obb")):
@@ -77,20 +76,32 @@ def build_private(target, variant, root, output):
         if not re.fullmatch(r"[\w.-]+\.apk", name, re.ASCII) or not (folder / name).is_file():
             raise ValueError("Invalid source APK filename")
         apk = folder / name
-        if certificate(apk, 28) != spec["sourceSigner"]:
+        if certificate(apk, 28) != source_signer:
             raise ValueError("Source app signer changed")
         apks.append(apk)
+    return apks
+
+
+def build_private(target, variant, root, output):
+    spec = INPUTS[target["app"]]
+    package = variant["packageName"]
     env = {**child_env(), "GH_TOKEN": os.environ["MODULE_READ_TOKEN"]}
     module = root / "module.apk"
-    private_file(["release", "download", "workshop-input-" + spec["moduleSha256"][:20],
-                  "-R", spec["repository"], "-p", "module.apk", "-O", "-"], env, module, spec["moduleSha256"])
     tools = root / "tools"
     tools.mkdir()
     packager = INPUTS["packager"]
-    for name, fingerprint in packager["files"].items():
-        route = f'repos/{packager["repository"]}/contents/tools/{name}?ref={packager["commit"]}'
-        private_file(["api", route, "-H", "Accept: application/vnd.github.raw+json"], env, tools / name, fingerprint)
-        (tools / name).chmod(0o700)
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        originals = pool.submit(verified_originals, package, target, root, spec["sourceSigner"])
+        downloads = [pool.submit(private_file, ["release", "download", "workshop-input-" + spec["moduleSha256"][:20],
+                     "-R", spec["repository"], "-p", "module.apk", "-O", "-"], env, module, spec["moduleSha256"])]
+        for name, fingerprint in packager["files"].items():
+            route = f'repos/{packager["repository"]}/contents/tools/{name}?ref={packager["commit"]}'
+            downloads.append(pool.submit(private_file, ["api", route, "-H", "Accept: application/vnd.github.raw+json"],
+                                         env, tools / name, fingerprint))
+        for download in downloads:
+            download.result()
+        apks = originals.result()
+    (tools / "download-lspatch.sh").chmod(0o700)
     key = root / "signing.jks"
     key.write_bytes(base64.b64decode("".join(os.environ["HOST_KEYSTORE"].split()), validate=True))
     key.chmod(0o600)
@@ -126,14 +137,20 @@ def prepare(target, existing):
                 raise ValueError("The requested private input has changed")
             output = root / "bundle.apks"
             metadata = build_private(target, variant, root, output)
-        receipt = verify_bundle(output, variant["packageName"], target["version"], variant["signer"], target["code"])
-        if receipt["versionCode"] < current["versionCode"]:
-            raise ValueError("The delivered app is older than the published version")
+        verify_args = (output, variant["packageName"], target["version"], variant["signer"], target["code"])
         if os.getenv("VERIFY_ONLY") == "true":
+            receipt = verify_bundle(*verify_args)
             print(f'Verified {variant["id"]} {receipt["version"]} ({receipt["versionCode"]}).')
             return
-        record = {**receipt, **metadata, "requestKey": target["key"]}
-        published = publish_asset(variant["id"], output, record)
+        # A draft is private to repository writers. Upload the finished file while the
+        # independent APK verification runs. Both receipts are required for promotion.
+        with ThreadPoolExecutor(max_workers=1) as pool:
+            checked = pool.submit(verify_bundle, *verify_args)
+            release, asset = stage_asset(variant["id"], target["version"], output, digest(output))
+            receipt = checked.result()
+        if receipt["versionCode"] < current["versionCode"]:
+            raise ValueError("The delivered app is older than the published version")
+        published = publish_verified(release, asset, {**receipt, **metadata, "requestKey": target["key"]})
         update_ready(variant["id"], published, target["previous"])
 
 

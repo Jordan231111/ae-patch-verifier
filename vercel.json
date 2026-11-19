@@ -122,5 +122,18 @@
       "source": "/api/onceworld/download",
       "destination": "/api/workshop?game=onceworld&action=download"
     }
+  ],
+  "redirects": [
+    {
+      "source": "/:path*",
+      "has": [
+        {
+          "type": "host",
+          "value": "verify-ae-modmenu-(?:[a-z0-9-]+-)?jordan231111s-projects\\.vercel\\.app"
+        }
+      ],
+      "destination": "https://verify-ae-modmenu.vercel.app/:path*",
+      "permanent": false
+    }
   ]
 }

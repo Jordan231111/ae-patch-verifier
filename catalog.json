@@ -12,11 +12,12 @@
           "version": "1.2.4",
           "versionCode": 148,
           "signer": "c081890cf2a1adf13e56d7b50a4f3d8edb35b7c46d6ccc732dd997b7e433be1d",
-          "sha256": "4c964f942cbef568d99eaa4c0e956948045f5aed42a620d8d50e5017b7248436",
+          "sha256": "421a8c7bfb6da6af5d515bdcf021dbfc8b94a7a310376820356fd1b714730189",
           "sizeBytes": 296846369,
           "moduleSha": "1801973a8ebda5cc929fc3b3f5ea2bf0d6f94f28",
-          "downloadUrl": "https://github.com/Jordan231111/ae-patch-verifier/releases/download/catalog-allrelic-arm64-release-4c964f942cbef568d99e/allrelic-arm64-release-1.2.4.apks",
-          "updatedAt": "2026-11-19T22:04:03Z"
+          "downloadUrl": "https://github.com/Jordan231111/ae-patch-verifier/releases/download/catalog-allrelic-arm64-release-421a8c7bfb6da6af5d51/allrelic-arm64-release-1.2.4.apks",
+          "updatedAt": "2026-11-19T22:26:43Z",
+          "requestKey": "261136ae0dc8d3679637f8a67838acfaed76f82c7949f7af372da5c8487af877"
         }
       ],
       "workshopUrl": "/workshop?app=allrelic"
@@ -35,12 +36,13 @@
           "version": "3.17.70",
           "versionCode": 710,
           "signer": "81e42545dd2948f32c29f1a0bc73e8f3f0f278af14b3d38b4b0b661f4d140ab4",
-          "sha256": "17d64885898d80ce2a4eab13eefbf2a793fb8627b231f8a4cb66bc8dbb7e3408",
+          "sha256": "bc532a7c05f75ea08fd7ca275d03827ded84fa355ca2e2f2c7814cef1c12f180",
           "sizeBytes": 250913572,
           "moduleSha": "437c204ab3e9fa57c11b3cda335ae7398c81e9c0",
-          "downloadUrl": "https://github.com/Jordan231111/ae-patch-verifier/releases/download/catalog-anothereden-global-arm64-release-17d64885898d80ce2a4e/anothereden-global-arm64-release-3.17.70.apks",
-          "updatedAt": "2026-11-19T22:04:28Z",
-          "workshopUrl": "/workshop?app=anothereden&region=global&moduleVariant=release"
+          "downloadUrl": "https://github.com/Jordan231111/ae-patch-verifier/releases/download/catalog-anothereden-global-arm64-release-bc532a7c05f75ea08fd7/anothereden-global-arm64-release-3.17.70.apks",
+          "updatedAt": "2026-11-19T22:26:42Z",
+          "workshopUrl": "/workshop?app=anothereden&region=global&moduleVariant=release",
+          "requestKey": "00f4269e51a5b444e7f92729584297bd9a0f7c60c1097dd2e718d3de640284ee"
         },
         {
           "id": "anothereden-japan-arm64-release",
@@ -52,12 +54,13 @@
           "version": "3.17.70",
           "versionCode": 1016,
           "signer": "81e42545dd2948f32c29f1a0bc73e8f3f0f278af14b3d38b4b0b661f4d140ab4",
-          "sha256": "a7c270f244ce2bedec3494d225fdc78e8ef9d4ce34d616812a14994896430402",
+          "sha256": "ff186425824bbcd4d5eceb9237305daa852db7e5edbd38d203cb3ecd5978c91a",
           "sizeBytes": 231558314,
           "moduleSha": "437c204ab3e9fa57c11b3cda335ae7398c81e9c0",
-          "downloadUrl": "https://github.com/Jordan231111/ae-patch-verifier/releases/download/catalog-anothereden-japan-arm64-release-a7c270f244ce2bedec34/anothereden-japan-arm64-release-3.17.70.apks",
-          "updatedAt": "2026-11-19T22:04:36Z",
-          "workshopUrl": "/workshop?app=anothereden&region=japan&moduleVariant=release"
+          "downloadUrl": "https://github.com/Jordan231111/ae-patch-verifier/releases/download/catalog-anothereden-japan-arm64-release-ff186425824bbcd4d5ec/anothereden-japan-arm64-release-3.17.70.apks",
+          "updatedAt": "2026-11-19T22:26:36Z",
+          "workshopUrl": "/workshop?app=anothereden&region=japan&moduleVariant=release",
+          "requestKey": "18989835d989fce74e81d72d6f3105a1165e916437563f7bc670053090fc8eb1"
         },
         {
           "id": "anothereden-global-arm64-debug",
@@ -69,12 +72,13 @@
           "version": "3.17.70",
           "versionCode": 710,
           "signer": "81e42545dd2948f32c29f1a0bc73e8f3f0f278af14b3d38b4b0b661f4d140ab4",
-          "sha256": "c1683eacc3b397618172155df83efd93d0aeb3ce249bb914e871ce02187ff1e5",
+          "sha256": "29fc009964332d38879afb8e5d3481666151ae3991e95e32d1c5ef60b185144d",
           "sizeBytes": 251126564,
           "moduleSha": "437c204ab3e9fa57c11b3cda335ae7398c81e9c0",
-          "downloadUrl": "https://github.com/Jordan231111/ae-patch-verifier/releases/download/catalog-anothereden-global-arm64-debug-c1683eacc3b397618172/anothereden-global-arm64-debug-3.17.70.apks",
-          "updatedAt": "2026-11-19T22:04:14Z",
-          "workshopUrl": "/workshop?app=anothereden&region=global&moduleVariant=debug"
+          "downloadUrl": "https://github.com/Jordan231111/ae-patch-verifier/releases/download/catalog-anothereden-global-arm64-debug-29fc009964332d38879a/anothereden-global-arm64-debug-3.17.70.apks",
+          "updatedAt": "2026-11-19T22:26:46Z",
+          "workshopUrl": "/workshop?app=anothereden&region=global&moduleVariant=debug",
+          "requestKey": "6514dbbcd00e05f2a070d674f3734b98b96fd816ace5bc9e71fab54a465958c8"
         },
         {
           "id": "anothereden-japan-arm64-debug",
@@ -86,12 +90,13 @@
           "version": "3.17.70",
           "versionCode": 1016,
           "signer": "81e42545dd2948f32c29f1a0bc73e8f3f0f278af14b3d38b4b0b661f4d140ab4",
-          "sha256": "3034fd5c64e2b6d7160c307298b67df62c6cdcc84629f5c8b122d933b0548d41",
+          "sha256": "d45018be090e91ba81f56fd5c3aa39339fe9d2e96091ed1abfe05677e9bc8669",
           "sizeBytes": 231754922,
           "moduleSha": "437c204ab3e9fa57c11b3cda335ae7398c81e9c0",
-          "downloadUrl": "https://github.com/Jordan231111/ae-patch-verifier/releases/download/catalog-anothereden-japan-arm64-debug-3034fd5c64e2b6d7160c/anothereden-japan-arm64-debug-3.17.70.apks",
-          "updatedAt": "2026-11-19T22:03:51Z",
-          "workshopUrl": "/workshop?app=anothereden&region=japan&moduleVariant=debug"
+          "downloadUrl": "https://github.com/Jordan231111/ae-patch-verifier/releases/download/catalog-anothereden-japan-arm64-debug-d45018be090e91ba81f5/anothereden-japan-arm64-debug-3.17.70.apks",
+          "updatedAt": "2026-11-19T22:27:25Z",
+          "workshopUrl": "/workshop?app=anothereden&region=japan&moduleVariant=debug",
+          "requestKey": "ddb9f969a23bd3d79448e96a43531ab370dc011aa04dd2ff10812924ef1f1d47"
         }
       ],
       "workshopUrl": "/workshop?app=anothereden"
@@ -107,13 +112,14 @@
           "packageName": "com.GacoGames.EC2",
           "version": "3.1.5",
           "versionCode": 509,
-          "sizeBytes": 358851225,
-          "sha256": "003c80fad646cfa6fd22077377d95fbfc8e863670a34496511180860fa4eaa9f",
+          "sizeBytes": 358851228,
+          "sha256": "572d6acf3adfc90bb1878d0ac862085c27c4129e75c599544d38e66983e88d6f",
           "signer": "29b04c032802179a86374c8a13dba9ddbe8d9303f4909ac03766cb77de17c027",
           "moduleVersion": "0.6.8",
-          "downloadUrl": "https://github.com/Jordan231111/ae-patch-verifier/releases/download/catalog-epicconquest-arm64-release-003c80fad646cfa6fd22/epicconquest-arm64-release-3.1.5.apks",
-          "updatedAt": "2026-11-19T22:04:30Z",
-          "moduleDigest": "7cfb08a65fc3d35d92ff1b732e1392cebf47baae37503ff0f278fafebdae9d80"
+          "downloadUrl": "https://github.com/Jordan231111/ae-patch-verifier/releases/download/catalog-epicconquest-arm64-release-572d6acf3adfc90bb187/epicconquest-arm64-release-3.1.5.apks",
+          "updatedAt": "2026-11-19T22:27:51Z",
+          "moduleDigest": "7cfb08a65fc3d35d92ff1b732e1392cebf47baae37503ff0f278fafebdae9d80",
+          "requestKey": "c1352d7b60769d39c0423739de3540042a6d28abbd382f028b364b764bc1ba56"
         }
       ]
     },
@@ -129,11 +135,12 @@
           "version": "3.0.6",
           "versionCode": 156,
           "signer": "c081890cf2a1adf13e56d7b50a4f3d8edb35b7c46d6ccc732dd997b7e433be1d",
-          "sha256": "32a69ad58d9a2392ab92ee2fdd17d81c19f9897d8c6387a57df19fd357f0bbd5",
+          "sha256": "f142e3c487b9098a9b828ca32c09d32dc2380c045ab1915835ded81f4b7072c5",
           "sizeBytes": 291380494,
           "moduleSha": "fea158679b45254cbe282507cc1405ce3139a964",
-          "downloadUrl": "https://github.com/Jordan231111/ae-patch-verifier/releases/download/catalog-onceworld-arm64-release-32a69ad58d9a2392ab92/onceworld-arm64-release-3.0.6.apks",
-          "updatedAt": "2026-11-19T22:04:07Z"
+          "downloadUrl": "https://github.com/Jordan231111/ae-patch-verifier/releases/download/catalog-onceworld-arm64-release-f142e3c487b9098a9b82/onceworld-arm64-release-3.0.6.apks",
+          "updatedAt": "2026-11-19T22:26:25Z",
+          "requestKey": "8c25f9f85f22f2ee9e55c2e554795cf38b7d8331995a10f370459a042992d2df"
         }
       ],
       "workshopUrl": "/workshop?app=onceworld"
@@ -166,13 +173,14 @@
           "packageName": "com.prayermicelle.rustaxion",
           "version": "1.4.2",
           "versionCode": 10402,
-          "sizeBytes": 298013591,
-          "sha256": "f90c73994b3e21363f6eec418f501f3acb6f45da70791c01ad6170f490519aae",
+          "sizeBytes": 260725944,
+          "sha256": "42f032910f7254819617db20e2d8fabe11c693f077f1dc6ca26c67b425e03c84",
           "signer": "29b04c032802179a86374c8a13dba9ddbe8d9303f4909ac03766cb77de17c027",
           "moduleVersion": "0.6.2",
-          "downloadUrl": "https://github.com/Jordan231111/ae-patch-verifier/releases/download/catalog-rustaxion-arm64-release-f90c73994b3e21363f6e/rustaxion-arm64-release-1.4.2.apks",
-          "updatedAt": "2026-11-19T22:04:21Z",
-          "moduleDigest": "401eee47216fd521ee824983fed68900bb1eb657a7523cc4f52ec1f91dfe5489"
+          "downloadUrl": "https://github.com/Jordan231111/ae-patch-verifier/releases/download/catalog-rustaxion-arm64-release-42f032910f7254819617/rustaxion-arm64-release-1.4.2.apks",
+          "updatedAt": "2026-11-19T22:26:41Z",
+          "moduleDigest": "401eee47216fd521ee824983fed68900bb1eb657a7523cc4f52ec1f91dfe5489",
+          "requestKey": "d34a8eddcaf2d1c786a81d423f383941b59b63272c4d4e7982a0837a50d49fe1"
         }
       ]
     }

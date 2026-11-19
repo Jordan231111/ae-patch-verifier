@@ -1,5 +1,5 @@
 const crypto = require("node:crypto");
-const { config, githubJson, resolveModuleCommit, onceworldModuleConfig, allrelicModuleConfig } = require("../../api/_shared/github");
+const { config, githubJson, githubRequest, resolveModuleCommit, onceworldModuleConfig, allrelicModuleConfig } = require("../../api/_shared/github");
 const { resolveLatestPlayListing } = require("../../api/_shared/googleplay");
 const { resolveLatestXapk, resolveXapkVariant } = require("../../api/_shared/apkpure");
 const { mergeReady } = require("./index");
@@ -8,6 +8,7 @@ const inputs = require("../../scripts/catalog/inputs.json");
 
 const branch = "workshop-ready";
 const pending = new Map();
+const recentlyReady = new Map();
 
 function entry(id) {
   for (const app of catalog.apps) {
@@ -19,7 +20,13 @@ function entry(id) {
 
 async function readFile(cfg, path) {
   try {
-    const file = await githubJson(cfg, "GET", `/repos/${cfg.githubOwner}/${cfg.githubRepo}/contents/${path}?ref=${branch}`);
+    const apiPath = `/repos/${cfg.githubOwner}/${cfg.githubRepo}/contents/${path}?ref=${branch}`;
+    const file = await githubJson(cfg, "GET", apiPath);
+    if (file.encoding === "none") {
+      const raw = await githubRequest(cfg, { method: "GET", apiPath, accept: "application/vnd.github.raw+json" });
+      if (raw.status !== 200) throw new Error("Could not read the release index");
+      return { data: JSON.parse(raw.body), sha: file.sha };
+    }
     return { data: JSON.parse(Buffer.from(file.content, "base64").toString("utf8")), sha: file.sha };
   } catch (error) {
     if (error.status === 404) return {};
@@ -41,7 +48,7 @@ async function sourceFor(app, v) {
 }
 
 async function moduleFor(cfg, app, v) {
-  if (inputs[app.id]) return { sha: inputs[app.id].moduleSha256 };
+  if (inputs[app.id]) return { sha: inputs[app.id].moduleSha256, recipe: inputs.packager.commit };
   const moduleConfig = app.id === "onceworld" ? onceworldModuleConfig(cfg)
     : app.id === "allrelic" ? allrelicModuleConfig(cfg) : cfg;
   const asset = app.id === "onceworld" ? "app-lsposed-release.apk" : `app-${v.flavor || "release"}.apk`;
@@ -53,10 +60,12 @@ async function moduleFor(cfg, app, v) {
 function identity(v, source, module) {
   // Play only exposes the version name and update timestamp in its public listing.
   // The packaging workflow then checks the delivered code and signer.
-  return crypto.createHash("sha256").update(JSON.stringify([
+  const fields = [
     v.id, source.source, source.versionName, source.versionCode || null,
     source.updatedAt || null, module.sha
-  ])).digest("hex");
+  ];
+  if (module.recipe) fields.push(module.recipe);
+  return crypto.createHash("sha256").update(JSON.stringify(fields)).digest("hex");
 }
 
 function workflow(cfg, app) {
@@ -94,12 +103,18 @@ function waiting(v, ticket) {
 
 async function runState(cfg, app, ticket) {
   const age = Date.now() - ticket.time;
+  if (ticket.failed) return "failed";
   if (age < 8000) return "pending";
-  const base = `/repos/${cfg.githubOwner}/${cfg.githubRepo}/actions/workflows/${workflow(cfg, app)}`;
-  const query = new URLSearchParams({ event: "workflow_dispatch", branch: cfg.githubRef,
-    per_page: "100", created: ">=" + new Date(ticket.time - 60000).toISOString() });
-  const runs = await githubJson(cfg, "GET", `${base}/runs?${query}`);
-  const run = runs.workflow_runs?.find(r => r.display_title?.endsWith(ticket.nonce));
+  const base = `/repos/${cfg.githubOwner}/${cfg.githubRepo}/actions`;
+  let run;
+  if (Number.isSafeInteger(ticket.runId)) {
+    run = await githubJson(cfg, "GET", `${base}/runs/${ticket.runId}`);
+  } else {
+    const query = new URLSearchParams({ event: "workflow_dispatch", branch: cfg.githubRef,
+      per_page: "100", created: ">=" + new Date(ticket.time - 60000).toISOString() });
+    const runs = await githubJson(cfg, "GET", `${base}/workflows/${workflow(cfg, app)}/runs?${query}`);
+    run = runs.workflow_runs?.find(r => r.display_title?.endsWith(ticket.nonce));
+  }
   if (!run) return age < 120000 ? "pending" : "failed";
   return run.status === "completed" ? "finished" : age < 30 * 60000 ? "pending" : "failed";
 }
@@ -118,7 +133,8 @@ async function start(cfg, app, v, attempt = 0) {
     throw new Error("The original release could not be confirmed");
   }
   const key = identity(v, source, module);
-  if (current.requestKey === key) return ready(current);
+  if (current.requestKey === key && current.version === source.versionName
+      && (!source.versionCode || current.versionCode === Number(source.versionCode))) return ready(current);
   const path = `requests/${v.id}.json`;
   const claim = await readFile(cfg, path);
   if (claim.data?.key === key && await runState(cfg, app, claim.data) === "pending") {
@@ -131,20 +147,33 @@ async function start(cfg, app, v, attempt = 0) {
   const nonce = `${time}-${crypto.randomBytes(4).toString("hex")}`;
   const ticket = { key, version: source.versionName, time, nonce };
   const base = `/repos/${cfg.githubOwner}/${cfg.githubRepo}`;
+  const saveTicket = sha => githubJson(cfg, "PUT", `${base}/contents/${path}`, {
+    branch, message: `Request ${v.id} ${source.versionName}`,
+    content: Buffer.from(JSON.stringify(ticket)).toString("base64"), ...(sha && { sha })
+  });
+  let saved;
   try {
-    await githubJson(cfg, "PUT", `${base}/contents/${path}`, {
-      branch, message: `Request ${v.id} ${source.versionName}`,
-      content: Buffer.from(JSON.stringify(ticket)).toString("base64"), ...(claim.sha && { sha: claim.sha })
-    });
+    saved = await saveTicket(claim.sha);
   } catch (error) {
     if ([409, 422].includes(error.status) && attempt < 2) return start(cfg, app, v, attempt + 1);
     throw error;
   }
   const candidate = { app: app.id, variant: v.id, version: source.versionName, code: source.versionCode || null,
     source: source.source, module: module.sha, previous: current.sha256, key };
-  await githubJson(cfg, "POST", `${base}/actions/workflows/${workflow(cfg, app)}/dispatches`, {
-    ref: cfg.githubRef, inputs: workflowInputs(app, v, candidate, module, nonce)
-  });
+  try {
+    const run = await githubJson(cfg, "POST", `${base}/actions/workflows/${workflow(cfg, app)}/dispatches`, {
+      ref: cfg.githubRef, inputs: workflowInputs(app, v, candidate, module, nonce), return_run_details: true
+    });
+    if (Number.isSafeInteger(run.workflow_run_id)) ticket.runId = run.workflow_run_id;
+  } catch (error) {
+    if (error.status >= 400 && error.status < 500) {
+      ticket.failed = true;
+      await saveTicket(saved.content.sha).catch(() => {});
+    }
+    throw error;
+  }
+  // The original claim already lets followers locate the run if a concurrent write wins.
+  if (ticket.runId) await saveTicket(saved.content.sha).catch(() => {});
   return waiting(v, ticket);
 }
 
@@ -182,10 +211,19 @@ function handler(action) {
     try {
       const { app, variant } = item;
       let result;
-      if (action === "status") result = await poll(config(), app, variant, key);
+      if (action === "status") {
+        result = await poll(config(), app, variant, key);
+        if (result.status !== "failed") res.setHeader("vercel-cdn-cache-control",
+          result.status === "ready" ? "public, s-maxage=60" : "public, s-maxage=2");
+      }
       else {
-        if (!pending.has(variant.id)) pending.set(variant.id, start(config(), app, variant).finally(() => pending.delete(variant.id)));
-        result = await pending.get(variant.id);
+        const cached = recentlyReady.get(variant.id);
+        if (cached?.expires > Date.now()) result = cached.result;
+        else {
+          if (!pending.has(variant.id)) pending.set(variant.id, start(config(), app, variant).finally(() => pending.delete(variant.id)));
+          result = await pending.get(variant.id);
+          if (result.status === "ready") recentlyReady.set(variant.id, { result, expires: Date.now() + 10000 });
+        }
       }
       return send(result.status === "preparing" ? 202 : 200, result);
     } catch (error) {
