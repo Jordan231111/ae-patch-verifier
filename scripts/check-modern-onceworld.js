@@ -16,6 +16,7 @@ const versionRoute = read("server/onceworld/version.js");
 const versionSource = read("server/onceworld/_version-source.js");
 const playMetadata = read("api/_shared/googleplay.js");
 const sourceFetcher = read("scripts/fetch-onceworld-source.sh");
+requireText(read(".github/play-client/requirements.txt"), "gplaydl==4.2.1 --hash=sha256:", "Keep the registered Play client pinned");
 const playDownloader = read("scripts/download-play-apks.py");
 const workflow = read(".github/workflows/build-onceworld-apks.yml");
 const frontend = read("workshop.html");
@@ -33,7 +34,7 @@ requireText(playMetadata, 'source: "google-play"', "Google Play metadata must id
 requireText(playMetadata, "AF_initDataCallback", "Google Play metadata parser must use listing data");
 
 for (const needle of [
-  "gplaydl==4.2.1",
+  "bash scripts/install-play-client.sh",
   "download-play-apks.py",
   "onceworld_prepare_google_play",
   "onceworld_prepare_apkpure",

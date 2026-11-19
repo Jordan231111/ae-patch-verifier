@@ -59,6 +59,7 @@ test("a waiting visitor gets the signed raw file before the permanent record exi
   const status = JSON.parse((await call("status")).body);
   assert.equal(status.status, "ready");
   assert.equal(status.sha256, hash);
+  assert.equal(status.transferUrl, signed);
   assert.equal(status.downloadUrl, `/api/catalog/download?variant=${variant.id}&key=${key}&sha256=${hash}`);
   const reply = await call("download");
   assert.equal(reply.statusCode, 302);

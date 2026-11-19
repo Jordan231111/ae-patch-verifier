@@ -12,6 +12,8 @@ After checking the complete signed split set, the workflow uploads the finished 
 
 The private-input builds use parallel standard DEFLATE and the SHA-256-pinned, unmodified Ubuntu zipmerge package. Its license and copyright notices are included in the package. The runner extracts this small tool from the checkout. Runners without the native utilities use the Python ZIP writer. [Ubuntu package and checksums](https://packages.ubuntu.com/resolute/amd64/zipmerge/download)
 
+On-demand Play builds install the client offline from the unmodified, hash-locked public wheels in `.github/play-client`. A clean runner can fetch the new app without resolving Python dependencies over the network. The browser uses the verified signed URL for the immediate transfer and keeps the same-origin file link for retries.
+
 The data-only `workshop-ready` branch holds the per-edition receipts and coalesced requests. Its Git configuration disables Vercel deployments. The CDN-cached `/api/catalog` feeds the mobile list. The browser downloads files directly from storage through a short-lived redirect or a permanent release URL.
 
 ## AllRelic APKPure builds

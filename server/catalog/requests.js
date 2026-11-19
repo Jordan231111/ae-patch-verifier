@@ -68,6 +68,7 @@ function identity(v, source, module) {
     source.updatedAt || null, module.sha
   ];
   if (module.recipe) fields.push(module.recipe);
+  if (source.source === "google-play") fields.push(inputs.playClientLock);
   return crypto.createHash("sha256").update(JSON.stringify(fields)).digest("hex");
 }
 
@@ -106,9 +107,10 @@ function waiting(v, ticket) {
 
 async function availableTransfer(cfg, variant, key, ticket) {
   const record = transferRecord(variant, key, ticket);
-  if (!record || !await transferRedirect(cfg, variant, record)) return null;
+  const transferUrl = record && await transferRedirect(cfg, variant, record);
+  if (!transferUrl) return null;
   const query = new URLSearchParams({ variant: variant.id, key, sha256: record.sha256 });
-  return ready({ ...record, id: variant.id, downloadUrl: `/api/catalog/download?${query}` });
+  return { ...ready({ ...record, id: variant.id, downloadUrl: `/api/catalog/download?${query}` }), transferUrl };
 }
 
 async function runState(cfg, app, ticket) {
@@ -264,7 +266,7 @@ function handler(action) {
       let result;
       if (action === "status") {
         result = await poll(config(), app, variant, key);
-        if (result.status !== "failed") res.setHeader("vercel-cdn-cache-control",
+        if (result.status !== "failed" && !result.transferUrl) res.setHeader("vercel-cdn-cache-control",
           result.status === "ready" ? "public, s-maxage=60" : "public, s-maxage=2");
       }
       else {
@@ -273,7 +275,7 @@ function handler(action) {
         else {
           if (!pending.has(variant.id)) pending.set(variant.id, start(config(), app, variant).finally(() => pending.delete(variant.id)));
           result = await pending.get(variant.id);
-          if (result.status === "ready") recentlyReady.set(variant.id, { result, expires: Date.now() + 10000 });
+          if (result.status === "ready" && !result.transferUrl) recentlyReady.set(variant.id, { result, expires: Date.now() + 10000 });
         }
       }
       return send(result.status === "preparing" ? 202 : 200, result);

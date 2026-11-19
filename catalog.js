@@ -181,6 +181,16 @@
     return /^\/Jordan231111\/ae-patch-verifier\/releases\/download\/[^/]+\/[^/]+\.apks$/i.test(url.pathname) ? href : null;
   }
 
+  function initialDownloadUrl(value, fallback) {
+    try {
+      const url = new URL(value);
+      if (url.protocol === "https:" && !url.username && !url.password && !url.port
+          && /^productionresultss[a-z0-9]+\.blob\.core\.windows\.net$/.test(url.hostname)
+          && url.searchParams.has("sig")) return url.href;
+    } catch { /* A stable same-origin link can negotiate a new redirect. */ }
+    return fallback;
+  }
+
   function statusUrl(value, variantId) {
     const href = linkUrl(value, true);
     if (!href) return null;
@@ -334,7 +344,8 @@
     const render = () => { if (entry.variant === variant) updateRelease(entry); };
     render();
     try {
-      const deadline = Date.now() + maxBuildWait;
+      const startedAt = Date.now();
+      const deadline = startedAt + maxBuildWait;
       let reply = await json("/api/catalog/build", 55000, {
         method: "POST", cache: "no-store", redirect: "error",
         headers: { "content-type": "application/json" }, body: JSON.stringify({ variant: variant.id })
@@ -356,7 +367,7 @@
           render();
           if (entry.variant === variant && job.autoDownload) {
             try {
-              window.location.assign(job.downloadUrl);
+              window.location.assign(initialDownloadUrl(reply.transferUrl, job.downloadUrl));
             } catch {
               // The visible file link can complete the handoff on a new user gesture.
             }
@@ -368,7 +379,9 @@
         if (!pollUrl) throw new Error("No status for this request");
         job.phase = "preparing";
         render();
-        const delay = Math.min(3000 + transientFailures * 1500, deadline - Date.now());
+        const elapsed = Date.now() - startedAt;
+        const interval = elapsed < 12000 || elapsed > 60000 ? 4000 : 2000;
+        const delay = Math.min(interval + transientFailures * 1500, deadline - Date.now());
         if (delay <= 0) throw new DOMException("Build timed out", "TimeoutError");
         await new Promise(resolve => setTimeout(resolve, delay));
         const remaining = deadline - Date.now();

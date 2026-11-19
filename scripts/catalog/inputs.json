@@ -19,5 +19,6 @@
     "moduleVersion": "0.6.8",
     "moduleSha256": "7cfb08a65fc3d35d92ff1b732e1392cebf47baae37503ff0f278fafebdae9d80",
     "sourceSigner": "b1223cddeff0b9c3e557e525c31af7b5c7e4a3df3570f6fca22adb78ba0ced0a"
-  }
+  },
+  "playClientLock": "50fe99f45cccc58782f0d26c557e47ca31530e6f83ed1dc73fccf1a7ccbf9805"
 }

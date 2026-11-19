@@ -55,7 +55,7 @@ jobs:
           fi
           echo "$ANDROID_HOME/build-tools/37.0.0" >> "$GITHUB_PATH"
       - name: Prepare store delivery client
-        run: python -m pip install --quiet --no-compile --disable-pip-version-check 'gplaydl==4.2.1'
+        run: bash scripts/install-play-client.sh
       - name: Package the original and verify the finished download
         id: catalog_bundle
         env:

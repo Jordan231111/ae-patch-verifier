@@ -1,4 +1,5 @@
 import importlib.util
+import hashlib
 import json
 from base64 import b64decode
 from pathlib import Path
@@ -23,6 +24,17 @@ class RawTransferTests(unittest.TestCase):
         with patch.dict(publish.os.environ, env), patch.object(publish, "read_record") as read:
             with self.assertRaises(ValueError): publish.announce(self.variant, self.record)
             read.assert_not_called()
+
+    def test_clean_runner_has_every_hash_locked_public_wheel_and_archive_tool(self):
+        root = Path(__file__).resolve().parents[1]
+        tools = json.loads((root / "scripts/catalog/inputs.json").read_bytes())
+        wheels = root / ".github/play-client"
+        lock = (wheels / "requirements.txt").read_bytes()
+        self.assertEqual(hashlib.sha256(lock).hexdigest(), tools["playClientLock"])
+        expected = {line.split("--hash=sha256:")[1] for line in lock.decode().splitlines() if line and not line.startswith("#")}
+        self.assertEqual(expected, {hashlib.sha256(f.read_bytes()).hexdigest() for f in wheels.glob("*.whl")})
+        archive, = (root / "scripts/catalog/tools").glob("zipmerge_*.deb")
+        self.assertEqual(hashlib.sha256(archive.read_bytes()).hexdigest(), tools["packager"]["zipmergeSha256"])
 
     def test_announcement_preserves_the_winning_claim_and_uses_compare_and_swap(self):
         ticket = {"key": self.record["requestKey"], "version": "1.4.2", "nonce": "my-request", "time": 17}

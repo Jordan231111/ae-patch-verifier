@@ -33,7 +33,7 @@ onceworld_prepare_google_play() (
   fi
 
   echo "[source] trying Google Play first with parallel compressed CDN transfers"
-  python3 -m pip install --disable-pip-version-check --no-compile --quiet 'gplaydl==4.2.1'
+  bash scripts/install-play-client.sh
   python3 scripts/download-play-apks.py \
     --package "$PACKAGE_NAME" \
     --architecture "$ARCHITECTURE" \
