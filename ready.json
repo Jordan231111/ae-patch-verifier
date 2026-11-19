@@ -33,12 +33,13 @@
     "versionCode": 710
   },
   "anothereden-japan-arm64-debug": {
-    "downloadUrl": "https://github.com/Jordan231111/ae-patch-verifier/releases/download/catalog-anothereden-japan-arm64-debug-3034fd5c64e2b6d7160c/anothereden-japan-arm64-debug-3.17.70.apks",
+    "downloadUrl": "https://github.com/Jordan231111/ae-patch-verifier/releases/download/catalog-anothereden-japan-arm64-debug-d45018be090e91ba81f5/anothereden-japan-arm64-debug-3.17.70.apks",
     "moduleSha": "437c204ab3e9fa57c11b3cda335ae7398c81e9c0",
-    "sha256": "3034fd5c64e2b6d7160c307298b67df62c6cdcc84629f5c8b122d933b0548d41",
+    "requestKey": "ddb9f969a23bd3d79448e96a43531ab370dc011aa04dd2ff10812924ef1f1d47",
+    "sha256": "d45018be090e91ba81f56fd5c3aa39339fe9d2e96091ed1abfe05677e9bc8669",
     "signer": "81e42545dd2948f32c29f1a0bc73e8f3f0f278af14b3d38b4b0b661f4d140ab4",
     "sizeBytes": 231754922,
-    "updatedAt": "2026-11-19T22:03:51Z",
+    "updatedAt": "2026-11-19T22:27:25Z",
     "version": "3.17.70",
     "versionCode": 1016
   },
