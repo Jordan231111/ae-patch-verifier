@@ -67,6 +67,14 @@
   "outputDirectory": ".",
   "rewrites": [
     {
+      "source": "/api/catalog/build",
+      "destination": "/api/workshop?game=catalog&action=build"
+    },
+    {
+      "source": "/api/catalog/status",
+      "destination": "/api/workshop?game=catalog&action=status"
+    },
+    {
       "source": "/workshop",
       "destination": "/workshop.html"
     },

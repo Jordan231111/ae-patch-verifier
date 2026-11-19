@@ -78,7 +78,7 @@ def update_ready(key, record, previous_digest):
     for attempt in range(9):
         entries, revision = ready_file()
         current = entries.get(key, {})
-        if current.get("sha256") == record["sha256"] and current.get("downloadUrl") == record["downloadUrl"]:
+        if all(current.get(field) == record.get(field) for field in ("sha256", "requestKey", "downloadUrl")):
             return
         if current and current["sha256"] != previous_digest:
             raise ValueError("Another publisher already advanced this variant")

@@ -1,8 +1,7 @@
-"""Plan upstream changes, then prepare only changed ARM64 workshop releases."""
+"""Prepare a visitor-requested APK set and publish its verified release receipt."""
 
 import argparse
 import base64
-from functools import cache
 import json
 import os
 from pathlib import Path
@@ -10,31 +9,14 @@ import re
 import subprocess
 import sys
 import tempfile
-import time
-from urllib.parse import urlencode, urlsplit
-from urllib.request import Request, urlopen
 
 from bundle import certificate, digest, verify_bundle
 from publish import publish_asset, ready_file, update_ready
 
 
 ROOT = Path(__file__).resolve().parents[2]
-SITE = "https://verify-ae-modmenu.vercel.app"
 CATALOG = json.loads((ROOT / "catalog.json").read_bytes())["apps"]
 INPUTS = json.loads((ROOT / "scripts/catalog/inputs.json").read_bytes())
-
-
-def site_url(path):
-    if not isinstance(path, str) or not path.startswith("/api/") or urlsplit(path).netloc:
-        raise ValueError("Unexpected workshop API route")
-    return SITE + path
-
-
-def site_json(path, data=None):
-    payload = json.dumps(data).encode() if data is not None else None
-    request = Request(site_url(path), data=payload, headers={"Content-Type": "application/json"})
-    with urlopen(request, timeout=45) as response:
-        return json.load(response)
 
 
 def lookup(package, strategy):
@@ -54,78 +36,6 @@ def play(package, folder, *options):
 def child_env(*extra):
     names = {"PATH", "HOME", "LANG", "TMPDIR", "ANDROID_HOME", "ANDROID_SDK_ROOT", "JAVA_HOME", *extra}
     return {name: value for name, value in os.environ.items() if name in names}
-
-
-@cache
-def upstream(package, mirror_only):
-    if mirror_only:
-        return lookup(package, "apkpure")
-    with tempfile.TemporaryDirectory() as folder:
-        try:
-            play(package, folder, "--metadata-only")
-            result = json.loads((Path(folder) / "play-version.json").read_bytes())
-            return dict(versionName=result["version_name"], versionCode=int(result["version_code"]), source="google-play")
-        except (subprocess.SubprocessError, OSError, ValueError):
-            # Public listing metadata can precede delivery to our Play device.
-            listing = lookup(package, "auto")
-            if not listing.get("versionCode"):
-                try:
-                    mirror = lookup(package, "apkpure")
-                    if mirror["versionName"] == listing["versionName"]:
-                        listing["versionCode"] = mirror["versionCode"]
-                except subprocess.SubprocessError:
-                    pass
-            return listing
-
-
-@cache
-def module_ref(app, flavor):
-    route = ("/api/module/latest?" + urlencode({"moduleSource": "main", "variant": flavor})
-             if app == "anothereden" else f"/api/{app}/module/latest")
-    data = site_json(route)
-    sha = data.get("sha") or data.get("shortSha")
-    if data.get("prebuilt") is False or not re.fullmatch(r"[0-9a-f]{7,40}", sha or ""):
-        raise ValueError("A published module build is not available")
-    return sha
-
-
-def plan(selected, verify):
-    records, _ = ready_file()
-    todo, failures = [], []
-    for app in CATALOG:
-        key = app["id"]
-        if app.get("statusUrl") or selected not in ("all", key):
-            continue
-        for variant in app["variants"]:
-            ident = variant["id"]
-            current = records.get(ident, variant)
-            try:
-                source = upstream(variant["packageName"], key == "allrelic" or variant.get("region") == "japan")
-                version, code = source["versionName"], source.get("versionCode")
-                if not version or (code is not None and int(code) <= 0):
-                    raise ValueError("Upstream did not identify an app release")
-                if code and int(code) < int(current["versionCode"]):
-                    raise ValueError("Upstream version code is older than the published bundle")
-                if key in INPUTS:
-                    module = INPUTS[key]["moduleSha256"]
-                    module_current = module == current.get("moduleDigest")
-                else:
-                    module = module_ref(key, variant.get("flavor", "release"))
-                    saved = current.get("moduleSha") or ""
-                    module_current = bool(saved) and (saved.startswith(module) or module.startswith(saved))
-                changed = version != current["version"] or (code and int(code) != current["versionCode"]) or not module_current
-                if changed or verify:
-                    todo.append(dict(app=key, variant=ident, version=version, code=code, source=source["source"],
-                                     module=module, previous=current["sha256"]))
-                print(f"{ident}: {version} ({code or 'store listing'}) – {'prepare' if changed or verify else 'current'}")
-            except Exception as error:
-                failures.append(ident)
-                print(f"::warning::{ident}: metadata check failed ({type(error).__name__})")
-    if selected != "all" and not any(a["id"] == selected and not a.get("statusUrl") for a in CATALOG):
-        raise ValueError("Unknown managed app")
-    with open(os.environ["GITHUB_OUTPUT"], "a") as out:
-        print("matrix=" + json.dumps(todo, separators=(",", ":")), file=out)
-        print("errors=" + ",".join(failures), file=out)
 
 
 def download_original(package, target, root):
@@ -157,6 +67,8 @@ def build_private(target, variant, root, output):
     package = variant["packageName"]
     folder = download_original(package, target, root)
     manifest = json.loads((folder / "manifest.json").read_bytes())
+    if manifest.get("expansions") or any(folder.rglob("*.obb")):
+        raise ValueError("The source has expansion files outside the installable APK set")
     if manifest["package_name"] != package or manifest["version_name"] != target["version"]:
         raise ValueError("Source manifest disagrees with the intended release")
     apks = []
@@ -191,55 +103,42 @@ def build_private(target, variant, root, output):
     return {"moduleDigest": spec["moduleSha256"], "moduleVersion": spec["moduleVersion"]}
 
 
-def build_existing(target, variant, output):
-    app = target["app"]
-    if app == "anothereden":
-        route, body = "/api/lspatch/build", dict(region=variant["region"], moduleVariant=variant["flavor"], moduleSource="main")
-    else:
-        route, body = f"/api/{app}/build", dict(versionName=target["version"], versionCode=str(target["code"] or ""))
-    build = site_json(route, body)
-    actual = build.get("moduleSha") or build.get("moduleShortSha")
-    if not actual or not (actual.startswith(target["module"]) or target["module"].startswith(actual)):
-        raise ValueError("Module release changed during preparation")
-    if build.get("versionName") != target["version"]:
-        raise ValueError("App release changed during preparation")
-    deadline = time.monotonic() + 750
-    status_route = build["statusUrl"]
-    while time.monotonic() < deadline:
-        status = site_json(status_route)
-        if status.get("status") == "ready":
-            url = site_url(status.get("downloadUrl") or build["downloadUrl"])
-            subprocess.run(["curl", "--proto", "=https", "--proto-redir", "=https", "-fsSL", "--retry", "3",
-                            "--max-time", "300", "-o", output, url], check=True)
-            return {"moduleSha": target["module"]}
-        if status.get("status") in ("failed", "error", "cancelled"):
-            raise ValueError("Existing packaging workflow did not publish a bundle")
-        time.sleep(7)
-    raise TimeoutError("Background build did not finish in time")
-
-
-def prepare(target, verify):
-    app = next(app for app in CATALOG if app["id"] == target["app"])
+def prepare(target, existing):
+    app = next(a for a in CATALOG if a["id"] == target["app"] and not a.get("statusUrl"))
     variant = next(v for v in app["variants"] if v["id"] == target["variant"])
+    if not re.fullmatch(r"[a-f0-9]{64}", target["key"]):
+        raise ValueError("Invalid release identity")
+    current = ready_file()[0].get(variant["id"], variant)
+    if current.get("requestKey") == target["key"] and not os.getenv("VERIFY_ONLY") == "true":
+        print("This release is already available.")
+        return
+    if current["sha256"] != target["previous"]:
+        raise ValueError("The requested release has already changed")
     with tempfile.TemporaryDirectory() as temp:
         root = Path(temp)
-        output = root / "bundle.apks"
-        metadata = (build_private(target, variant, root, output) if target["app"] in INPUTS
-                    else build_existing(target, variant, output))
+        if existing:
+            if target["module"] != os.environ["MODULE_SHA"] or app["id"] in INPUTS:
+                raise ValueError("The build does not match the requested module identity")
+            output = Path(os.environ["OUT"])
+            metadata = {"moduleSha": target["module"]}
+        else:
+            if target["module"] != INPUTS[app["id"]]["moduleSha256"]:
+                raise ValueError("The requested private input has changed")
+            output = root / "bundle.apks"
+            metadata = build_private(target, variant, root, output)
         receipt = verify_bundle(output, variant["packageName"], target["version"], variant["signer"], target["code"])
-        if verify:
-            print(f'Verified {target["variant"]} {receipt["version"]} ({receipt["versionCode"]}), {receipt["sizeBytes"]} bytes.')
+        if receipt["versionCode"] < current["versionCode"]:
+            raise ValueError("The delivered app is older than the published version")
+        if os.getenv("VERIFY_ONLY") == "true":
+            print(f'Verified {variant["id"]} {receipt["version"]} ({receipt["versionCode"]}).')
             return
-        published = publish_asset(variant["id"], output, {**receipt, **metadata})
+        record = {**receipt, **metadata, "requestKey": target["key"]}
+        published = publish_asset(variant["id"], output, record)
         update_ready(variant["id"], published, target["previous"])
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("command", choices=["plan", "prepare"])
+    parser.add_argument("command", choices=["private", "existing"])
     args = parser.parse_args()
-    verify = os.getenv("VERIFY_ONLY") == "true"
-    if args.command == "plan":
-        plan(os.getenv("SELECT_APP") or "all", verify)
-    else:
-        prepare(json.loads(os.environ["CANDIDATE"]), verify)
+    prepare(json.loads(os.environ["CANDIDATE"]), args.command == "existing")

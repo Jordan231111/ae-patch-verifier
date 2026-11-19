@@ -4,11 +4,11 @@ The mobile app library at [LSPatch Workshop](https://verify-ae-modmenu.vercel.ap
 
 ## Prepared releases
 
-The catalog workflow checks store versions twice an hour. Rust Axion and Epic Conquest 2 use pinned precompiled APKs from private releases, the existing private packaging tool, and the workshop's matching signing identity. Google Play is the preferred original source. An ARM64 APKPure fallback must match the selected release and trusted original signer. The existing region-specific builders supply OnceWorld, AllRelic, and Another Eden. ReLevel retains its own release verification and update schedule.
+Each download request checks the current upstream release and prebuilt module. An exact match reuses the already verified file. When either input has changed, visitors requesting the same edition share one GitHub build. Rust Axion and Epic Conquest 2 use pinned private prebuilts, the existing private packaging tool, and the workshop's matching signing identity. Google Play is the preferred original source. An ARM64 APKPure fallback must match the selected release and trusted original signer. OnceWorld, AllRelic, and Another Eden run their existing builders directly with their original regional delivery settings.
 
-For each changed edition the workflow checks the base and splits, package identity, version code, and signing certificate. It verifies the uploaded asset's SHA-256 and size before advancing that edition in the `workshop-ready` branch. A failed build leaves the previously verified download available. The CDN-cached `/api/catalog` overlays this small index on the deploy snapshot in `catalog.json`. The browser downloads the selected immutable APKS asset directly.
+ReLevel keeps its separate 15-minute background checker, validation workflow, and authority over its own downloads. Browsing or searching the catalog does not queue builds for the other apps.
 
-To exercise a current build, run **Prepare workshop catalog** with its app ID and **verify_only**. To add a prepared app, supply its verified snapshot entry in `catalog.json` and its update inputs in `scripts/catalog/inputs.json` for the private-prebuilt method. An input change should pin the new private module version and SHA-256. Only complete signed APK sets belong in public catalog releases.
+The publishing step checks the signed split set and compares the uploaded size and SHA-256 before updating that edition's receipt on the data-only `workshop-ready` branch. Its Git configuration disables Vercel deployments. The CDN-cached `/api/catalog` feeds the searchable mobile list. The request/status endpoints independently check fresh release data and hand the download to the browser. A cached download is bound to the selected edition and its original and module identities.
 
 ## AllRelic APKPure builds
 

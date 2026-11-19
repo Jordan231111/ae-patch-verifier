@@ -1,62 +1,33 @@
-name: Prepare workshop catalog
+name: Prepare requested workshop download
+run-name: Workshop ${{ fromJSON(inputs.candidate).variant }} ${{ inputs.nonce }}
 
 on:
-  schedule:
-    - cron: "17,47 * * * *"
   workflow_dispatch:
     inputs:
-      app:
-        description: Catalog app ID, or all
-        default: all
+      candidate:
+        description: Release identity from the catalog request
+        required: true
+        type: string
+      nonce:
+        description: Request identifier
+        required: true
         type: string
       verify_only:
-        description: Exercise packaging for the selected app without replacing the live release
+        description: Verify the output without publishing
         default: false
         type: boolean
 
 permissions:
-  contents: read
+  contents: write
+
+concurrency:
+  group: workshop-private-${{ fromJSON(inputs.candidate).variant }}
+  cancel-in-progress: false
 
 jobs:
-  plan:
-    runs-on: ubuntu-latest
-    timeout-minutes: 12
-    outputs:
-      matrix: ${{ steps.check.outputs.matrix }}
-      errors: ${{ steps.check.outputs.errors }}
-    steps:
-      - uses: actions/checkout@v7.0.1
-        with:
-          persist-credentials: false
-      - uses: actions/setup-python@v6
-        with:
-          python-version: "3.12"
-      - run: python -m pip install --quiet --disable-pip-version-check 'gplaydl==4.2.1'
-      - id: check
-        name: Compare original app versions and prebuilt identities
-        env:
-          GH_TOKEN: ${{ github.token }}
-          PLAY_EMAIL: ${{ secrets.GPLAYDL_GLOBAL_EMAIL }}
-          GPLAYDL_API_KEY: ${{ secrets.GPLAYDL_API_KEY }}
-          SELECT_APP: ${{ inputs.app || 'all' }}
-          VERIFY_ONLY: ${{ inputs.verify_only || false }}
-        run: python scripts/catalog/refresh.py plan
-
   prepare:
-    needs: plan
-    if: needs.plan.outputs.matrix != '[]'
     runs-on: ubuntu-latest
-    timeout-minutes: 25
-    strategy:
-      fail-fast: false
-      matrix:
-        candidate: ${{ fromJSON(needs.plan.outputs.matrix) }}
-    name: Prepare ${{ matrix.candidate.variant }}
-    concurrency:
-      group: workshop-ready-${{ matrix.candidate.variant }}
-      cancel-in-progress: false
-    permissions:
-      contents: write
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7.0.1
         with:
@@ -64,36 +35,21 @@ jobs:
       - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
-      - name: Prepare Android packaging tools
+      - name: Prepare Android and store delivery tools
         run: |
+          python -m pip install --quiet --disable-pip-version-check 'gplaydl==4.2.1'
+          command -v aria2c >/dev/null || sudo apt-get install -y --no-install-recommends aria2
           if [ ! -x "$ANDROID_HOME/build-tools/37.0.0/apksigner" ]; then
             "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" 'build-tools;37.0.0' >/dev/null
           fi
           echo "$ANDROID_HOME/build-tools/37.0.0" >> "$GITHUB_PATH"
-      - name: Prepare store delivery client
-        if: matrix.candidate.app == 'rustaxion' || matrix.candidate.app == 'epicconquest'
-        run: |
-          python -m pip install --quiet --disable-pip-version-check 'gplaydl==4.2.1'
-          command -v aria2c >/dev/null || sudo apt-get install -y --no-install-recommends aria2
-      - name: Verify complete signed split set and advance ready release
+      - name: Package the requested original with the private prebuilt and verify the signed splits
         env:
           GH_TOKEN: ${{ github.token }}
-          MODULE_READ_TOKEN: ${{ (matrix.candidate.app == 'rustaxion' || matrix.candidate.app == 'epicconquest') && secrets.AE_MODULE_REPO_TOKEN || '' }}
-          HOST_KEYSTORE: ${{ (matrix.candidate.app == 'rustaxion' || matrix.candidate.app == 'epicconquest') && secrets.RELEVEL_HOST_KEYSTORE_BASE64 || '' }}
+          MODULE_READ_TOKEN: ${{ secrets.AE_MODULE_REPO_TOKEN }}
+          HOST_KEYSTORE: ${{ secrets.RELEVEL_HOST_KEYSTORE_BASE64 }}
           PLAY_EMAIL: ${{ secrets.GPLAYDL_GLOBAL_EMAIL }}
           GPLAYDL_API_KEY: ${{ secrets.GPLAYDL_API_KEY }}
-          VERIFY_ONLY: ${{ inputs.verify_only || false }}
-          CANDIDATE: ${{ toJSON(matrix.candidate) }}
-        run: python scripts/catalog/refresh.py prepare
-
-  report:
-    needs: plan
-    if: needs.plan.outputs.errors != ''
-    runs-on: ubuntu-latest
-    steps:
-      - name: Report incomplete update checks
-        env:
-          VARIANTS: ${{ needs.plan.outputs.errors }}
-        run: |
-          echo "::error::Could not check $VARIANTS. Published downloads are still available."
-          exit 1
+          VERIFY_ONLY: ${{ inputs.verify_only }}
+          CANDIDATE: ${{ inputs.candidate }}
+        run: python scripts/catalog/refresh.py private

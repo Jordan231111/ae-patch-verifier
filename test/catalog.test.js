@@ -2,6 +2,7 @@ const { test } = require("node:test");
 const assert = require("node:assert/strict");
 const { mergeReady } = require("../server/catalog");
 const catalog = require("../catalog.json");
+const { entry, identity, workflowInputs } = require("../server/catalog/requests");
 
 test("the deployed snapshot contains a numbered release and a real download path for every app", () => {
   assert.equal(new Set(catalog.apps.map(app => app.id)).size, catalog.apps.length);
@@ -22,6 +23,27 @@ test("the deployed snapshot contains a numbered release and a real download path
       }
     }
   }
+});
+
+test("ReLevel is excluded from on-demand builds and its timer remains the only preparation route for it", () => {
+  assert.equal(entry("relevel-arm64-release"), null);
+  assert.equal(entry("unknown"), null);
+  const { app, variant } = entry("anothereden-japan-arm64-debug");
+  const module = { sha: "a".repeat(40), ref: "main" };
+  const source = { source: "apkpure", versionName: "1.2", versionCode: "3" };
+  const key = identity(variant, source, module);
+  assert.notEqual(key, identity(variant, { ...source, versionCode: "4" }, module));
+  assert.notEqual(key, identity(variant, source, { ...module, sha: "b".repeat(40) }));
+  assert.notEqual(key, identity({ id: "anothereden-global-arm64-debug" }, source, module));
+  const candidate = { key, version: "1.2", code: "3", source: "apkpure" };
+  const dispatch = workflowInputs(app, variant, candidate, module, "1234567890123-1234abcd");
+  assert.equal(dispatch.region, "japan");
+  assert.equal(dispatch.variant, "debug");
+  assert.equal(dispatch.playLocale, "ja-JP");
+  assert.equal(dispatch.expectedVersionCode, "3");
+  assert.deepEqual(JSON.parse(dispatch.catalog), candidate);
+  const rust = entry("rustaxion-arm64-release");
+  assert.equal(workflowInputs(rust.app, rust.variant, candidate, module, "nonce").candidate, JSON.stringify(candidate));
 });
 
 test("only a matching immutable signed asset can replace its own catalog entry", () => {

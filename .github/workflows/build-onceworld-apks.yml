@@ -5,6 +5,10 @@ run-name: OnceWorld LSPatch ${{ inputs.expectedVersionName }} ${{ inputs.nonce }
 on:
   workflow_dispatch:
     inputs:
+      catalog:
+        description: Optional release receipt requested by the app catalog
+        required: false
+        type: string
       packageName:
         description: Server-resolved Android package
         required: true
@@ -303,6 +307,7 @@ jobs:
           echo "VERSION_LABEL=$VERSION_LABEL" >> "$GITHUB_ENV"
 
       - name: Publish short-lived download
+        if: inputs.catalog == ''
         env:
           GH_TOKEN: ${{ github.token }}
           NONCE: ${{ inputs.nonce }}
@@ -313,3 +318,10 @@ jobs:
             --repo "$GITHUB_REPOSITORY" \
             --title "OnceWorld ${VERSION_LABEL} OWKit ${MODULE_SHA_SHORT}" \
             --notes "Temporary private ARM64 OnceWorld build for ${PACKAGE_NAME}. Source ${SOURCE_KIND}. Module ${MODULE_SHA_SHORT}. Automatically removed by the lspatch janitor."
+      - name: Publish the requested catalog edition
+        if: inputs.catalog != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CANDIDATE: ${{ inputs.catalog }}
+          MODULE_SHA: ${{ inputs.moduleSha }}
+        run: python3 scripts/catalog/refresh.py existing

@@ -16,9 +16,10 @@ function mergeReady(seed, records) {
       }
       const expected = `${origin}catalog-${variant.id}-${next.sha256.slice(0, 20)}/${variant.id}-${next.version}.apks`;
       if (next.downloadUrl !== expected) return variant;
-      const { version, versionCode, sizeBytes, sha256, updatedAt, downloadUrl, moduleVersion, moduleSha } = next;
+      const { version, versionCode, sizeBytes, sha256, updatedAt, downloadUrl, moduleVersion, moduleSha, requestKey } = next;
       return { ...variant, version, versionCode, sizeBytes, sha256, updatedAt, downloadUrl,
-        ...(moduleVersion && { moduleVersion }), ...(moduleSha && { moduleSha }) };
+        ...(moduleVersion && { moduleVersion }), ...(moduleSha && { moduleSha }),
+        ...(/^[a-f0-9]{64}$/.test(requestKey || "") && { requestKey }) };
     })
   })) };
 }

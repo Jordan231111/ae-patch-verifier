@@ -3,6 +3,10 @@ run-name: AllRelic LSPatch ${{ inputs.versionName }} ${{ inputs.nonce }}
 on:
   workflow_dispatch:
     inputs:
+      catalog:
+        description: Optional release receipt requested by the app catalog
+        required: false
+        type: string
       versionCode:
         description: APKPure version code resolved by the server
         required: true
@@ -97,6 +101,7 @@ jobs:
             --source-cert "$SOURCE_CERT" --module-cert "$MODULE_CERT"
           echo "OUT=$OUT" >> "$GITHUB_ENV"
       - name: Publish a short-lived verified package
+        if: inputs.catalog == ''
         env:
           GH_TOKEN: ${{ github.token }}
           NONCE: ${{ inputs.nonce }}
@@ -110,3 +115,10 @@ jobs:
             --notes 'Temporary ARM64 AllRelic package from APKPure with the signed API-102 ARKit prebuilt embedded in LSPatch 1.2. Packaging, signatures and embedded inputs verified; rootless gameplay is not an automated CI assertion. Removed by the LSPatch janitor.'
           gh release upload "$TAG" "$OUT"
           gh release edit "$TAG" --draft=false
+      - name: Publish the requested catalog edition
+        if: inputs.catalog != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CANDIDATE: ${{ inputs.catalog }}
+          MODULE_SHA: ${{ inputs.moduleSha }}
+        run: python3 scripts/catalog/refresh.py existing
