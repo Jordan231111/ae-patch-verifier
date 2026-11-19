@@ -8,6 +8,7 @@ import json
 import re
 import shlex
 import subprocess
+import time
 from pathlib import Path
 
 from gplaydl.api import get_delivery, get_details, purchase
@@ -40,9 +41,12 @@ def download_with_aria(files, output: Path, fast_transfer=False) -> None:
         "--allow-overwrite=true", "--auto-file-renaming=false"
     ]
     remaining = output / "aria2-unfinished"
+    started = time.monotonic()
     try:
         fetch = input_file
         if fast_transfer:
+            # CDN URLs and cookies are short-lived credentials; report timings only.
+            base.append("--quiet=true")
             # Reconnect a slow CDN range instead of waiting on the last few MiB.
             result = subprocess.run([*base, "--input-file", str(input_file), "--min-split-size=1M",
                                      "--lowest-speed-limit=512K", "--auto-save-interval=1", "--max-tries=1",
@@ -55,6 +59,8 @@ def download_with_aria(files, output: Path, fast_transfer=False) -> None:
         if fetch:
             subprocess.run([*base, "--input-file", str(fetch), "--min-split-size=2M",
                             "--max-tries=3", "--retry-wait=2", "--connect-timeout=20", "--timeout=120"], check=True)
+        if fast_transfer:
+            print(f"[source] Transferred {len(files)} Play files in {time.monotonic() - started:.2f}s.", flush=True)
     finally:
         input_file.unlink(missing_ok=True)
         remaining.unlink(missing_ok=True)
