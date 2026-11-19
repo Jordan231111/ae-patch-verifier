@@ -5,7 +5,8 @@
     "files": {
       "package-lspatch.py": "b14fe454417be27830be5b4c45d909388483f6d08e4e7721fb75700d78825378",
       "download-lspatch.sh": "57a9062b5adb114e03068aff58f1fc1b2cfc233ca44fd7474589b1f0b195b550"
-    }
+    },
+    "zipmergeSha256": "018c48938a04506376ce527fe79a4dc60bdcfe56cde1ccb2ac5bd3c9479430fa"
   },
   "rustaxion": {
     "repository": "Jordan231111/rustAxionModule",

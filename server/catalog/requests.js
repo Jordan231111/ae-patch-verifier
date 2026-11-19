@@ -49,7 +49,9 @@ async function sourceFor(app, v) {
 }
 
 async function moduleFor(cfg, app, v) {
-  if (inputs[app.id]) return { sha: inputs[app.id].moduleSha256, recipe: inputs.packager.commit };
+  if (inputs[app.id]) {
+    return { sha: inputs[app.id].moduleSha256, recipe: inputs.packager.commit + "/" + inputs.packager.zipmergeSha256 };
+  }
   const moduleConfig = app.id === "onceworld" ? onceworldModuleConfig(cfg)
     : app.id === "allrelic" ? allrelicModuleConfig(cfg) : cfg;
   const asset = app.id === "onceworld" ? "app-lsposed-release.apk" : `app-${v.flavor || "release"}.apk`;

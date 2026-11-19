@@ -10,6 +10,8 @@ ReLevel keeps its separate 15-minute background checker, validation workflow, an
 
 After checking the complete signed split set, the workflow uploads the finished file as a raw Actions artifact. Waiting visitors can download it as soon as its run, filename, size and SHA-256 match the verified receipt. The same job then archives the same bytes as a permanent GitHub Release. Its checksum and content-addressed URL become the cached download only after publication succeeds. If the temporary transfer is unavailable, the request continues to the permanent release. Temporary artifacts expire after a day. ReLevel uses its own established download gate.
 
+The private-input builds use parallel standard DEFLATE and the SHA-256-pinned, unmodified Ubuntu zipmerge package. Its license and copyright notices are included in the package. The runner extracts this small tool from the checkout. Runners without the native utilities use the Python ZIP writer. [Ubuntu package and checksums](https://packages.ubuntu.com/noble/amd64/zipmerge/download)
+
 The data-only `workshop-ready` branch holds the per-edition receipts and coalesced requests. Its Git configuration disables Vercel deployments. The CDN-cached `/api/catalog` feeds the mobile list. The browser downloads files directly from storage through a short-lived redirect or a permanent release URL.
 
 ## AllRelic APKPure builds
