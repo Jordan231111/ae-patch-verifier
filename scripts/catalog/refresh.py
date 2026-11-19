@@ -30,11 +30,15 @@ def mirror_version(package):
 
 def play(package, folder, *options):
     # Each subprocess gets only the credentials it uses. Its diagnostic output stays on the runner.
-    subprocess.run([sys.executable, ROOT / "scripts/download-play-apks.py", "--package", package,
+    result = subprocess.run([sys.executable, ROOT / "scripts/download-play-apks.py", "--package", package,
                     "--architecture", "arm64-v8a", "--account-email", os.getenv("PLAY_EMAIL", ""),
                     "--metadata-source", "google-play", "--fast-transfer", "--output", folder, *options],
                    check=True, capture_output=True, timeout=330,
                    env=child_env("GPLAYDL_API_KEY"))
+    # Forward only numeric timing lines; store credentials and signed URLs stay on the runner.
+    for timing in re.findall(rb"^\[source\] (?:Transferred \d+ Play files|Play delivery metadata ready) in \d+\.\d+s\.$",
+                             result.stdout, re.M):
+        print(timing.decode("ascii"), flush=True)
 
 
 def child_env(*extra):

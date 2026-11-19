@@ -94,6 +94,7 @@ def main() -> None:
     auth_arch = {"arm64-v8a": "arm64", "x86_64": "x86_64"}.get(args.architecture)
     if not auth_arch:
         raise RuntimeError(f"Unsupported Google Play architecture: {args.architecture}")
+    started = time.monotonic()
     auth = ensure_auth(arch=auth_arch, email=args.account_email or None)
     if not auth:
         raise RuntimeError("Google Play authentication failed")
@@ -112,6 +113,8 @@ def main() -> None:
         purchase(args.package, app.version_code, auth),
         locales=[args.locale],
     )
+    if args.fast_transfer:
+        print(f"[source] Play delivery metadata ready in {time.monotonic() - started:.2f}s.", flush=True)
     if delivery.additional_files:
         raise RuntimeError("Google Play returned OBB or asset files outside the APKS contract")
     if args.metadata_source == "google-play" and args.expected_version != "unknown" \

@@ -27,7 +27,7 @@ concurrency:
 
 jobs:
   prepare:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7.0.1
@@ -38,13 +38,17 @@ jobs:
           python-version: "3.12"
       - name: Prepare Android and archive tools
         run: |
-          # The unmodified Ubuntu package is 8.5 KB. Extract the checked tool locally.
-          package=scripts/catalog/tools/zipmerge_1.7.3-1.1ubuntu2_amd64.deb
+          # The unmodified Ubuntu package is 9 KB. Extract the checked tool locally.
+          package=scripts/catalog/tools/zipmerge_1.11.4-2_amd64.deb
           fingerprint=$(jq -er '.packager.zipmergeSha256' scripts/catalog/inputs.json)
           printf '%s  %s\n' "$fingerprint" "$package" | sha256sum --check --status
           dpkg-deb --extract "$package" "$RUNNER_TEMP/workshop-zip"
           zip_bin="$RUNNER_TEMP/workshop-zip/usr/bin"
-          if "$zip_bin/zipmerge" -V >/dev/null 2>&1; then echo "$zip_bin" >> "$GITHUB_PATH"; fi
+          if "$zip_bin/zipmerge" -V; then
+            echo "$zip_bin" >> "$GITHUB_PATH"
+          else
+            echo "::warning::Using the portable ZIP writer"
+          fi
           command -v aria2c >/dev/null || sudo apt-get install -y --no-install-recommends aria2
           if [ ! -x "$ANDROID_HOME/build-tools/37.0.0/apksigner" ]; then
             "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" 'build-tools;37.0.0' >/dev/null
