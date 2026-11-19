@@ -10,13 +10,13 @@
     "versionCode": 148
   },
   "anothereden-global-arm64-debug": {
-    "downloadUrl": "https://github.com/Jordan231111/ae-patch-verifier/releases/download/catalog-anothereden-global-arm64-debug-29fc009964332d38879a/anothereden-global-arm64-debug-3.17.70.apks",
+    "downloadUrl": "https://github.com/Jordan231111/ae-patch-verifier/releases/download/catalog-anothereden-global-arm64-debug-7203867916bfd9f03bbe/anothereden-global-arm64-debug-3.17.70.apks",
     "moduleSha": "437c204ab3e9fa57c11b3cda335ae7398c81e9c0",
-    "requestKey": "6514dbbcd00e05f2a070d674f3734b98b96fd816ace5bc9e71fab54a465958c8",
-    "sha256": "29fc009964332d38879afb8e5d3481666151ae3991e95e32d1c5ef60b185144d",
+    "requestKey": "9f739a4ae1b65efc142c3a7b7e605ee21b7509bb28dca8c701d6560ce8fdd5bc",
+    "sha256": "7203867916bfd9f03bbe02c47b7250901b2a223f491afa4b6725e2bba9b17bab",
     "signer": "81e42545dd2948f32c29f1a0bc73e8f3f0f278af14b3d38b4b0b661f4d140ab4",
     "sizeBytes": 251126564,
-    "updatedAt": "2026-11-19T22:26:46Z",
+    "updatedAt": "2026-11-19T23:56:40Z",
     "version": "3.17.70",
     "versionCode": 710
   },
