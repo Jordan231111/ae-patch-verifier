@@ -2,7 +2,6 @@
   "allrelic-arm64-release": {
     "downloadUrl": "https://github.com/Jordan231111/ae-patch-verifier/releases/download/catalog-allrelic-arm64-release-421a8c7bfb6da6af5d51/allrelic-arm64-release-1.2.4.apks",
     "moduleSha": "1801973a8ebda5cc929fc3b3f5ea2bf0d6f94f28",
-    "requestKey": "261136ae0dc8d3679637f8a67838acfaed76f82c7949f7af372da5c8487af877",
     "sha256": "421a8c7bfb6da6af5d515bdcf021dbfc8b94a7a310376820356fd1b714730189",
     "signer": "c081890cf2a1adf13e56d7b50a4f3d8edb35b7c46d6ccc732dd997b7e433be1d",
     "sizeBytes": 296846369,
@@ -35,7 +34,6 @@
   "anothereden-japan-arm64-debug": {
     "downloadUrl": "https://github.com/Jordan231111/ae-patch-verifier/releases/download/catalog-anothereden-japan-arm64-debug-d45018be090e91ba81f5/anothereden-japan-arm64-debug-3.17.70.apks",
     "moduleSha": "437c204ab3e9fa57c11b3cda335ae7398c81e9c0",
-    "requestKey": "ddb9f969a23bd3d79448e96a43531ab370dc011aa04dd2ff10812924ef1f1d47",
     "sha256": "d45018be090e91ba81f56fd5c3aa39339fe9d2e96091ed1abfe05677e9bc8669",
     "signer": "81e42545dd2948f32c29f1a0bc73e8f3f0f278af14b3d38b4b0b661f4d140ab4",
     "sizeBytes": 231754922,
@@ -46,7 +44,6 @@
   "anothereden-japan-arm64-release": {
     "downloadUrl": "https://github.com/Jordan231111/ae-patch-verifier/releases/download/catalog-anothereden-japan-arm64-release-ff186425824bbcd4d5ec/anothereden-japan-arm64-release-3.17.70.apks",
     "moduleSha": "437c204ab3e9fa57c11b3cda335ae7398c81e9c0",
-    "requestKey": "18989835d989fce74e81d72d6f3105a1165e916437563f7bc670053090fc8eb1",
     "sha256": "ff186425824bbcd4d5eceb9237305daa852db7e5edbd38d203cb3ecd5978c91a",
     "signer": "81e42545dd2948f32c29f1a0bc73e8f3f0f278af14b3d38b4b0b661f4d140ab4",
     "sizeBytes": 231558314,
