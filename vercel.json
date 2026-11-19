@@ -125,6 +125,17 @@
   ],
   "redirects": [
     {
+      "source": "/",
+      "has": [
+        {
+          "type": "host",
+          "value": "verify-ae-modmenu-(?:[a-z0-9-]+-)?jordan231111s-projects\\.vercel\\.app"
+        }
+      ],
+      "destination": "https://verify-ae-modmenu.vercel.app/",
+      "permanent": false
+    },
+    {
       "source": "/:path*",
       "has": [
         {

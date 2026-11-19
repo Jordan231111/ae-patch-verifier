@@ -112,14 +112,14 @@
           "packageName": "com.GacoGames.EC2",
           "version": "3.1.5",
           "versionCode": 509,
-          "sizeBytes": 358851228,
-          "sha256": "572d6acf3adfc90bb1878d0ac862085c27c4129e75c599544d38e66983e88d6f",
+          "sizeBytes": 358851220,
+          "sha256": "4127e066289060323743340d4172e4fea82f90f465d39f31286b766b6f73ee74",
           "signer": "29b04c032802179a86374c8a13dba9ddbe8d9303f4909ac03766cb77de17c027",
           "moduleVersion": "0.6.8",
-          "downloadUrl": "https://github.com/Jordan231111/ae-patch-verifier/releases/download/catalog-epicconquest-arm64-release-572d6acf3adfc90bb187/epicconquest-arm64-release-3.1.5.apks",
-          "updatedAt": "2026-11-19T22:27:51Z",
+          "downloadUrl": "https://github.com/Jordan231111/ae-patch-verifier/releases/download/catalog-epicconquest-arm64-release-4127e066289060323743/epicconquest-arm64-release-3.1.5.apks",
+          "updatedAt": "2026-11-19T22:35:53Z",
           "moduleDigest": "7cfb08a65fc3d35d92ff1b732e1392cebf47baae37503ff0f278fafebdae9d80",
-          "requestKey": "c1352d7b60769d39c0423739de3540042a6d28abbd382f028b364b764bc1ba56"
+          "requestKey": "8d0db6f60ec1409a4e452bb9486d61d0a7562a44a2dcf8e86386c8187ff6c964"
         }
       ]
     },
@@ -173,14 +173,14 @@
           "packageName": "com.prayermicelle.rustaxion",
           "version": "1.4.2",
           "versionCode": 10402,
-          "sizeBytes": 260725944,
-          "sha256": "42f032910f7254819617db20e2d8fabe11c693f077f1dc6ca26c67b425e03c84",
+          "sizeBytes": 260725952,
+          "sha256": "9f43c318cbd6ee262d618978b014b47f01255bbb8fb130efb59d11935866a491",
           "signer": "29b04c032802179a86374c8a13dba9ddbe8d9303f4909ac03766cb77de17c027",
           "moduleVersion": "0.6.2",
-          "downloadUrl": "https://github.com/Jordan231111/ae-patch-verifier/releases/download/catalog-rustaxion-arm64-release-42f032910f7254819617/rustaxion-arm64-release-1.4.2.apks",
-          "updatedAt": "2026-11-19T22:26:41Z",
+          "downloadUrl": "https://github.com/Jordan231111/ae-patch-verifier/releases/download/catalog-rustaxion-arm64-release-9f43c318cbd6ee262d61/rustaxion-arm64-release-1.4.2.apks",
+          "updatedAt": "2026-11-19T22:35:49Z",
           "moduleDigest": "401eee47216fd521ee824983fed68900bb1eb657a7523cc4f52ec1f91dfe5489",
-          "requestKey": "d34a8eddcaf2d1c786a81d423f383941b59b63272c4d4e7982a0837a50d49fe1"
+          "requestKey": "637579ac5feb384e5f02c109fe3030d32e41147d3cd61b91738b0470fba623e5"
         }
       ]
     }
