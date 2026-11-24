@@ -280,9 +280,19 @@ jobs:
 
           mapfile -t PATCHED_BASES < <(find "$WORK/lspatch-out" -maxdepth 1 -type f -name '*-lspatched.apk')
           [ "${#PATCHED_BASES[@]}" -eq 1 ]
+          HOST_BASE="${PATCHED_BASES[0]}"
+          # New modules carry their manifest-only preparation helper. All runtime routing
+          # lives in the module; MicroG-RE is an unchanged, separately installed companion.
+          # Running after LSPatch preserves the exact signed source in origin.apk.
+          if unzip -Z1 "$MODULE_APK" | grep -Fx 'assets/host-tools/PrepareMicrog.java' >/dev/null; then
+            unzip -p "$MODULE_APK" assets/host-tools/PrepareMicrog.java > "$WORK/tools/PrepareMicrog.java"
+            java -cp "$LSPATCH_JAR" "$WORK/tools/PrepareMicrog.java" \
+              "$BASE_APK" "$HOST_BASE" "$WORK/base-microg-unsigned.apk"
+            HOST_BASE="$WORK/base-microg-unsigned.apk"
+          fi
           ALIGNED_BASE="$WORK/base-aligned.apk"
           FINAL_BASE="$WORK/bundle/$BASE_NAME"
-          "$ZIPALIGN" -f -P 16 4 "${PATCHED_BASES[0]}" "$ALIGNED_BASE"
+          "$ZIPALIGN" -f -P 16 4 "$HOST_BASE" "$ALIGNED_BASE"
           "$APKSIGNER" sign \
             --v4-signing-enabled false --alignment-preserved true \
             --ks "$KEYSTORE" --ks-pass "pass:$AE_HOST_KEYSTORE_PASSWORD" \
