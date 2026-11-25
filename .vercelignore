@@ -1,0 +1,2 @@
+# GitHub Actions uses this dependency. The website build reads only its catalog pin.
+.github/tools/lspatch/

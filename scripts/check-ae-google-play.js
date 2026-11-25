@@ -1,5 +1,6 @@
 const fs = require("fs");
 const path = require("path");
+const { createHash } = require("node:crypto");
 
 const root = path.resolve(__dirname, "..");
 const read = relative => fs.readFileSync(path.join(root, relative), "utf8");
@@ -41,6 +42,10 @@ for (const needle of [
   requireText(workflow, needle, `Another Eden workflow contract missing: ${needle}`);
 }
 requireText(workflow, "houdini-x86_64) TARGET_SUFFIX=_emulator-x86_64", "Houdini outputs must retain their emulator filename suffix");
+
+const patcher = require("./catalog/inputs.json").anotherEdenPatcher;
+const patcherDigest = createHash("sha256").update(fs.readFileSync(path.join(root, patcher.file))).digest("hex");
+if (patcherDigest !== patcher.sha256) throw new Error("The checked-out LSPatch JAR does not match the release pin");
 
 for (const needle of [
   '"--max-connection-per-server=16"',
