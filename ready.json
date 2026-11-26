@@ -22,15 +22,19 @@
     "versionCode": 710
   },
   "anothereden-global-arm64-release": {
-    "downloadUrl": "https://github.com/Jordan231111/ae-patch-verifier/releases/download/catalog-anothereden-global-arm64-release-de1da87dab78e9dd3624/anothereden-global-arm64-release-3.17.70.apks",
-    "moduleSha": "4bc6e919c0a7026a3793f629ef12af98095f8574",
-    "requestKey": "1c42102e3b2969abb2425bccdf2a2dbe10b16319b2c81ed12dc4cc06dd9b122e",
-    "sha256": "de1da87dab78e9dd3624efd44e9c4f17a91246338b3b927c2ec74a1f87f1ae26",
-    "signer": "81e42545dd2948f32c29f1a0bc73e8f3f0f278af14b3d38b4b0b661f4d140ab4",
-    "sizeBytes": 250970916,
-    "updatedAt": "2026-11-24T21:28:08Z",
-    "version": "3.17.70",
-    "versionCode": 710
+    "companionDigest": "f9486ecf8d3b69d0722f6e89266febd2f4af9a7a9b430fae4b04b8be51d6dd61",
+    "downloadUrl": "https://github.com/Jordan231111/ae-patch-verifier/releases/download/catalog-anothereden-global-arm64-release-d6d63420ed9da71c0c60/anothereden-global-arm64-release-3.17.71.apks",
+    "loaderBuild": 487,
+    "moduleDigest": "367d945703fc40317a0d5635c8c64e545469f6bf1f7fdd54a80bed9eaf6b2386",
+    "moduleSha": "ee10bee94def0571d465301453c10e98f02dca7d",
+    "recipe": "d238fdc414d121b7fa454d8b4ccf420df3a8c97d563761861ff92bd9c5da2165/5486b776291d98b9bc5a70586b9af89afce8674fd462889238c0ebd99786a1c1/f9486ecf8d3b69d0722f6e89266febd2f4af9a7a9b430fae4b04b8be51d6dd61/bb015d37b53f4f39f7f11d54dd2a9f6a5846dc998f67665d605b68bcc4784d9f/prepare-v1",
+    "requestKey": "e132353f96690558f24f115a79d19a02acf973e6f42c3742b9bf62eafbe1c968",
+    "sha256": "d6d63420ed9da71c0c60ac1282647190fa696e1338a7a341630c34c088eb461a",
+    "signer": "5486b776291d98b9bc5a70586b9af89afce8674fd462889238c0ebd99786a1c1",
+    "sizeBytes": 251007800,
+    "updatedAt": "2026-11-26T05:28:15Z",
+    "version": "3.17.71",
+    "versionCode": 712
   },
   "anothereden-japan-arm64-debug": {
     "downloadUrl": "https://github.com/Jordan231111/ae-patch-verifier/releases/download/catalog-anothereden-japan-arm64-debug-d6f5ac674f8a9311f2db/anothereden-japan-arm64-debug-3.17.70.apks",
