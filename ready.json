@@ -1,12 +1,13 @@
 {
   "allrelic-arm64-release": {
-    "downloadUrl": "https://github.com/Jordan231111/ae-patch-verifier/releases/download/catalog-allrelic-arm64-release-cc198eaa11851fe46bc5/allrelic-arm64-release-1.2.4.apks",
-    "moduleSha": "1801973a8ebda5cc929fc3b3f5ea2bf0d6f94f28",
-    "requestKey": "261136ae0dc8d3679637f8a67838acfaed76f82c7949f7af372da5c8487af877",
-    "sha256": "cc198eaa11851fe46bc58849add3721c72d3006173bb6dc6ef0640584fe48a7a",
-    "signer": "c081890cf2a1adf13e56d7b50a4f3d8edb35b7c46d6ccc732dd997b7e433be1d",
-    "sizeBytes": 296846369,
-    "updatedAt": "2026-11-19T23:57:27Z",
+    "downloadUrl": "https://github.com/Jordan231111/ae-patch-verifier/releases/download/catalog-allrelic-arm64-release-a83ffdcbcef134d39692/allrelic-arm64-release-1.2.4.apks",
+    "moduleSha": "786a0529eb0ff4ba3b1edc3022f4f808f95a054f",
+    "recipe": "d238fdc414d121b7fa454d8b4ccf420df3a8c97d563761861ff92bd9c5da2165/5486b776291d98b9bc5a70586b9af89afce8674fd462889238c0ebd99786a1c1",
+    "requestKey": "d39f13409154b98e742982eed77e3813353e87e1d7242b21797eea9286404fee",
+    "sha256": "a83ffdcbcef134d39692ce84aee5854a7450f575c7975501386af31a994a4c37",
+    "signer": "5486b776291d98b9bc5a70586b9af89afce8674fd462889238c0ebd99786a1c1",
+    "sizeBytes": 296858673,
+    "updatedAt": "2026-11-26T05:32:24Z",
     "version": "1.2.4",
     "versionCode": 148
   },
