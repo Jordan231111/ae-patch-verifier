@@ -12,15 +12,19 @@
     "versionCode": 148
   },
   "anothereden-global-arm64-debug": {
-    "downloadUrl": "https://github.com/Jordan231111/ae-patch-verifier/releases/download/catalog-anothereden-global-arm64-debug-7203867916bfd9f03bbe/anothereden-global-arm64-debug-3.17.70.apks",
-    "moduleSha": "437c204ab3e9fa57c11b3cda335ae7398c81e9c0",
-    "requestKey": "9f739a4ae1b65efc142c3a7b7e605ee21b7509bb28dca8c701d6560ce8fdd5bc",
-    "sha256": "7203867916bfd9f03bbe02c47b7250901b2a223f491afa4b6725e2bba9b17bab",
-    "signer": "81e42545dd2948f32c29f1a0bc73e8f3f0f278af14b3d38b4b0b661f4d140ab4",
-    "sizeBytes": 251126564,
-    "updatedAt": "2026-11-19T23:56:40Z",
-    "version": "3.17.70",
-    "versionCode": 710
+    "companionDigest": "f9486ecf8d3b69d0722f6e89266febd2f4af9a7a9b430fae4b04b8be51d6dd61",
+    "downloadUrl": "https://github.com/Jordan231111/ae-patch-verifier/releases/download/catalog-anothereden-global-arm64-debug-187ad8c04d313d37f5de/anothereden-global-arm64-debug-3.17.71.apks",
+    "loaderBuild": 487,
+    "moduleDigest": "4683abf08458c5f7b12ed5475b27756da4b6efe95321adcd806a06a3451cd706",
+    "moduleSha": "ee10bee94def0571d465301453c10e98f02dca7d",
+    "recipe": "d238fdc414d121b7fa454d8b4ccf420df3a8c97d563761861ff92bd9c5da2165/5486b776291d98b9bc5a70586b9af89afce8674fd462889238c0ebd99786a1c1/f9486ecf8d3b69d0722f6e89266febd2f4af9a7a9b430fae4b04b8be51d6dd61/bb015d37b53f4f39f7f11d54dd2a9f6a5846dc998f67665d605b68bcc4784d9f/prepare-v1",
+    "requestKey": "79992c7627e0d8c7999066b7ed5ed8128e2a5b0ee08727e6b1f1fb88789ae30d",
+    "sha256": "187ad8c04d313d37f5dec0c96d66755633a832948462a824be23f4b6b7a16a17",
+    "signer": "5486b776291d98b9bc5a70586b9af89afce8674fd462889238c0ebd99786a1c1",
+    "sizeBytes": 251220792,
+    "updatedAt": "2026-11-26T05:35:07Z",
+    "version": "3.17.71",
+    "versionCode": 712
   },
   "anothereden-global-arm64-release": {
     "companionDigest": "f9486ecf8d3b69d0722f6e89266febd2f4af9a7a9b430fae4b04b8be51d6dd61",
