@@ -700,8 +700,8 @@
         <span class="launch-mark" aria-hidden="true">AE</span>
         <span class="launch-copy">
           <span class="launch-title">Another Eden <span class="route-tag">Configure</span></span>
-          <span class="launch-desc">Choose phone or emulator, game region, and module flavor.</span>
-          <span class="launch-meta">global / japan &middot; arm64 / x86_64</span>
+          <span class="launch-desc">Choose game region and module flavor for an ARM64 device.</span>
+          <span class="launch-meta">global / japan &middot; arm64</span>
         </span>
       </button>
       <button id="relevelTab" class="launch-tab" type="button" role="tab" aria-selected="false" aria-controls="relevelPanel" data-game="relevel" tabindex="-1">
@@ -838,22 +838,15 @@
       <div class="builder-main">
         <div>
           <h2>Target device</h2>
-          <p class="builder-sub">Most users want the phone build. Only choose Emulator if you run Another Eden in an x86_64 Android emulator (BlueStacks, LDPlayer, MEmu, WSA, etc).</p>
+          <p class="builder-sub">Supports ARM64 Android phones, tablets and emulators, including MuMu on Apple silicon.</p>
         </div>
         <div class="field">
           <div class="cards-2">
             <label class="pick">
               <input type="radio" name="moduleSource" value="main" checked>
               <div class="pick-body">
-                <span class="pick-title">Real Android Phone <span class="pick-tag real">arm64</span></span>
-                <span class="pick-desc">Standard ARM64 build for actual phones &amp; tablets.</span>
-              </div>
-            </label>
-            <label class="pick">
-              <input type="radio" name="moduleSource" value="houdini-x64-rewrite">
-              <div class="pick-body">
-                <span class="pick-title">Emulator Only <span class="pick-tag emu">x86_64</span></span>
-                <span class="pick-desc">x86_64 rewrite for BlueStacks / LDPlayer / WSA. Do not install on a phone.</span>
+                <span class="pick-title">Android device <span class="pick-tag real">arm64</span></span>
+                <span class="pick-desc">Phones, tablets and ARM64 emulators.</span>
               </div>
             </label>
           </div>
@@ -928,7 +921,7 @@
     </section>
 
     <div class="foot">
-      <span>Game-specific signing identities &middot; LSPatch 1.2 / Vector API 102</span>
+      <span>Shared Android signing identity &middot; LSPatch 1.2 build 487 / Vector API 102</span>
       <a href="https://github.com/Jordan231111/ae-patch-verifier" target="_blank" rel="noopener">Source on GitHub</a>
     </div>
   </main>
@@ -1450,7 +1443,7 @@
     }
 
     function sourceLabel(source) {
-      return source === "houdini-x64-rewrite" ? "Emulator (x86_64)" : "Phone (ARM64)";
+      return "ARM64 device";
     }
 
     function selectedRadio(name) {

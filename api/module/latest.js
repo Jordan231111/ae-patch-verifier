@@ -10,6 +10,11 @@ module.exports = async function handler(req, res) {
 
   const cfg = config();
   const requestUrl = new URL(req.url || "/", "http://localhost");
+  if (requestUrl.searchParams.get("moduleSource") && requestUrl.searchParams.get("moduleSource") !== "main") {
+    res.setHeader("content-type", "application/json");
+    res.statusCode = 422;
+    return res.end(JSON.stringify({ message: "Only ARM64 phones and ARM64 emulators are supported." }));
+  }
   const moduleSource = normalizeModuleSource(requestUrl.searchParams.get("moduleSource"));
   const variant = requestUrl.searchParams.get("variant") === "debug" ? "debug" : "release";
 

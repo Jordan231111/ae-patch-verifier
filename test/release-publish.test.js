@@ -93,6 +93,10 @@ test('missing prebuilt returns a retryable error without dispatching module comp
   await build({ method: 'POST', body: { region: 'global' } }, res);
   assert.equal(res.statusCode, 503);
   assert.match(JSON.parse(res.body).message, /precompiled module is not ready/);
+  const unsupported = response();
+  await build({ method: 'POST', body: { region: 'global', moduleSource: 'houdini-x64-rewrite' } }, unsupported);
+  assert.equal(unsupported.statusCode, 422);
+  assert.match(JSON.parse(unsupported.body).message, /Only ARM64/);
 });
 
 test('artifact selection rejects expired, empty and other-request files', () => {

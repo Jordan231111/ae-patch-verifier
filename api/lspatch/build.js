@@ -32,10 +32,8 @@ const GAMES = {
   }
 };
 
-function targetFor(moduleSource) {
-  return moduleSource === "houdini-x64-rewrite"
-    ? { architecture: "arm64-v8a", runtimeTarget: "houdini-x86_64", label: "Emulator (x86_64/Houdini)" }
-    : { architecture: "arm64-v8a", runtimeTarget: "phone-arm64", label: "Phone (ARM64)" };
+function targetFor() {
+  return { architecture: "arm64-v8a", runtimeTarget: "phone-arm64", label: "ARM64 phone or emulator" };
 }
 
 async function dispatchGithubBuild({ region, moduleVariant, moduleSource }) {
@@ -144,6 +142,10 @@ module.exports = async function handler(req, res) {
     const body = typeof req.body === "object" && req.body !== null
       ? req.body
       : JSON.parse(req.body || "{}");
+    if (body.moduleSource && body.moduleSource !== "main") {
+      res.statusCode = 422;
+      return res.end(JSON.stringify({ message: "Only ARM64 phones and ARM64 emulators are supported." }));
+    }
     const region = body.region === "japan" ? "japan" : "global";
     const moduleVariant = body.moduleVariant === "debug" ? "debug" : "release";
     const moduleSource = normalizeModuleSource(body.moduleSource);

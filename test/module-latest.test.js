@@ -38,6 +38,14 @@ test('latest module metadata requires the chosen prebuilt flavor and exposes the
   const res = response();
   await handler({ method: 'POST' }, res);
   assert.equal(res.statusCode, 405);
+  const count = calls.length;
+  for (const source of ['houdini-x64-rewrite', 'unknown']) {
+    const unsupported = response();
+    await handler({ method: 'GET', url: '/api/module/latest?moduleSource=' + source }, unsupported);
+    assert.equal(unsupported.statusCode, 422);
+    assert.match(JSON.parse(unsupported.body).message, /Only ARM64/);
+  }
+  assert.equal(calls.length, count);
 });
 
 test('a debug-only release cannot be presented as the latest release APK', async () => {

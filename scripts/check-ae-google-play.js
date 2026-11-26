@@ -16,7 +16,7 @@ for (const needle of [
   'packageName: "games.wfs.anothereden"',
   'packageName: "net.wrightflyer.anothereden"',
   'architecture: "arm64-v8a"',
-  'runtimeTarget: "houdini-x86_64"',
+  'runtimeTarget: "phone-arm64"',
   "resolveLatestPlayListing",
   "resolveXapkVariant",
   "expectedVersionName",
@@ -40,7 +40,6 @@ for (const needle of [
 ]) {
   requireText(workflow, needle, `Another Eden workflow contract missing: ${needle}`);
 }
-requireText(workflow, "houdini-x86_64) TARGET_SUFFIX=_emulator-x86_64", "Houdini outputs must retain their emulator filename suffix");
 
 const patcher = require("./catalog/inputs.json").anotherEdenPatcher;
 const patcherDigest = createHash("sha256").update(fs.readFileSync(path.join(root, patcher.file))).digest("hex");

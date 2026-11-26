@@ -54,6 +54,8 @@ The Cloudflare Durable Object in `workers/relevel-timer` requests a check every 
 
 A changed game requires two repeatable pre-init native captures in disposable ARM64 Android. Unknown callbacks, unsupported layouts, nonrepeatable native data, failed hooks or failed signatures cannot publish. The resulting production bundle is checked in a fresh runtime before its ready index advances. Web requests never build or force a retry.
 
+Capture and validation use Frida 17.26.3 with frida-tools 14.13.1. The server, checksum manifest and source license are retained in the immutable `build-tools-frida-17.26.3` dependency release.
+
 Failures have a bounded three-attempt budget. The timer uses one alarm, bounded network timeouts and backoff. A stale observation or changed input cannot relabel an old file as current. Only the current bundle and recovered inputs required to rebuild it are retained. Temporary capture artifacts are removed when the run completes.
 
 ## Native verifier

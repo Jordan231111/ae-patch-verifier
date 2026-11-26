@@ -12,7 +12,13 @@
           "version": "1.2.4",
           "versionCode": 148,
           "signer": "5486b776291d98b9bc5a70586b9af89afce8674fd462889238c0ebd99786a1c1",
-          "sizeBytes": 296846369
+          "sizeBytes": 296858673,
+          "downloadUrl": "https://github.com/Jordan231111/ae-patch-verifier/releases/download/catalog-allrelic-arm64-release-a83ffdcbcef134d39692/allrelic-arm64-release-1.2.4.apks",
+          "moduleSha": "786a0529eb0ff4ba3b1edc3022f4f808f95a054f",
+          "recipe": "d238fdc414d121b7fa454d8b4ccf420df3a8c97d563761861ff92bd9c5da2165/5486b776291d98b9bc5a70586b9af89afce8674fd462889238c0ebd99786a1c1",
+          "requestKey": "d39f13409154b98e742982eed77e3813353e87e1d7242b21797eea9286404fee",
+          "sha256": "a83ffdcbcef134d39692ce84aee5854a7450f575c7975501386af31a994a4c37",
+          "updatedAt": "2026-11-26T05:32:24Z"
         }
       ],
       "workshopUrl": "/workshop?app=allrelic"
@@ -28,11 +34,20 @@
           "flavor": "release",
           "label": "Global \u00b7 Release",
           "packageName": "games.wfs.anothereden",
-          "version": "3.17.70",
-          "versionCode": 710,
+          "version": "3.17.71",
+          "versionCode": 712,
           "signer": "5486b776291d98b9bc5a70586b9af89afce8674fd462889238c0ebd99786a1c1",
-          "sizeBytes": 250913572,
-          "workshopUrl": "/workshop?app=anothereden&region=global&moduleVariant=release"
+          "sizeBytes": 251007800,
+          "workshopUrl": "/workshop?app=anothereden&region=global&moduleVariant=release",
+          "companionDigest": "f9486ecf8d3b69d0722f6e89266febd2f4af9a7a9b430fae4b04b8be51d6dd61",
+          "downloadUrl": "https://github.com/Jordan231111/ae-patch-verifier/releases/download/catalog-anothereden-global-arm64-release-d6d63420ed9da71c0c60/anothereden-global-arm64-release-3.17.71.apks",
+          "loaderBuild": 487,
+          "moduleDigest": "367d945703fc40317a0d5635c8c64e545469f6bf1f7fdd54a80bed9eaf6b2386",
+          "moduleSha": "ee10bee94def0571d465301453c10e98f02dca7d",
+          "recipe": "d238fdc414d121b7fa454d8b4ccf420df3a8c97d563761861ff92bd9c5da2165/5486b776291d98b9bc5a70586b9af89afce8674fd462889238c0ebd99786a1c1/f9486ecf8d3b69d0722f6e89266febd2f4af9a7a9b430fae4b04b8be51d6dd61/bb015d37b53f4f39f7f11d54dd2a9f6a5846dc998f67665d605b68bcc4784d9f/prepare-v1",
+          "requestKey": "e132353f96690558f24f115a79d19a02acf973e6f42c3742b9bf62eafbe1c968",
+          "sha256": "d6d63420ed9da71c0c60ac1282647190fa696e1338a7a341630c34c088eb461a",
+          "updatedAt": "2026-11-26T05:28:15Z"
         },
         {
           "id": "anothereden-japan-arm64-release",
@@ -44,8 +59,17 @@
           "version": "3.17.70",
           "versionCode": 1016,
           "signer": "5486b776291d98b9bc5a70586b9af89afce8674fd462889238c0ebd99786a1c1",
-          "sizeBytes": 231558314,
-          "workshopUrl": "/workshop?app=anothereden&region=japan&moduleVariant=release"
+          "sizeBytes": 231648446,
+          "workshopUrl": "/workshop?app=anothereden&region=japan&moduleVariant=release",
+          "companionDigest": "f9486ecf8d3b69d0722f6e89266febd2f4af9a7a9b430fae4b04b8be51d6dd61",
+          "downloadUrl": "https://github.com/Jordan231111/ae-patch-verifier/releases/download/catalog-anothereden-japan-arm64-release-37218cacdb679d962ab9/anothereden-japan-arm64-release-3.17.70.apks",
+          "loaderBuild": 487,
+          "moduleDigest": "367d945703fc40317a0d5635c8c64e545469f6bf1f7fdd54a80bed9eaf6b2386",
+          "moduleSha": "ee10bee94def0571d465301453c10e98f02dca7d",
+          "recipe": "d238fdc414d121b7fa454d8b4ccf420df3a8c97d563761861ff92bd9c5da2165/5486b776291d98b9bc5a70586b9af89afce8674fd462889238c0ebd99786a1c1/f9486ecf8d3b69d0722f6e89266febd2f4af9a7a9b430fae4b04b8be51d6dd61/bb015d37b53f4f39f7f11d54dd2a9f6a5846dc998f67665d605b68bcc4784d9f/prepare-v1",
+          "requestKey": "56c8257e1cdfd3e15307ca3eb002c627e1c7ce8ca0dc8f97a52ae6ce54ec0a51",
+          "sha256": "37218cacdb679d962ab9135b16c273ed7e7c0749db815947e5d0d918b8f1a52c",
+          "updatedAt": "2026-11-26T05:36:39Z"
         },
         {
           "id": "anothereden-global-arm64-debug",
@@ -54,11 +78,20 @@
           "flavor": "debug",
           "label": "Global \u00b7 Debug",
           "packageName": "games.wfs.anothereden",
-          "version": "3.17.70",
-          "versionCode": 710,
+          "version": "3.17.71",
+          "versionCode": 712,
           "signer": "5486b776291d98b9bc5a70586b9af89afce8674fd462889238c0ebd99786a1c1",
-          "sizeBytes": 251126564,
-          "workshopUrl": "/workshop?app=anothereden&region=global&moduleVariant=debug"
+          "sizeBytes": 251220792,
+          "workshopUrl": "/workshop?app=anothereden&region=global&moduleVariant=debug",
+          "companionDigest": "f9486ecf8d3b69d0722f6e89266febd2f4af9a7a9b430fae4b04b8be51d6dd61",
+          "downloadUrl": "https://github.com/Jordan231111/ae-patch-verifier/releases/download/catalog-anothereden-global-arm64-debug-187ad8c04d313d37f5de/anothereden-global-arm64-debug-3.17.71.apks",
+          "loaderBuild": 487,
+          "moduleDigest": "4683abf08458c5f7b12ed5475b27756da4b6efe95321adcd806a06a3451cd706",
+          "moduleSha": "ee10bee94def0571d465301453c10e98f02dca7d",
+          "recipe": "d238fdc414d121b7fa454d8b4ccf420df3a8c97d563761861ff92bd9c5da2165/5486b776291d98b9bc5a70586b9af89afce8674fd462889238c0ebd99786a1c1/f9486ecf8d3b69d0722f6e89266febd2f4af9a7a9b430fae4b04b8be51d6dd61/bb015d37b53f4f39f7f11d54dd2a9f6a5846dc998f67665d605b68bcc4784d9f/prepare-v1",
+          "requestKey": "79992c7627e0d8c7999066b7ed5ed8128e2a5b0ee08727e6b1f1fb88789ae30d",
+          "sha256": "187ad8c04d313d37f5dec0c96d66755633a832948462a824be23f4b6b7a16a17",
+          "updatedAt": "2026-11-26T05:35:07Z"
         },
         {
           "id": "anothereden-japan-arm64-debug",
@@ -70,8 +103,17 @@
           "version": "3.17.70",
           "versionCode": 1016,
           "signer": "5486b776291d98b9bc5a70586b9af89afce8674fd462889238c0ebd99786a1c1",
-          "sizeBytes": 231754922,
-          "workshopUrl": "/workshop?app=anothereden&region=japan&moduleVariant=debug"
+          "sizeBytes": 231845054,
+          "workshopUrl": "/workshop?app=anothereden&region=japan&moduleVariant=debug",
+          "companionDigest": "f9486ecf8d3b69d0722f6e89266febd2f4af9a7a9b430fae4b04b8be51d6dd61",
+          "downloadUrl": "https://github.com/Jordan231111/ae-patch-verifier/releases/download/catalog-anothereden-japan-arm64-debug-bb34e293c513b246bb65/anothereden-japan-arm64-debug-3.17.70.apks",
+          "loaderBuild": 487,
+          "moduleDigest": "4683abf08458c5f7b12ed5475b27756da4b6efe95321adcd806a06a3451cd706",
+          "moduleSha": "ee10bee94def0571d465301453c10e98f02dca7d",
+          "recipe": "d238fdc414d121b7fa454d8b4ccf420df3a8c97d563761861ff92bd9c5da2165/5486b776291d98b9bc5a70586b9af89afce8674fd462889238c0ebd99786a1c1/f9486ecf8d3b69d0722f6e89266febd2f4af9a7a9b430fae4b04b8be51d6dd61/bb015d37b53f4f39f7f11d54dd2a9f6a5846dc998f67665d605b68bcc4784d9f/prepare-v1",
+          "requestKey": "9c24b11ef4e38d1a5aff11f63c35adc9335c54e12112b0ad75bf118420072aa2",
+          "sha256": "bb34e293c513b246bb6518203193d25b050a18322ac7dc515588cf20ab4ca955",
+          "updatedAt": "2026-11-26T05:36:37Z"
         }
       ],
       "workshopUrl": "/workshop?app=anothereden"
@@ -87,8 +129,15 @@
           "packageName": "com.GacoGames.EC2",
           "version": "3.1.5",
           "versionCode": 509,
-          "sizeBytes": 358851220,
-          "signer": "5486b776291d98b9bc5a70586b9af89afce8674fd462889238c0ebd99786a1c1"
+          "sizeBytes": 359450892,
+          "signer": "5486b776291d98b9bc5a70586b9af89afce8674fd462889238c0ebd99786a1c1",
+          "downloadUrl": "https://github.com/Jordan231111/ae-patch-verifier/releases/download/catalog-epicconquest-arm64-release-f1bd795f5b3dabc30c82/epicconquest-arm64-release-3.1.5.apks",
+          "moduleDigest": "9e04f1546885ae04cde153fade3f36799b0f30aa577755f86d4064cf857f21c5",
+          "moduleVersion": "0.6.10",
+          "recipe": "d238fdc414d121b7fa454d8b4ccf420df3a8c97d563761861ff92bd9c5da2165/5486b776291d98b9bc5a70586b9af89afce8674fd462889238c0ebd99786a1c1/4ff57dac77e068fbb4a52b017892640fdf3e48a5/f9486ecf8d3b69d0722f6e89266febd2f4af9a7a9b430fae4b04b8be51d6dd61",
+          "requestKey": "795eb232cd98e00e1e124e60e32b93c7b420d50330ca50158c42fa0dfabda09c",
+          "sha256": "f1bd795f5b3dabc30c82d757672420ac2f442a449edaacccc985fb039b7b45ea",
+          "updatedAt": "2026-11-26T05:26:42Z"
         }
       ]
     },
@@ -104,7 +153,13 @@
           "version": "3.0.6",
           "versionCode": 156,
           "signer": "5486b776291d98b9bc5a70586b9af89afce8674fd462889238c0ebd99786a1c1",
-          "sizeBytes": 291380494
+          "sizeBytes": 291388702,
+          "downloadUrl": "https://github.com/Jordan231111/ae-patch-verifier/releases/download/catalog-onceworld-arm64-release-d21211e19e7ac8c739d3/onceworld-arm64-release-3.0.6.apks",
+          "moduleSha": "81f24f1c4e2746f352b795b0a3740fadac928908",
+          "recipe": "d238fdc414d121b7fa454d8b4ccf420df3a8c97d563761861ff92bd9c5da2165/5486b776291d98b9bc5a70586b9af89afce8674fd462889238c0ebd99786a1c1",
+          "requestKey": "4fa79e38c92c65805356110a0a9e3f3e6689d82e31c4311559e53b89fcf744f3",
+          "sha256": "d21211e19e7ac8c739d38b4bb21bf600c67dcf400a4fd62c0461055d0c70861b",
+          "updatedAt": "2026-11-26T05:32:31Z"
         }
       ],
       "workshopUrl": "/workshop?app=onceworld"
@@ -137,8 +192,15 @@
           "packageName": "com.prayermicelle.rustaxion",
           "version": "1.4.2",
           "versionCode": 10402,
-          "sizeBytes": 260725952,
-          "signer": "5486b776291d98b9bc5a70586b9af89afce8674fd462889238c0ebd99786a1c1"
+          "sizeBytes": 260721809,
+          "signer": "5486b776291d98b9bc5a70586b9af89afce8674fd462889238c0ebd99786a1c1",
+          "downloadUrl": "https://github.com/Jordan231111/ae-patch-verifier/releases/download/catalog-rustaxion-arm64-release-98b61b584a14e8da6e4e/rustaxion-arm64-release-1.4.2.apks",
+          "moduleDigest": "1bdb757a77c2fa9fbfda5374fe35d6fe283766048b35f5e41cb2040b59069f2d",
+          "moduleVersion": "0.6.2",
+          "recipe": "d238fdc414d121b7fa454d8b4ccf420df3a8c97d563761861ff92bd9c5da2165/5486b776291d98b9bc5a70586b9af89afce8674fd462889238c0ebd99786a1c1/67de707c4e36eaf5eda27d5996d9ae5a44151a40",
+          "requestKey": "a577c8f611e6929c21bec77e20ce7d3e2034952777a84cf18e89cc52a21b673f",
+          "sha256": "98b61b584a14e8da6e4e2bd1e54721daf61bd6b923b347b0db9fddb285ebbd1d",
+          "updatedAt": "2026-11-26T05:30:01Z"
         }
       ]
     }

@@ -46,7 +46,7 @@ on:
         description: Installation target
         required: true
         type: choice
-        options: [phone-arm64, houdini-x86_64]
+        options: [phone-arm64]
       sourceKind:
         description: Game package source
         required: true
@@ -110,16 +110,18 @@ jobs:
           CANDIDATE: ${{ inputs.catalog }}
           MODULE_REPO: ${{ secrets.AE_MODULE_REPO }}
           MODULE_ASSET: app-${{ inputs.variant }}.apk
+          MODULE_SOURCE: ${{ inputs.moduleSource }}
           GH_TOKEN: ${{ secrets.AE_MODULE_REPO_TOKEN }}
         run: |
           set -Eeuo pipefail
           [[ "$REGION" == 'global' || "$REGION" == 'japan' ]]
           [[ "$PACKAGE_NAME" =~ ^[A-Za-z0-9._-]+$ ]]
           [[ "$ARCHITECTURE" == 'arm64-v8a' ]]
-          [[ "$RUNTIME_TARGET" == 'phone-arm64' || "$RUNTIME_TARGET" == 'houdini-x86_64' ]]
+          [[ "$RUNTIME_TARGET" == 'phone-arm64' ]]
           [[ "$SOURCE_KIND" == 'google-play' || "$SOURCE_KIND" == 'apkpure' ]]
           [[ "$EXPECTED_VERSION_CODE" =~ ^[0-9]+$ ]]
           [[ "$MODULE_SHA" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$MODULE_SOURCE" == main ]]
           test -n "$EXPECTED_VERSION_NAME"
           if [ "$SOURCE_KIND" = google-play ]; then
             test -n "$GPLAYDL_API_KEY"
@@ -244,10 +246,7 @@ jobs:
             japan) DEFAULT_NAME=AnotherEden_Japan ;;
             *) DEFAULT_NAME=AnotherEden_Global ;;
           esac
-          case "$RUNTIME_TARGET" in
-            houdini-x86_64) TARGET_SUFFIX=_emulator-x86_64 ;;
-            *) TARGET_SUFFIX='' ;;
-          esac
+          TARGET_SUFFIX=''
 
           KEYSTORE="$TEMPLATE_KS_PATH"
           test -s "$KEYSTORE"
