@@ -4,15 +4,10 @@ gh run download "$GITHUB_RUN_ID" --repo "$GITHUB_REPOSITORY" --name relevel-inpu
 mkdir -p "$RUNNER_TEMP/tools" "$RUNNER_TEMP/candidate" "$RUNNER_TEMP/bin" "$RUNNER_TEMP/smali"
 openssl enc -d -aes-256-cbc -pbkdf2 -iter 200000 -pass env:RELEVEL_CI_TRANSFER_KEY \
   -in "$RUNNER_TEMP/inputs/private.enc" | tar -xz -C "$RUNNER_TEMP/tools"
-export RELEVEL_KEYSTORE="$RUNNER_TEMP/host.keystore"
-trap 'rm -f "$RELEVEL_KEYSTORE"' EXIT
-printf '%s' "$KEYSTORE_BASE64" | base64 --decode > "$RELEVEL_KEYSTORE"
-chmod 600 "$RELEVEL_KEYSTORE"
-unset KEYSTORE_BASE64 RELEVEL_CI_TRANSFER_KEY
+export RELEVEL_KEYSTORE="${TEMPLATE_KS_PATH:?}"
+unset RELEVEL_CI_TRANSFER_KEY
 export RELEVEL_MODULE_APK="$RUNNER_TEMP/tools/module/app-release.apk"
-export RELEVEL_LSPATCH_JAR="$RUNNER_TEMP/lspatch.jar"
-curl --fail --location --silent --show-error --retry 2 \
-  https://github.com/JingMatrix/LSPatch/releases/download/v1.2/lspatch-v1.2-487-release.jar -o "$RELEVEL_LSPATCH_JAR"
+export RELEVEL_LSPATCH_JAR="$GITHUB_WORKSPACE/.github/tools/lspatch/lspatch-v1.2-487-release.jar"
 sudo apt-get update -qq
 sudo apt-get install -y -qq patchelf ripgrep maven
 python -m pip install --disable-pip-version-check --quiet pyelftools==0.33

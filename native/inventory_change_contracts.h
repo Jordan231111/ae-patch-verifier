@@ -6,7 +6,8 @@
 // decoded at runtime. These contracts add no patches to either path.
 namespace item_injection_contracts {
 enum class Role { none, assign, cast_call, change_slot, check1, check2, check3, count_field, factory, high_half, id_constructor, id_getter, inner_factory, input_field, item_load, item_page, kind, low_half, manager, master1, master2, master3, master_getter, other_predicate, other_repository, pool_field, pool_predicate, repository, secure_copy, secure_field, source_field, sync, ticket_load, ticket_page, type_getter, watermark, writer,
-    amount_slot, core_slot, notify_slot, state_slot, setter_slot, requested1, requested2, floor1, floor2 };
+    amount_slot, core_slot, notify_slot, state_slot, setter_slot, requested1, requested2, floor1, floor2,
+    consumer, trigger_page, trigger_add, receiver_save, receiver_use };
 struct Word { uint32_t value, mask; Role role; };
 inline constexpr Word pc_singleton_load[] = {
     {0x90000015,0x9F00001F,Role::none},{0xF9401688,0xFFFFFFFF,Role::none},
@@ -35,7 +36,7 @@ inline constexpr Word lua_token_repository[] = {
 };
 inline constexpr Word lua_token_assign[] = {
     {0x93407EC2, 0xFFFFFFFF, Role::none}, {0x910003E3, 0xFFFFFFFF, Role::none},
-    {0xAA1503E0, 0xFFFFFFFF, Role::none}, {0x52938801, 0xFFFFFFFF, Role::none},
+    {0xAA1503E0, 0xFFFFFFFF, Role::none}, {0x52800001, 0xFFE0001F, Role::consumer},
     {0x94000000, 0xFC000000, Role::assign},
 };
 inline constexpr Word lua_change_dispatch[] = {
@@ -97,11 +98,25 @@ inline constexpr Word master_type[] = {
 };
 inline constexpr Word sync_bridge[] = {
     {0x94000000, 0xFC000000, Role::manager}, {0xAA0003F3, 0xFFFFFFFF, Role::none},
-    {0x90000001, 0x9F00001F, Role::none}, {0x91000021, 0xFFC003FF, Role::none},
+    {0x90000001, 0x9F00001F, Role::trigger_page}, {0x91000021, 0xFFC003FF, Role::trigger_add},
     {0x910003E0, 0xFFFFFFFF, Role::none}, {0x94000000, 0xFC000000, Role::none},
     {0x910003E1, 0xFFFFFFFF, Role::none}, {0xAA1303E0, 0xFFFFFFFF, Role::none},
     {0x2A1F03E2, 0xFFFFFFFF, Role::none}, {0x2A1F03E3, 0xFFFFFFFF, Role::none},
     {0x2A1F03E4, 0xFFFFFFFF, Role::none}, {0x94000000, 0xFC000000, Role::sync},
+};
+// MOVZ W1, #imm16 in the registered generic Lua changeItemAmount wrapper.
+// Do not substitute the shop's type classifier: its zero/default and shop-only
+// consumers do not describe a direct inventory change.
+inline uint32_t generic_token_consumer(uint32_t word) {
+    return (word & 0xFFE0001FU) == 0x52800001U ? (word >> 5U) & 0xffffU : 0;
+}
+inline constexpr Word native_save_trigger[] = {
+    {0x94000000,0xFC000000,Role::manager},{0xAA0003E0,0xFFFFFFE0,Role::receiver_save},
+    {0x90000001,0x9F00001F,Role::trigger_page},{0x91000021,0xFFC003FF,Role::trigger_add},
+    {0x910003E0,0xFFFFFFFF,Role::none},{0x94000000,0xFC000000,Role::none},
+    {0x910003E1,0xFFFFFFFF,Role::none},{0xAA0003E0,0xFFE0FFFF,Role::receiver_use},
+    {0x2A1F03E2,0xFFFFFFFF,Role::none},{0x2A1F03E3,0xFFFFFFFF,Role::none},
+    {0x2A1F03E4,0xFFFFFFFF,Role::none},{0x94000000,0xFC000000,Role::sync},
 };
 inline constexpr Word amount_ceiling[] = {
     {0x52800008, 0xFFE0001F, Role::low_half}, {0xF9400289, 0xFFFFFFFF, Role::none},

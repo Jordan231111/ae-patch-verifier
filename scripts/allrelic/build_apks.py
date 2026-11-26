@@ -3,7 +3,11 @@
 import argparse
 import hashlib
 import json
+import os
+import sys
 from pathlib import Path
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from shared_signing import signing_environment
 import re
 import shutil
 import subprocess
@@ -13,7 +17,7 @@ import zipfile
 PACKAGE = "com.AllRelic"
 MODULE = "com.arkit.core"
 PATCHER_SHA256 = "d238fdc414d121b7fa454d8b4ccf420df3a8c97d563761861ff92bd9c5da2165"
-HOST_CERT = "c081890cf2a1adf13e56d7b50a4f3d8edb35b7c46d6ccc732dd997b7e433be1d"
+
 
 
 def require(condition, message):
@@ -108,6 +112,9 @@ def verify_embedded(base, source_base, module):
 
 
 def build(args):
+    signing = signing_environment()
+    os.environ.update({name: value for name, value in signing.items() if name.startswith("TEMPLATE_")})
+    host_certificate = signing["TEMPLATE_CERT_SHA256"]
     source, module, patcher, output = [Path(value).resolve() for value in
                                         [args.source, args.module, args.patcher, args.output]]
     require(re.fullmatch(r"[0-9a-f]{40}", args.module_sha), "Invalid module commit")
@@ -142,11 +149,9 @@ def build(args):
     output.parent.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(prefix="allrelic-package-", dir=output.parent) as temp:
         work = Path(temp)
-        key = work / "host.jks"
-        with zipfile.ZipFile(patcher) as archive:
-            key.write_bytes(archive.read("assets/keystore"))
-        run("java", "-jar", patcher, source / base_name, "-m", module, "-o", work / "patched",
-            "-l", "2", "-k", key, "123456", "key0", "123456", "-f")
+        key = Path(signing["TEMPLATE_KS_PATH"])
+        run("java", "-cp", patcher, Path(__file__).resolve().parents[1] / "RunLspatch.java", patcher, key,
+            source / base_name, "-m", module, "-o", work / "patched", "-l", "2", "-f")
         candidates = list((work / "patched").glob("*-lspatched.apk"))
         require(len(candidates) == 1, "Patcher did not produce exactly one base APK")
         bundle = work / "bundle"
@@ -159,9 +164,9 @@ def build(args):
             aligned = work / (name + ".aligned")
             run(zipalign, "-f", "-P", "16", "4", original, aligned)
             run(apksigner, "sign", "--v4-signing-enabled", "false", "--alignment-preserved", "true",
-                "--ks", key, "--ks-pass", "pass:123456", "--ks-key-alias", "key0", "--key-pass", "pass:123456",
+                "--ks", key, "--ks-pass", "env:TEMPLATE_KS_PASS", "--ks-key-alias", signing["TEMPLATE_KEY_ALIAS"], "--key-pass", "env:TEMPLATE_KEY_PASS",
                 "--out", bundle / name, aligned)
-            certificate(apksigner, bundle / name, HOST_CERT)
+            certificate(apksigner, bundle / name, host_certificate)
             identity = badging(aapt, bundle / name)
             require(identity.get("name") == PACKAGE and identity.get("versionCode") == args.version_code,
                     "Patched Android package identity changed")
@@ -182,7 +187,7 @@ def build(args):
         info = {"schema": 1, "packageName": PACKAGE, "architecture": "arm64-v8a", "source": "apkpure",
                 "versionCode": args.version_code, "versionName": args.version_name,
                 "moduleSha": args.module_sha, "moduleSha256": sha256(module), "moduleCertSha256": args.module_cert,
-                "sourceCertSha256": args.source_cert, "hostCertSha256": HOST_CERT,
+                "sourceCertSha256": args.source_cert, "hostCertSha256": host_certificate,
                 "lspatchSha256": PATCHER_SHA256, "api": 102, "runtimeValidated": False,
                 "apks": {p.name: sha256(p) for p in sorted(bundle.glob("*.apk"))}}
         (bundle / "build-info.json").write_text(json.dumps(info, indent=2) + "\n")

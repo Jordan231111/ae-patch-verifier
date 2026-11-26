@@ -14,7 +14,7 @@ import urllib.error
 import urllib.request
 
 PACKAGE = 'work.ponix.relevel'
-CERT = '29b04c032802179a86374c8a13dba9ddbe8d9303f4909ac03766cb77de17c027'
+CERT = '5486b776291d98b9bc5a70586b9af89afce8674fd462889238c0ebd99786a1c1'
 INDEX_TAG = 'relevel-ready'
 RECOVERY_SCHEMA = 1
 MAX_ATTEMPTS = 3
@@ -23,6 +23,8 @@ RETRY_DELAY_SECONDS = 15 * 60
 
 def now(): return datetime.now(timezone.utc).isoformat()
 def digest(value): return hashlib.sha256(json.dumps(value, sort_keys=True, separators=(',', ':')).encode()).hexdigest()
+def build_key(observation):
+    return digest({'observed': observation, 'recoverySchema': RECOVERY_SCHEMA, 'certificateSha256': CERT})
 def file_digest(path):
     with path.open('rb') as stream: return hashlib.file_digest(stream, 'sha256').hexdigest()
 
@@ -109,7 +111,7 @@ def inspect(args):
     if api(f'repos/{repository()}')['private']: raise RuntimeError('Scheduled builds require the public builder repository')
     version = json.loads(args.version.read_text())
     current = observed(version, latest_module())
-    key = digest({'observed': current, 'recoverySchema': RECOVERY_SCHEMA})
+    key = build_key(current)
     _, previous = index()
     previous = previous or {'schema': 1, 'packageName': PACKAGE, 'architecture': 'arm64-v8a'}
     checked_at = now()
@@ -227,15 +229,10 @@ def remove_release(release):
 
 
 def prune(current):
-    """Retain the current and previous bundle plus only their recovered inputs."""
+    """Retain only the current production bundle and its required recovered inputs."""
     all_releases = api(f'repos/{repository()}/releases?per_page=100')
     bundles = [r for r in all_releases if re.fullmatch(r'relevel-bundle-[a-f0-9]{64}', r['tag_name'])]
-    bundles.sort(key=lambda r: r.get('published_at') or '', reverse=True)
     keep = {current}
-    for release in bundles:
-        if release['tag_name'] != current:
-            keep.add(release['tag_name'])
-            break
     inputs = set()
     for release in bundles:
         if release['tag_name'] in keep:
@@ -251,7 +248,7 @@ def prune(current):
 def failure(args):
     _, state = index()
     if state and state.get('attemptRunId') == int(os.environ['GITHUB_RUN_ID']):
-        key = digest({'observed': state['observed'], 'recoverySchema': RECOVERY_SCHEMA})
+        key = build_key(state['observed'])
         if state.get('state') == 'ready' and state.get('ready',{}).get('cacheKey') == key:
             return  # A completed atomic publication survives a later cleanup/network failure.
         attempts = state.get('attemptCount', 1)

@@ -5,16 +5,16 @@ bool audit_runtime_bindings(const std::vector<MemoryRange> &r,const std::vector<
     const auto check=[&](const char *name,bool valid,uintptr_t address=0) {
         printf("CHECK %s %d RVA=0x%llx\n",name,valid,(unsigned long long)(address ? address-audit_base : 0));ok &= valid;
     };
-    const auto targets=resolve_runtime_feature_targets(x);
+    const auto targets=resolve_runtime_feature_targets(r,x);
     check("runtime.mp_cost",targets.mp_cost,targets.mp_cost);
     check("runtime.mp_delta",targets.mp_delta,targets.mp_delta);
     check("runtime.mp_current",targets.mp_current,targets.mp_current);
     check("runtime.mp_max",targets.mp_max,targets.mp_max);
     check("runtime.damage",targets.damage,targets.damage);
     check("runtime.dungeon",targets.dungeon,targets.dungeon);
-    check("runtime.encounter",targets.encounter,targets.encounter);
+    check("runtime.encounter",targets.encounter.valid,targets.encounter.judge);
     const auto ad=resolve_ad_context(r,x);check("runtime.ad_context",ad.valid,ad.owner);
-    const auto team=resolve_team_context(x);check("runtime.team_context",team.valid,team.helper);
+    const auto team=resolve_team_context(r,x);check("runtime.team_context",team.valid,team.helper);
     const auto token=resolve_currency_token_site(x);check("mass.currency_token",token!=0,token);
     const auto shop=resolve_mass_shop(r,x);
     const auto exchange=resolve_mass_appraisal(r,x,appraisal,shop);
@@ -24,6 +24,16 @@ bool audit_runtime_bindings(const std::vector<MemoryRange> &r,const std::vector<
     check("mass.state_lifetime",shop.valid && exchange.valid && shop.destructors[0] && shop.destructors[1] &&
           exchange.destructors[0] && exchange.destructors[1],shop.destructors[0]);
     const auto speed=resolve_director_speed(r,x);check("director.delta",speed.valid,speed.function);
+    g_director_speed=speed;
+    const auto dialogue=resolve_dialogue_native_hooks(x);
+    const auto script=resolve_dialogue_script_context(r,x);
+    const auto input=resolve_dialogue_input(r,x,dialogue);
+    const auto iteration=resolve_dialogue_iteration(r,x);
+    check("runtime.dialogue_script",script.valid,script.find_script);
+    check("runtime.dialogue_input",input.valid,input.packet_selection);
+    check("runtime.dialogue_iteration",iteration.valid,iteration.update);
+    check("runtime.player_health",resolve_player_health(r,x).valid);
+    check("runtime.save_bindings",g_item_save_bindings.ready(),g_item_save_bindings.success);
     return ok;
 }
 

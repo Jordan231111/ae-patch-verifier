@@ -22,7 +22,7 @@ class ReleaseStateTests(unittest.TestCase):
         self.version = {'package_name': releases.PACKAGE, 'version_code': 44, 'version_name': '1.1.3'}
         self.module = 'a' * 40
         self.observed = releases.observed(self.version, self.module)
-        self.key = releases.digest({'observed': self.observed, 'recoverySchema': releases.RECOVERY_SCHEMA})
+        self.key = releases.build_key(self.observed)
         self.version_path = self.root / 'version.json'
         self.version_path.write_text(json.dumps(self.version))
         self.plan = self.root / 'plan.json'
@@ -54,6 +54,14 @@ class ReleaseStateTests(unittest.TestCase):
         self.assertEqual(output['changed'],'false')
         self.assertEqual(state['state'],'ready')
         self.assertIn('checkedAt',state)
+
+    def test_signing_identity_change_rebuilds_without_reusing_the_previous_host(self):
+        old = self.ready()
+        with patch.object(releases, 'CERT', 'd' * 64):
+            output, state = self.inspect(old)
+        self.assertEqual(output['changed'], 'true')
+        self.assertEqual(state['state'], 'preparing')
+        self.assertNotEqual(state['attemptKey'], old['ready']['cacheKey'])
 
     def test_module_changes_reuse_recovered_inputs_but_hide_old_bundle(self):
         old = self.ready()

@@ -1,24 +1,46 @@
 {
   "packager": {
-    "repository": "Jordan231111/epicconquest",
-    "commit": "f18d11c11b6be24ea900d8477cf3709101face90",
-    "files": {
-      "package-lspatch.py": "b14fe454417be27830be5b4c45d909388483f6d08e4e7721fb75700d78825378",
-      "download-lspatch.sh": "57a9062b5adb114e03068aff58f1fc1b2cfc233ca44fd7474589b1f0b195b550"
-    },
     "zipmergeSha256": "1b11365293bf98d107f85f8a725636c203d08b6e7b93a4268492758ef18217f2"
   },
   "rustaxion": {
     "repository": "Jordan231111/rustAxionModule",
     "moduleVersion": "0.6.2",
-    "moduleSha256": "401eee47216fd521ee824983fed68900bb1eb657a7523cc4f52ec1f91dfe5489",
-    "sourceSigner": "94e57893b8dea2d5f1df56aa886e1c4e31c0a1ddae4ba6839b56aeb69669c9cf"
+    "moduleSha256": "1bdb757a77c2fa9fbfda5374fe35d6fe283766048b35f5e41cb2040b59069f2d",
+    "sourceSigner": "94e57893b8dea2d5f1df56aa886e1c4e31c0a1ddae4ba6839b56aeb69669c9cf",
+    "packager": {
+      "repository": "Jordan231111/rustAxionModule",
+      "commit": "67de707c4e36eaf5eda27d5996d9ae5a44151a40",
+      "files": {
+        "package-lspatch.py": "9d717e3d6e75736d6bde9cb22f2b4eb87dc5d9aaf8b31531086e2b6738f5359c",
+        "download-lspatch.sh": "57a9062b5adb114e03068aff58f1fc1b2cfc233ca44fd7474589b1f0b195b550",
+        "RunLspatch.java": "069d4b389aa011247a8ceef7b6ad2c781b457dcd218070f1188420fbe6969214",
+        "shared_signing.py": "652b80ba6b026c7348b494767bb021b6baadacbcdac7b7ccf47d3cd096564cd1"
+      },
+      "fastArchive": false
+    },
+    "moduleTag": "workshop-input-1bdb757a77c2fa9fbfda",
+    "moduleAsset": "module.apk"
   },
   "epicconquest": {
     "repository": "Jordan231111/epicconquest",
-    "moduleVersion": "0.6.8",
-    "moduleSha256": "7cfb08a65fc3d35d92ff1b732e1392cebf47baae37503ff0f278fafebdae9d80",
-    "sourceSigner": "b1223cddeff0b9c3e557e525c31af7b5c7e4a3df3570f6fca22adb78ba0ced0a"
+    "moduleVersion": "0.6.10",
+    "moduleSha256": "9e04f1546885ae04cde153fade3f36799b0f30aa577755f86d4064cf857f21c5",
+    "sourceSigner": "b1223cddeff0b9c3e557e525c31af7b5c7e4a3df3570f6fca22adb78ba0ced0a",
+    "packager": {
+      "repository": "Jordan231111/epicconquest",
+      "commit": "4ff57dac77e068fbb4a52b017892640fdf3e48a5",
+      "files": {
+        "package-lspatch.py": "c8f045c3870fb0399d6352ab9e05d4b8c12d760ec1bc8c7f864cb4dde6011b26",
+        "download-lspatch.sh": "57a9062b5adb114e03068aff58f1fc1b2cfc233ca44fd7474589b1f0b195b550",
+        "RunLspatch.java": "069d4b389aa011247a8ceef7b6ad2c781b457dcd218070f1188420fbe6969214",
+        "shared_signing.py": "652b80ba6b026c7348b494767bb021b6baadacbcdac7b7ccf47d3cd096564cd1",
+        "verify_module.py": "0f3a035e9a5c08d5efed4f4668a4044618bb41b652ab522b66d0ed48065d9cd8",
+        "GoogleLoginManifest.java": "b52a62468c6c5c99c479960de1d9f6635df6280bac8740310f2e0bcfcd09d85b"
+      },
+      "fastArchive": true
+    },
+    "moduleTag": "module-4ff57dac77e068fbb4a52b017892640fdf3e48a5",
+    "moduleAsset": "app-release.apk"
   },
   "playClientLock": "50fe99f45cccc58782f0d26c557e47ca31530e6f83ed1dc73fccf1a7ccbf9805",
   "anotherEdenPatcher": {
@@ -26,5 +48,20 @@
     "build": 487,
     "file": ".github/tools/lspatch/lspatch-v1.2-487-release.jar",
     "sha256": "d238fdc414d121b7fa454d8b4ccf420df3a8c97d563761861ff92bd9c5da2165"
+  },
+  "aeLogin": {
+    "companion": {
+      "url": "https://github.com/Jordan231111/MicroG-RE/releases/download/7.4.1/microg-7.4.1-icon-arm64-v8a.apk",
+      "sha256": "f9486ecf8d3b69d0722f6e89266febd2f4af9a7a9b430fae4b04b8be51d6dd61"
+    },
+    "preparation": {
+      "schema": 1,
+      "file": "scripts/host-tools/PrepareMicrog.java",
+      "sha256": "bb015d37b53f4f39f7f11d54dd2a9f6a5846dc998f67665d605b68bcc4784d9f",
+      "trustedCompanionArgument": true
+    }
+  },
+  "sharedSigning": {
+    "certificateSha256": "5486b776291d98b9bc5a70586b9af89afce8674fd462889238c0ebd99786a1c1"
   }
 }

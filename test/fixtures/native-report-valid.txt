@@ -1,0 +1,119 @@
+AUDIT_VERSION 3
+RESULT final.itemWriter.patch 0x1000
+RESULT final.rewardWriter.patch 0x1000
+RESULT quest.rewardGrant.patch 0x1000
+RESULT domainItem.setAmount.patch 0x1000
+RESULT tokenShop.purchase.trace 0x1000
+RESULT appraisalExchange.purchase.trace 0x1000
+RESULT domainTokenShopCommodity.setTotal.trace 0x1000
+RESULT dialogue.FieldTalkBaseNode.startInAnimation.trace 0x1000
+RESULT dialogue.FieldTalkBaseNode.startOutAnimation.trace 0x1000
+RESULT dialogue.FieldTalkBaseNode.onEndInAnimation.trace 0x1000
+RESULT lua.getGlobalFlag 0x1000
+RESULT lua.setGlobalFlag 0x1000
+RESULT lua.fireAchievementTrigger 0x1000
+RESULT lua.isAchievementCompleted 0x1000
+RESULT lua.changeReservedItemAmount 0x1000
+RESULT lua.changeGimmickItemAmount 0x1000
+RESULT lua.setMysteryItemAmount 0x1000
+RESULT lua.helixChangeItemAmount 0x1000
+RESULT lua.getAutoFeedMode 0x1000
+RESULT lua.getShowTalkSkipButtonTime 0x1000
+RESULT lua.changeItemAmount 0x1000
+RESULT battle.addPCExp.patch 0x1000
+RESULT catScratch.total 0x1000
+RESULT catScratch.namedCount 0x1000
+LAYOUT layout_resolved Synthetic report fixture
+RESULT item.global 0x1000
+RESULT achievement.get 0x1000
+RESULT achievement.dispatch 0x1000
+RESULT userdata.push 0x1000
+LAYOUT object_layouts secure=1 shop=1 amount=1 achievementMap=1 event=1
+LAYOUT live_shop_layout valid=1
+CHECK injection.resolver 1 Synthetic report fixture
+CHECK injection.token_repository 1 Synthetic report fixture
+CHECK injection.token_repository_slot 1 Synthetic report fixture
+CHECK injection.token_assign 1 Synthetic report fixture
+CHECK injection.token_kind 1 Synthetic report fixture
+CHECK injection.base_change 1 Synthetic report fixture
+CHECK injection.ticket_writer 1 Synthetic report fixture
+CHECK injection.dynamic_cast 1 Synthetic report fixture
+CHECK injection.master_getter 1 Synthetic report fixture
+CHECK injection.type_getter 1 Synthetic report fixture
+CHECK injection.resource_gate 1 Synthetic report fixture
+CHECK injection.other_resources 1 Synthetic report fixture
+CHECK injection.sync_manager 1 Synthetic report fixture
+CHECK injection.sync 1 Synthetic report fixture
+CHECK injection.achievement_callback 1 Synthetic report fixture
+CHECK injection.achievement_eligible 1 Synthetic report fixture
+CHECK injection.achievement_refresh 1 Synthetic report fixture
+CHECK injection.achievement_release 1 Synthetic report fixture
+CHECK injection.achievement_owner_slot 1 Synthetic report fixture
+CHECK injection.initial_weapon 1 Synthetic report fixture
+CHECK injection.initial_armor 1 Synthetic report fixture
+CHECK injection.initial_equipment 1 Synthetic report fixture
+CHECK injection.unknown_factory 1 Synthetic report fixture
+CHECK injection.rtti 1 Synthetic report fixture
+CHECK injection.change_slot 1 Synthetic report fixture
+CHECK injection.token_pool 1 begin=0 low-water=1
+CHECK injection.other_pool 1 Synthetic report fixture
+CHECK injection.amount_max 1 Synthetic report fixture
+CHECK injection.equipment_master 1 Synthetic report fixture
+CHECK injection.embedded_id 1 Synthetic report fixture
+CHECK injection.queue 1 Synthetic report fixture
+CHECK injection.character_ready_slot 1 Synthetic report fixture
+CHECK injection.character_bss_bounds 1 Synthetic report fixture
+CHECK injection.currency_writer 1 Synthetic report fixture
+CHECK injection.currency_exclusion 1 Synthetic report fixture
+CHECK injection.equipment_instances 1 Synthetic report fixture
+CHECK injection.pet_instances 1 Synthetic report fixture
+CHECK injection.buddy_instances 1 Synthetic report fixture
+CHECK injection.unknown_instances 1 Synthetic report fixture
+CHECK injection.pet_storage 1 Synthetic report fixture
+CHECK injection.pet_survivors 1 Synthetic report fixture
+CHECK injection.pet_creation_transaction 1 Synthetic report fixture
+CHECK injection.fish_pool 1 Synthetic report fixture
+CHECK injection.fish_storage 1 Synthetic report fixture
+CHECK injection.lottery_semantics 1 Synthetic report fixture
+CHECK injection.growth_semantics 1 Synthetic report fixture
+RESULT dialogue.renderChecker 0x1000
+RESULT dialogue.native.page_jump_delay 0x1000
+RESULT dialogue.native.get_auto_feed_mode 0x1000
+RESULT dialogue.native.get_auto_feed_wait_time_letter 0x1000
+RESULT dialogue.native.get_auto_feed_wait_time_minimum 0x1000
+RESULT dialogue.native.action_timer_value 0x1000
+RESULT dialogue.native.talk_ui_process_wait 0x1000
+RESULT dialogue.native.rendering_checker 0x1000
+RESULT dialogue.native.auto_feed_blocker 0x1000
+RESULT dialogue.native.finish_text_render 0x1000
+CHECK dialogue.layout_fields 1 Synthetic report fixture
+CHECK runtime.mp_cost 1 Synthetic report fixture
+CHECK runtime.mp_delta 1 Synthetic report fixture
+CHECK runtime.mp_current 1 Synthetic report fixture
+CHECK runtime.mp_max 1 Synthetic report fixture
+CHECK runtime.damage 1 Synthetic report fixture
+CHECK runtime.dungeon 1 Synthetic report fixture
+CHECK runtime.encounter 1 Synthetic report fixture
+CHECK runtime.ad_context 1 Synthetic report fixture
+CHECK runtime.team_context 1 Synthetic report fixture
+CHECK mass.currency_token 1 Synthetic report fixture
+CHECK mass.token_shop 1 Synthetic report fixture
+CHECK mass.appraisal_shop 1 Synthetic report fixture
+CHECK mass.canonical_label 1 Synthetic report fixture
+CHECK mass.state_lifetime 1 Synthetic report fixture
+CHECK director.delta 1 Synthetic report fixture
+CHECK runtime.dialogue_script 1 Synthetic report fixture
+CHECK runtime.dialogue_input 1 Synthetic report fixture
+CHECK runtime.dialogue_iteration 1 Synthetic report fixture
+CHECK runtime.player_health 1 Synthetic report fixture
+CHECK runtime.save_bindings 1 Synthetic report fixture
+CHECK models.missing_capture 1 Synthetic report fixture
+CHECK models.zero_match 1 Synthetic report fixture
+CHECK models.ambiguous_match 1 Synthetic report fixture
+CHECK models.moved_target 1 Synthetic report fixture
+CHECK models.unwind_extents 1 Synthetic report fixture
+CHECK models.unwind_gaps 1 Synthetic report fixture
+CHECK models.speed_math 1 Synthetic report fixture
+CHECK models.lua_registration_rows 1 Synthetic report fixture
+READ_ONLY unchanged=1
+AUDIT_COMPLETE ok=1

@@ -35,7 +35,6 @@ for (const needle of [
   "AE_JAPAN_SOURCE_CERT_SHA256",
   "SOURCE_PID",
   "MODULE_PID",
-  "PATCHER_PID",
   "config.${ARCHITECTURE//-/_}",
   "assets/lspatch/so/${ARCHITECTURE}/liblspatch.so"
 ]) {

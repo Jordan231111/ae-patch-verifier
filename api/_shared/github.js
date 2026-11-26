@@ -133,12 +133,14 @@ async function publishedModuleShas(cfg, asset) {
     "GET",
     `/repos/${cfg.moduleOwner}/${cfg.moduleRepo}/releases?per_page=100`
   );
-  const shas = new Set();
+  const shas = new Map();
   for (const rel of Array.isArray(releases) ? releases : []) {
     const match = MODULE_RELEASE_TAG.exec((rel && rel.tag_name) || "");
     if (!match || rel.draft) continue;
-    if (asset && !(rel.assets || []).some(a => a && a.name === asset && a.state === "uploaded" && a.size > 0)) continue;
-    shas.add(match[1].toLowerCase());
+    const selectedAsset = asset && (rel.assets || []).find(a => a && a.name === asset && a.state === "uploaded" && a.size > 0);
+    if (asset && !selectedAsset) continue;
+    const digest = selectedAsset?.digest;
+    shas.set(match[1].toLowerCase(), /^sha256:[a-f0-9]{64}$/.test(digest || "") ? digest.slice(7) : null);
   }
   return shas;
 }
@@ -173,7 +175,8 @@ async function resolveModuleCommit(cfg, moduleSource, options = {}) {
       prebuilt = true;
     }
   }
-  return { sha: chosen.sha, shortSha: chosen.sha.slice(0, 7), ref, prebuilt };
+  return { sha: chosen.sha, shortSha: chosen.sha.slice(0, 7), ref, prebuilt,
+    ...(prebuilt && options.requireAsset && { assetDigest: shas.get(chosen.sha.toLowerCase()) }) };
 }
 
 module.exports = {

@@ -21,6 +21,7 @@ function handler(file, github, extras = {}) {
   vm.runInNewContext(fs.readFileSync(path.join(__dirname, '..', file), 'utf8'), {
     module, URL, process, Buffer,
     require: name => name === '../_shared/github.js' ? github
+      : name === '../_shared/recipes.js' ? require('../api/_shared/recipes.js')
       : name === '../_shared/release.js' ? { readyApksAsset }
       : name === '../_shared/build-artifact.js' ? extras[name] : extras[name]
   });

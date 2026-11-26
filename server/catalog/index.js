@@ -11,14 +11,14 @@ function mergeReady(seed, records) {
           || !/^[\w.-]+$/.test(next.version) || !/^[a-f0-9]{64}$/.test(next.sha256)
           || next.signer !== variant.signer || !Number.isSafeInteger(next.versionCode)
           || next.versionCode < variant.versionCode || !Number.isSafeInteger(next.sizeBytes) || next.sizeBytes < 1
-          || !Number.isFinite(Date.parse(next.updatedAt)) || Date.parse(next.updatedAt) < Date.parse(variant.updatedAt)) {
+          || !Number.isFinite(Date.parse(next.updatedAt)) || (variant.updatedAt && Date.parse(next.updatedAt) < Date.parse(variant.updatedAt))) {
         return variant;
       }
       const expected = `${origin}catalog-${variant.id}-${next.sha256.slice(0, 20)}/${variant.id}-${next.version}.apks`;
       if (next.downloadUrl !== expected) return variant;
       const { version, versionCode, sizeBytes, sha256, updatedAt, downloadUrl } = next;
       const merged = { ...variant, version, versionCode, sizeBytes, sha256, updatedAt, downloadUrl };
-      for (const field of ["moduleVersion", "moduleSha", "moduleDigest", "requestKey"]) {
+      for (const field of ["moduleVersion", "moduleSha", "moduleDigest", "requestKey", "recipe", "companionDigest", "loaderBuild"]) {
         if (next[field]) merged[field] = next[field];
         else delete merged[field];
       }

@@ -22,7 +22,7 @@ bool audit_item_injection(const std::vector<MemoryRange> &readable,
     check("injection.token_repository_slot",injection_writable_image_slot(readable,layout.token_repository_slot),
           "Existing native owner slot; admission must not create a repository during loading");
     target("injection.token_assign", layout.token_assign);
-    target("injection.token_kind", layout.token_kind);
+    target("injection.token_kind", layout.shop_token_kind);
     target("injection.base_change", layout.base_change);
     target("injection.ticket_writer", layout.ticket_writer);
     target("injection.dynamic_cast", layout.cast_function);

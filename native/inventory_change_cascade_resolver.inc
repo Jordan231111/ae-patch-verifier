@@ -1,4 +1,4 @@
-#include "item_injection_cascade_contracts.h"
+#include "inventory_change_cascade_contracts.h"
 
 struct InjectionCascadeLayout {
     uintptr_t callback=0,eligible=0,manager_slot=0,reset=0,destroy=0;
@@ -9,25 +9,19 @@ InjectionCascadeLayout g_injection_cascade;
 struct CascadeResolver {
     const std::vector<MemoryRange> &r,&x;
     size_t calls_to(uintptr_t owner,uintptr_t target) const {
+        uintptr_t end=0;
+        if(!owner || injection_function_start(r,x,owner,&end)!=owner)return 0;
+        if(end-owner>=65536)return SIZE_MAX;
         size_t count=0;
-        for(uintptr_t pc=owner;pc<owner+65536;pc+=4) {
-            if(injection_function_start(r,x,pc)!=owner) return count;
+        for(uintptr_t pc=owner;pc+4<=end;pc+=4) {
             uintptr_t callee=0;
             if((decode_branch_target(pc,true,&callee) || decode_branch_target(pc,false,&callee)) && callee==target) ++count;
         }
-        return SIZE_MAX; // do not accept an incompletely inspected owner
+        return count;
     }
     template<size_t N> std::vector<uintptr_t> sites(uintptr_t owner,
             const injection_cascade_contracts::Word (&p)[N]) const {
-        item_catalog::Word words[N]{};
-        for(size_t i=0;i<N;++i) words[i]={p[i].value,p[i].mask,item_catalog::Role::none};
-        std::vector<MemoryRange> scope;
-        if(!owner) scope=x;
-        else for(const auto &range:x) {
-            const auto lo=std::max(range.start,owner),hi=std::min(range.end,owner+65536);
-            if(hi>lo) scope.push_back({lo,hi,true,false});
-        }
-        auto hits=find_item_contract(scope,words);
+        auto hits=find_item_contract(native_scan::scope(x,owner,65536),p);
         hits.erase(std::remove_if(hits.begin(),hits.end(),[&](uintptr_t pc) {
             const auto f=injection_function_start(r,x,pc);
             return !f || (owner && f!=owner) || injection_function_start(r,x,pc+4*(N-1))!=f;
@@ -39,8 +33,7 @@ struct CascadeResolver {
     }
     template<size_t N> uintptr_t capture(uintptr_t at,const injection_cascade_contracts::Word (&p)[N],
             injection_cascade_contracts::Role role) const {
-        if(at) for(size_t i=0;i<N;++i) if(p[i].role==role) return at+4*i;
-        return 0;
+        return native_scan::capture(at,p,role);
     }
     template<size_t N> uintptr_t call(uintptr_t at,const injection_cascade_contracts::Word (&p)[N],
             injection_cascade_contracts::Role role) const {

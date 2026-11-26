@@ -56,12 +56,20 @@ jobs:
           echo "$ANDROID_HOME/build-tools/37.0.0" >> "$GITHUB_PATH"
       - name: Prepare store delivery client
         run: bash scripts/install-play-client.sh
+      - name: Load shared Android signing identity
+        env:
+          TEMPLATE_KS_BASE64: ${{ secrets.TEMPLATE_KS_BASE64 }}
+          TEMPLATE_KS_PASS: ${{ secrets.TEMPLATE_KS_PASS }}
+          TEMPLATE_KEY_ALIAS: ${{ secrets.TEMPLATE_KEY_ALIAS }}
+          TEMPLATE_KEY_PASS: ${{ secrets.TEMPLATE_KEY_PASS }}
+          TEMPLATE_CERT_SHA256: ${{ vars.TEMPLATE_CERT_SHA256 }}
+        run: python3 scripts/setup_shared_signing.py
+
       - name: Package the original and verify the finished download
         id: catalog_bundle
         env:
           GH_TOKEN: ${{ github.token }}
           MODULE_READ_TOKEN: ${{ secrets.AE_MODULE_REPO_TOKEN }}
-          HOST_KEYSTORE: ${{ secrets.RELEVEL_HOST_KEYSTORE_BASE64 }}
           PLAY_EMAIL: ${{ secrets.GPLAYDL_GLOBAL_EMAIL }}
           GPLAYDL_API_KEY: ${{ secrets.GPLAYDL_API_KEY }}
           VERIFY_ONLY: ${{ inputs.verify_only }}
@@ -75,3 +83,7 @@ jobs:
           nonce: ${{ inputs.nonce }}
         env:
           GH_TOKEN: ${{ github.token }}
+
+      - name: Remove staged signing key
+        if: always()
+        run: rm -f "$RUNNER_TEMP/shared-android-signing.p12"

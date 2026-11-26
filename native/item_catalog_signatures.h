@@ -267,26 +267,7 @@ inline constexpr Word window_ready_getter[] = {
     {0xD65F03C0, 0xFFFFFFFF, Role::none},
 };
 
-inline constexpr Word team_branch_tail[] = {
-    {0xAA0003F8, 0xFFFFFFFF, Role::saved_value},
-    {0xAA1303E0, 0xFFFFFFFF, Role::self_argument},
-    {0xF9400108, 0xFFC003FF, Role::hp_model_slot},
-    {0xD63F0100, 0xFFFFFFFF, Role::virtual_call},
-    {0xF9400000, 0xFFC003FF, Role::none},
-    {0xCB1703E1, 0xFFFFFFFF, Role::none},
-};
 
-inline constexpr Word team_actor_type[] = {
-    {0xB400001A, 0xFF00001F, Role::none},
-    {0xF9400268, 0xFFC003FF, Role::none},
-    {0xF9400108, 0xFFC003FF, Role::actor_type_slot},
-    {0xAA1303E0, 0xFFFFFFFF, Role::none},
-    {0xD63F0100, 0xFFFFFFFF, Role::none},
-    {0xCB190301, 0xFFFFFFFF, Role::none},
-    {0x2A0003E2, 0xFFFFFFFF, Role::none},
-    {0xAA1A03E0, 0xFFFFFFFF, Role::none},
-    {0x94000000, 0xFC000000, Role::none},
-};
 
 inline constexpr Word bridge_simple[] = {
     {0xA9BF7BFD, 0xFFFFFFFF, Role::none},

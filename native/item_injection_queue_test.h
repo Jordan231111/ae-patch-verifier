@@ -1,6 +1,6 @@
 // Generated from the module queue tests; never invokes uploaded game code.
 #define AUDIT_REQUIRE(value) do { if (!(value)) return false; } while (0)
-#include "item_injection_queue.h"
+#include "inventory_change_queue.h"
 #include <cassert>
 #include <iostream>
 

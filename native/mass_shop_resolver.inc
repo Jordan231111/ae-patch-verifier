@@ -61,6 +61,46 @@ MassShopLayout mass_shop_unresolved(unsigned line) {
 #endif
     return {};
 }
+struct MassLabelCall {uintptr_t site=0;size_t slot=0;};
+MassLabelCall resolve_mass_label_call(const std::vector<MemoryRange> &r,const std::vector<MemoryRange> &x,
+                                     uintptr_t notify,uintptr_t material) {
+    using namespace mass_shop_contracts;
+    uintptr_t end=0;
+    if(!material || (notify&3) || injection_function_start(r,x,notify,&end)!=notify || (end&3) || end<=notify ||
+       end-notify>4096 || !range_contains(x,notify,end-notify))return {};
+    std::vector<uint32_t> code;
+    for(auto pc=notify;pc<end;pc+=4)code.push_back(combat_word(pc));
+    std::vector<MassLabelCall> candidates;
+    for(const auto &call:arm64_flow::self_sret_calls(code)) {
+        uintptr_t getter=0;
+        if(read_range_ptr(r,material+call.slot,&getter) &&
+           mass_owner_block(r,x,getter,label_sret) && mass_owner_block(r,x,getter,label_build))
+            candidates.push_back({notify+call.word*4,call.slot});
+    }
+    return candidates.size()==1 ? candidates.front() : MassLabelCall{};
+}
+uintptr_t resolve_mass_state_update(const std::vector<MemoryRange> &r,const std::vector<MemoryRange> &x,
+                                    size_t states) {
+    using namespace mass_shop_contracts;
+    const auto legacy=find_item_contract(x,state_update),expanded=find_item_contract(x,state_update_expanded);
+    if(legacy.size()+expanded.size()!=1) return 0;
+    const bool is_expanded=!expanded.empty();
+    const auto at=is_expanded ? expanded[0] : legacy[0];
+    const size_t words=is_expanded ? std::size(state_update_expanded) : std::size(state_update);
+    const auto owner=injection_function_start(r,x,at);
+    if(!owner || injection_function_start(r,x,at+(words-1)*4)!=owner ||
+       mass_pair(at,0)!=static_cast<int64_t>(states)) return 0;
+    if(is_expanded) {
+        const auto conditional_target=[&](size_t word) {
+            const auto pc=at+word*4;
+            return pc+item_catalog::signed_bits((read_u32(pc)>>5U)&0x7FFFFU,19)*4;
+        };
+        if(conditional_target(2)!=at+words*4 || conditional_target(17)!=at+20*4 ||
+           mass_call(at,19,false)!=at+4 || mass_field(at,18)!=sizeof(uintptr_t) ||
+           mass_field(at,16)!=mass_field(at,20)) return 0;
+    }
+    return at;
+}
 bool resolve_mass_lifetime(const std::vector<MemoryRange> &r,const std::vector<MemoryRange> &x,MassShopLayout &out) {
     using namespace mass_shop_contracts;
     const auto ui=unique_primary_vtable(r,x,"N6toybox3gui7UIStateE");
@@ -99,9 +139,12 @@ MassShopLayout resolve_mass_shop(const std::vector<MemoryRange> &r,const std::ve
     if(!core || injection_function_start(r,x,core)!=base_set || !notify_pc || !material ||
        !read_range_ptr(r,material+item_catalog::unsigned_offset(read_u32(notify_pc),3),&notify))
         return mass_shop_unresolved(__LINE__);
-    const auto label=mass_owner_block(r,x,notify,event_label);
-    if(!label) return mass_shop_unresolved(__LINE__);
-    out.label_slot=mass_field(label,3,3);
+    // The notification's event construction and stack temporaries can change.
+    // Follow its actual virtual call on this object, then corroborate the
+    // string-return getter across the three independently identified types.
+    const auto label=resolve_mass_label_call(r,x,notify,material);
+    if(!label.site) return mass_shop_unresolved(__LINE__);
+    out.label_slot=label.slot;
     for(const char *name:{"N6toybox14DomainMaterialE","N6toybox19DomainDungeonTicketE","N6toybox17DomainJobRankItemE"}) {
         const auto table=unique_primary_vtable(r,x,name);uintptr_t getter=0;
         if(!table || !read_range_ptr(r,table+out.label_slot,&getter) ||
@@ -181,11 +224,11 @@ MassShopLayout resolve_mass_shop(const std::vector<MemoryRange> &r,const std::ve
         }
         if(count!=1) return mass_shop_unresolved(__LINE__);
     }
-    const auto fronts=find_item_contract(x,front), updates=find_item_contract(x,state_update);
-    if(fronts.size()!=1 || updates.size()!=1 || fronts[0]<20 || !mass_entry(x,fronts[0]-20,front_init) ||
+    const auto fronts=find_item_contract(x,front);
+    if(fronts.size()!=1 || fronts[0]<20 || !mass_entry(x,fronts[0]-20,front_init) ||
        mass_field(fronts[0],6,3)!=mass_field(fronts[0],12,3)) return mass_shop_unresolved(__LINE__);
     out.states=mass_field(fronts[0],0,3);out.skip=mass_field(fronts[0],2);out.priority=mass_field(fronts[0],6,3);
-    if(mass_pair(updates[0],0)!=static_cast<int64_t>(out.states)) return mass_shop_unresolved(__LINE__);
+    if(!resolve_mass_state_update(r,x,out.states)) return mass_shop_unresolved(__LINE__);
     const auto blocker_at=mass_owner_block(r,x,injection_function_start(r,x,fronts[0]),blocker);
     uintptr_t state_type=0,ui_type=0;
     if(!blocker_at || !read_range_ptr(r,decode_adrp_ldr_global(blocker_at,blocker_at+12),&state_type) || state_type!=out.state_type ||

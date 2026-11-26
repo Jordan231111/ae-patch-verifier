@@ -28,6 +28,12 @@ on:
       moduleRef:
         description: Branch the module commit was resolved from
         required: true
+      moduleDigest:
+        description: SHA-256 of the selected module release asset
+        required: false
+      expectedRecipe:
+        description: Checked AE packaging recipe
+        required: false
       packageName:
         description: Google Play package
         required: true
@@ -63,11 +69,6 @@ permissions:
   actions: read
   contents: write
 
-env:
-  LSPATCH_VERSION: v1.2-487
-  LSPATCH_JAR_URL: https://github.com/JingMatrix/LSPatch/releases/download/v1.2/lspatch-v1.2-487-release.jar
-  LSPATCH_JAR_SHA256: d238fdc414d121b7fa454d8b4ccf420df3a8c97d563761861ff92bd9c5da2165
-
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -90,7 +91,7 @@ jobs:
         with:
           python-version: '3.12'
 
-      - name: Prepare app source, module, and patcher in parallel
+      - name: Verify the checkout patcher and prepare build inputs
         id: inputs
         env:
           REGION: ${{ inputs.region }}
@@ -104,6 +105,9 @@ jobs:
           PLAY_ACCOUNT_EMAIL: ${{ secrets.GPLAYDL_GLOBAL_EMAIL }}
           GPLAYDL_API_KEY: ${{ secrets.GPLAYDL_API_KEY }}
           MODULE_SHA: ${{ inputs.moduleSha }}
+          MODULE_ASSET_DIGEST: ${{ inputs.moduleDigest }}
+          EXPECTED_RECIPE: ${{ inputs.expectedRecipe }}
+          CANDIDATE: ${{ inputs.catalog }}
           MODULE_REPO: ${{ secrets.AE_MODULE_REPO }}
           MODULE_ASSET: app-${{ inputs.variant }}.apk
           GH_TOKEN: ${{ secrets.AE_MODULE_REPO_TOKEN }}
@@ -126,6 +130,18 @@ jobs:
 
           WORK="$RUNNER_TEMP/ae-lspatch"
           mkdir -p "$WORK"/{bundle,lspatch-out,module,play,source,tools}
+          IFS=$'\t' read -r PATCHER_FILE PATCHER_SHA256 PATCHER_NAME PATCHER_BUILD < <(
+            jq -er '.anotherEdenPatcher | [.file, .sha256, .versionName, .build] | @tsv' scripts/catalog/inputs.json
+          )
+          printf '%s  %s\n' "$PATCHER_SHA256" "$PATCHER_FILE" | sha256sum --check --strict -
+          COMPANION_URL=$(jq -er '.aeLogin.companion.url' scripts/catalog/inputs.json)
+          COMPANION_SHA256=$(jq -er '.aeLogin.companion.sha256' scripts/catalog/inputs.json)
+          [[ "$COMPANION_SHA256" =~ ^[0-9a-f]{64}$ ]]
+          {
+            echo "LSPATCH_JAR=$GITHUB_WORKSPACE/$PATCHER_FILE"
+            echo "LSPATCH_NAME=$PATCHER_NAME"
+            echo "LSPATCH_BUILD=$PATCHER_BUILD"
+          } >> "$GITHUB_ENV"
 
           (
             if [ "$SOURCE_KIND" = google-play ]; then
@@ -151,31 +167,39 @@ jobs:
             gh release download "module-${MODULE_SHA}" \
               --repo "$MODULE_REPO" --pattern "$MODULE_ASSET" --dir "$WORK/module"
             test -s "$WORK/module/$MODULE_ASSET"
+            RELEASE_DIGEST=$(gh api "repos/$MODULE_REPO/releases/tags/module-$MODULE_SHA" \
+              --jq '.assets[] | select(.name == env.MODULE_ASSET and .state == "uploaded") | .digest')
+            [[ "$RELEASE_DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]]
+            [ "$(sha256sum "$WORK/module/$MODULE_ASSET" | awk '{print $1}')" = "${RELEASE_DIGEST#sha256:}" ]
             printf '%s\n' "$WORK/module/$MODULE_ASSET" > "$WORK/module-apk.path"
           ) &
           MODULE_PID=$!
 
-          curl -L --fail --silent --show-error \
-            --connect-timeout 20 --max-time 120 \
-            -o "$WORK/tools/lspatch.jar" "$LSPATCH_JAR_URL" &
-          PATCHER_PID=$!
+          (
+            curl -L --fail --silent --show-error --connect-timeout 20 --max-time 120 \
+              -o "$WORK/tools/microg.apk" "$COMPANION_URL"
+            [ "$(sha256sum "$WORK/tools/microg.apk" | awk '{print $1}')" = "$COMPANION_SHA256" ]
+          ) &
+          COMPANION_PID=$!
 
           SOURCE_STATUS=0
           MODULE_STATUS=0
-          PATCHER_STATUS=0
+          COMPANION_STATUS=0
           wait "$SOURCE_PID" || SOURCE_STATUS=$?
           wait "$MODULE_PID" || MODULE_STATUS=$?
-          wait "$PATCHER_PID" || PATCHER_STATUS=$?
-          if [ "$SOURCE_STATUS" -ne 0 ] || [ "$MODULE_STATUS" -ne 0 ] || [ "$PATCHER_STATUS" -ne 0 ]; then
-            echo "::error::Input preparation failed (source=$SOURCE_STATUS module=$MODULE_STATUS patcher=$PATCHER_STATUS)"
+          wait "$COMPANION_PID" || COMPANION_STATUS=$?
+          if [ "$SOURCE_STATUS" -ne 0 ] || [ "$MODULE_STATUS" -ne 0 ] || [ "$COMPANION_STATUS" -ne 0 ]; then
+            echo "::error::Input preparation failed (source=$SOURCE_STATUS module=$MODULE_STATUS companion=$COMPANION_STATUS)"
             exit 1
           fi
           test -s "$WORK/source/manifest.json"
-          test -s "$WORK/tools/lspatch.jar"
 
           test -s "$WORK/module-apk.path"
           MODULE_APK=$(cat "$WORK/module-apk.path")
+          python3 scripts/catalog/ae_inputs.py --module "$MODULE_APK" \
+            --companion "$WORK/tools/microg.apk" --receipt "$WORK/input-receipt.json"
           echo "MODULE_APK=$MODULE_APK" >> "$GITHUB_ENV"
+          echo "AE_INPUT_RECEIPT=$WORK/input-receipt.json" >> "$GITHUB_ENV"
           echo "prebuilt=true" >> "$GITHUB_OUTPUT"
 
           source "$WORK/source/source.env"
@@ -190,6 +214,15 @@ jobs:
             echo "SOURCE_KIND=$SOURCE_KIND"
           } >> "$GITHUB_ENV"
 
+      - name: Load shared Android signing identity
+        env:
+          TEMPLATE_KS_BASE64: ${{ secrets.TEMPLATE_KS_BASE64 }}
+          TEMPLATE_KS_PASS: ${{ secrets.TEMPLATE_KS_PASS }}
+          TEMPLATE_KEY_ALIAS: ${{ secrets.TEMPLATE_KEY_ALIAS }}
+          TEMPLATE_KEY_PASS: ${{ secrets.TEMPLATE_KEY_PASS }}
+          TEMPLATE_CERT_SHA256: ${{ vars.TEMPLATE_CERT_SHA256 }}
+        run: python3 scripts/setup_shared_signing.py
+
       - name: Patch, sign, and package
         env:
           REGION: ${{ inputs.region }}
@@ -197,17 +230,13 @@ jobs:
           MODULE_SOURCE: ${{ inputs.moduleSource }}
           NONCE: ${{ inputs.nonce }}
           EXPECTED_SOURCE_CERT: ${{ inputs.region == 'japan' && vars.AE_JAPAN_SOURCE_CERT_SHA256 || vars.AE_GLOBAL_SOURCE_CERT_SHA256 }}
-          AE_HOST_KEYSTORE_BASE64: ${{ secrets.AE_HOST_KEYSTORE_BASE64 }}
-          AE_HOST_KEYSTORE_PASSWORD: ${{ secrets.AE_HOST_KEYSTORE_PASSWORD }}
-          AE_HOST_KEY_ALIAS: ${{ secrets.AE_HOST_KEY_ALIAS }}
-          EXPECTED_HOST_CERT: ${{ vars.AE_HOST_CERT_SHA256 }}
+          EXPECTED_HOST_CERT: ${{ vars.TEMPLATE_CERT_SHA256 }}
         run: |
           set -Eeuo pipefail
           trap 'status=$?; echo "Failed at workflow script line $LINENO: $BASH_COMMAND (exit $status)" >&2; exit $status' ERR
           test -s "$MODULE_APK"
-          test -n "$AE_HOST_KEYSTORE_BASE64"
-          test -n "$AE_HOST_KEYSTORE_PASSWORD"
-          test -n "$AE_HOST_KEY_ALIAS"
+          test -n "$TEMPLATE_KS_PASS"
+          test -n "$TEMPLATE_KEY_ALIAS"
           test -n "$EXPECTED_SOURCE_CERT"
           test -n "$EXPECTED_HOST_CERT"
 
@@ -220,9 +249,7 @@ jobs:
             *) TARGET_SUFFIX='' ;;
           esac
 
-          KEYSTORE="$RUNNER_TEMP/ae-host-signing.jks"
-          printf '%s' "$AE_HOST_KEYSTORE_BASE64" | base64 --decode > "$KEYSTORE"
-          chmod 600 "$KEYSTORE"
+          KEYSTORE="$TEMPLATE_KS_PATH"
           test -s "$KEYSTORE"
 
           MANIFEST="$WORK/source/manifest.json"
@@ -250,13 +277,10 @@ jobs:
           test -x "$APKSIGNER"
           test -x "$ZIPALIGN"
 
-          SOURCE_CERT_OUTPUT="$WORK/source-certificates.txt"
-          "$APKSIGNER" verify --print-certs "$BASE_APK" > "$SOURCE_CERT_OUTPUT"
-          SOURCE_CERT=$(awk -F': ' \
-            '/certificate SHA-256 digest:/ && !digest {digest=$NF} END {print digest}' \
-            "$SOURCE_CERT_OUTPUT" | tr -d ':' | tr '[:upper:]' '[:lower:]')
-          EXPECTED_SOURCE_CERT=$(printf '%s' "$EXPECTED_SOURCE_CERT" | tr -d ':' | tr '[:upper:]' '[:lower:]')
-          [ "$SOURCE_CERT" = "$EXPECTED_SOURCE_CERT" ]
+          export PATH="$SDK_ROOT/build-tools/35.0.0:$PATH"
+          python3 scripts/catalog/verify_inputs.py --source "$WORK/source" \
+            --package "$PACKAGE_NAME" --code "$VERSION_CODE" --source-cert "$EXPECTED_SOURCE_CERT" \
+            --module "$MODULE_APK" --module-cert "$EXPECTED_HOST_CERT"
 
           MODULE_PROP=$(unzip -p "$MODULE_APK" META-INF/xposed/module.prop)
           MODULE_ID=$(awk -F= '$1 == "id" { print $2; exit }' <<< "$MODULE_PROP")
@@ -271,23 +295,19 @@ jobs:
             grep -Fxq 'targetApiVersion=102' <<< "$MODULE_PROP"
           fi
 
-          LSPATCH_JAR="$WORK/tools/lspatch.jar"
-          [ "$(sha256sum "$LSPATCH_JAR" | awk '{print $1}')" = "$LSPATCH_JAR_SHA256" ]
-          java -jar "$LSPATCH_JAR" \
+          java -cp "$LSPATCH_JAR" scripts/RunLspatch.java "$LSPATCH_JAR" "$KEYSTORE" \
             -m "$MODULE_APK" \
-            -k "$KEYSTORE" "$AE_HOST_KEYSTORE_PASSWORD" "$AE_HOST_KEY_ALIAS" "$AE_HOST_KEYSTORE_PASSWORD" \
             -l 2 -f -o "$WORK/lspatch-out" "$BASE_APK"
 
           mapfile -t PATCHED_BASES < <(find "$WORK/lspatch-out" -maxdepth 1 -type f -name '*-lspatched.apk')
           [ "${#PATCHED_BASES[@]}" -eq 1 ]
           HOST_BASE="${PATCHED_BASES[0]}"
-          # New modules carry their manifest-only preparation helper. All runtime routing
-          # lives in the module; MicroG-RE is an unchanged, separately installed companion.
-          # Running after LSPatch preserves the exact signed source in origin.apk.
-          if unzip -Z1 "$MODULE_APK" | grep -Fx 'assets/host-tools/PrepareMicrog.java' >/dev/null; then
-            unzip -p "$MODULE_APK" assets/host-tools/PrepareMicrog.java > "$WORK/tools/PrepareMicrog.java"
-            java -cp "$LSPATCH_JAR" "$WORK/tools/PrepareMicrog.java" \
-              "$BASE_APK" "$HOST_BASE" "$WORK/base-microg-unsigned.apk"
+          # Only independently reviewed checkout source can execute in the signing job.
+          # Input authorization checked the versioned contract and exact helper bytes.
+          if jq -e '.prepared == true' "$AE_INPUT_RECEIPT" >/dev/null; then
+            REVIEWED_HELPER=$(jq -er '.helper' "$AE_INPUT_RECEIPT")
+            java -cp "$LSPATCH_JAR" "$REVIEWED_HELPER" \
+              "$BASE_APK" "$HOST_BASE" "$WORK/base-microg-unsigned.apk" "$WORK/tools/microg.apk"
             HOST_BASE="$WORK/base-microg-unsigned.apk"
           fi
           ALIGNED_BASE="$WORK/base-aligned.apk"
@@ -295,8 +315,8 @@ jobs:
           "$ZIPALIGN" -f -P 16 4 "$HOST_BASE" "$ALIGNED_BASE"
           "$APKSIGNER" sign \
             --v4-signing-enabled false --alignment-preserved true \
-            --ks "$KEYSTORE" --ks-pass "pass:$AE_HOST_KEYSTORE_PASSWORD" \
-            --ks-key-alias "$AE_HOST_KEY_ALIAS" --key-pass "pass:$AE_HOST_KEYSTORE_PASSWORD" \
+            --ks "$KEYSTORE" --ks-pass env:TEMPLATE_KS_PASS \
+            --ks-key-alias "$TEMPLATE_KEY_ALIAS" --key-pass env:TEMPLATE_KEY_PASS \
             --out "$FINAL_BASE" "$ALIGNED_BASE"
           rm -f "$ALIGNED_BASE"
 
@@ -304,8 +324,8 @@ jobs:
           for split_name in "${SPLIT_NAMES[@]}"; do
             "$APKSIGNER" sign \
               --v4-signing-enabled false \
-              --ks "$KEYSTORE" --ks-pass "pass:$AE_HOST_KEYSTORE_PASSWORD" \
-              --ks-key-alias "$AE_HOST_KEY_ALIAS" --key-pass "pass:$AE_HOST_KEYSTORE_PASSWORD" \
+              --ks "$KEYSTORE" --ks-pass env:TEMPLATE_KS_PASS \
+              --ks-key-alias "$TEMPLATE_KEY_ALIAS" --key-pass env:TEMPLATE_KEY_PASS \
               --out "$WORK/bundle/$split_name" "$WORK/source/$split_name"
             FINAL_ENTRIES+=("$split_name")
           done
@@ -320,10 +340,10 @@ jobs:
           [ "$FINAL_CERT" = "$EXPECTED_HOST_CERT" ]
 
           LSPATCH_CONFIG=$(unzip -p "$FINAL_BASE" assets/lspatch/config.json)
-          jq -e '.useManager == false and .sigBypassLevel == 2
+          jq -e --arg name "$LSPATCH_NAME" --argjson build "$LSPATCH_BUILD" '.useManager == false and .sigBypassLevel == 2
             and .lspConfig.API_CODE == 102
-            and .lspConfig.VERSION_CODE == 487
-            and .lspConfig.VERSION_NAME == "1.2"' <<< "$LSPATCH_CONFIG" >/dev/null
+            and .lspConfig.VERSION_CODE == $build
+            and .lspConfig.VERSION_NAME == $name' <<< "$LSPATCH_CONFIG" >/dev/null
 
           for split_name in "${SPLIT_NAMES[@]}"; do
             "$ZIPALIGN" -c -P 16 -v 4 "$WORK/bundle/$split_name" >/dev/null
@@ -366,3 +386,7 @@ jobs:
           nonce: ${{ inputs.nonce }}
         env:
           GH_TOKEN: ${{ github.token }}
+
+      - name: Remove staged signing key
+        if: always()
+        run: rm -f "$RUNNER_TEMP/shared-android-signing.p12"

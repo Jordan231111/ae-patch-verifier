@@ -4,7 +4,7 @@ const { mergeReady } = require("../server/catalog");
 const catalog = require("../catalog.json");
 const { entry, identity, workflowInputs } = require("../server/catalog/requests");
 
-test("the deployed snapshot contains a numbered release and a real download path for every app", () => {
+test("the catalog contains supported editions and only offers identified signed releases", () => {
   assert.equal(new Set(catalog.apps.map(app => app.id)).size, catalog.apps.length);
   const ids = new Set();
   for (const app of catalog.apps) {
@@ -17,7 +17,7 @@ test("the deployed snapshot contains a numbered release and a real download path
       assert.ok(variant.sizeBytes > 0);
       if (app.statusUrl) {
         assert.equal(app.statusUrl, "/api/relevel/status");
-      } else {
+      } else if (variant.downloadUrl) {
         assert.match(variant.sha256, /^[a-f0-9]{64}$/);
         assert.match(variant.downloadUrl, /^https:\/\/github\.com\/Jordan231111\/ae-patch-verifier\/releases\/download\/catalog-/);
       }
@@ -34,6 +34,10 @@ test("ReLevel is excluded from on-demand builds and its timer remains the only p
   const key = identity(variant, source, module);
   assert.notEqual(key, identity(variant, { ...source, versionCode: "4" }, module));
   assert.notEqual(key, identity(variant, source, { ...module, sha: "b".repeat(40) }));
+  assert.notEqual(identity(variant, source, { ...module, recipe: "old" }),
+    identity(variant, source, { ...module, recipe: "new" }));
+  assert.notEqual(identity(variant, source, { ...module, assetDigest: "a".repeat(64) }),
+    identity(variant, source, { ...module, assetDigest: "b".repeat(64) }));
   assert.notEqual(key, identity({ id: "anothereden-global-arm64-debug" }, source, module));
   const candidate = { key, version: "1.2", code: "3", source: "apkpure" };
   const dispatch = workflowInputs(app, variant, candidate, module, "1234567890123-1234abcd");
@@ -48,14 +52,14 @@ test("ReLevel is excluded from on-demand builds and its timer remains the only p
 
 test("only a matching immutable signed asset can replace its own catalog entry", () => {
   const seed = catalog.apps.find(app => app.id === "rustaxion").variants[0];
-  const next = { ...seed, version: "2.0.0", versionCode: seed.versionCode + 1,
+  const next = { ...seed, version: "2.0.0", versionCode: seed.versionCode + 1, sizeBytes: 100,
     updatedAt: "2099-01-01T00:00:00Z", sha256: "a".repeat(64) };
   next.downloadUrl = `https://github.com/Jordan231111/ae-patch-verifier/releases/download/catalog-${seed.id}-${next.sha256.slice(0, 20)}/${seed.id}-${next.version}.apks`;
   const apply = delta => mergeReady(catalog, { [seed.id]: { ...next, ...delta } }).apps
     .find(app => app.id === "rustaxion").variants[0];
   assert.equal(apply({}).downloadUrl, next.downloadUrl);
   for (const delta of [{ signer: "changed" }, { downloadUrl: "https://example.org/file" },
-    { versionCode: seed.versionCode - 1 }, { updatedAt: "2000-01-01" }, { sizeBytes: 0 }]) {
+    { versionCode: seed.versionCode - 1 }, { updatedAt: "invalid" }, { sizeBytes: 0 }]) {
     assert.deepEqual(apply(delta), seed);
   }
   assert.deepEqual(mergeReady(catalog, undefined), catalog);

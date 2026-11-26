@@ -132,11 +132,20 @@ jobs:
           echo "PACKAGE_NAME=$PACKAGE_NAME" >> "$GITHUB_ENV"
           echo "ARCHITECTURE=$ARCHITECTURE" >> "$GITHUB_ENV"
 
+      - name: Load shared Android signing identity
+        env:
+          TEMPLATE_KS_BASE64: ${{ secrets.TEMPLATE_KS_BASE64 }}
+          TEMPLATE_KS_PASS: ${{ secrets.TEMPLATE_KS_PASS }}
+          TEMPLATE_KEY_ALIAS: ${{ secrets.TEMPLATE_KEY_ALIAS }}
+          TEMPLATE_KEY_PASS: ${{ secrets.TEMPLATE_KEY_PASS }}
+          TEMPLATE_CERT_SHA256: ${{ vars.TEMPLATE_CERT_SHA256 }}
+        run: python3 scripts/setup_shared_signing.py
+
       - name: Fetch, patch, verify, and package
         env:
           NONCE: ${{ inputs.nonce }}
           EXPECTED_SOURCE_CERT: ${{ vars.ONCEWORLD_SOURCE_CERT_SHA256 }}
-          EXPECTED_HOST_CERT: ${{ vars.ONCEWORLD_HOST_CERT_SHA256 }}
+          EXPECTED_HOST_CERT: ${{ vars.TEMPLATE_CERT_SHA256 }}
         run: |
           set -Eeuo pipefail
           trap 'status=$?; echo "Failed at workflow script line $LINENO: $BASH_COMMAND (exit $status)" >&2; exit $status' ERR
@@ -182,12 +191,10 @@ jobs:
           test -n "$EXPECTED_SOURCE_CERT"
           EXPECTED_SOURCE_CERT=$(printf '%s' "$EXPECTED_SOURCE_CERT" \
             | tr -d ':' | tr '[:upper:]' '[:lower:]')
-          SOURCE_CERT_OUTPUT="$WORK/source-certificates.txt"
-          "$APKSIGNER" verify --print-certs "$BASE_APK" > "$SOURCE_CERT_OUTPUT"
-          SOURCE_CERT=$(awk -F': ' \
-            '/certificate SHA-256 digest:/ && !digest {digest=$NF} END {print digest}' \
-            "$SOURCE_CERT_OUTPUT" | tr -d ':' | tr '[:upper:]' '[:lower:]')
-          [ "$SOURCE_CERT" = "$EXPECTED_SOURCE_CERT" ]
+          export PATH="$SDK_ROOT/build-tools/35.0.0:$PATH"
+          python3 scripts/catalog/verify_inputs.py --source "$WORK/xapk" \
+            --package "$PACKAGE_NAME" --code "$VERSION_CODE" --source-cert "$EXPECTED_SOURCE_CERT" \
+            --module "$MODULE_APK" --module-cert "$EXPECTED_HOST_CERT"
 
           # OnceWorld uses the same single modern module in Vector and LSPatch.
           # Reject classic XposedBridge artifacts so the two delivery paths cannot diverge again.
@@ -212,18 +219,12 @@ jobs:
           [[ "$MODULE_ID" =~ ^[A-Za-z0-9._-]+$ ]]
           test -n "$(unzip -Z1 "$MODULE_APK" | grep '^lib/arm64-v8a/.*\.so$')"
           ! unzip -Z1 "$MODULE_APK" | grep -Eq '^lib/(armeabi-v7a|x86|x86_64)/'
-          # OnceWorld deliberately uses LSPatch's default host key, not AE's Ashfur key. Extract
-          # it from the integrity-pinned release so local and hosted OnceWorld builds retain the
-          # same update-compatible identity without committing another keystore here.
-          PATCH_KEY="$WORK/lspatch-default.jks"
-          unzip -p "$LSPATCH_JAR" assets/keystore > "$PATCH_KEY"
-          test -s "$PATCH_KEY"
+          PATCH_KEY="$TEMPLATE_KS_PATH"
 
-          java -jar "$LSPATCH_JAR" "$BASE_APK" \
+          java -cp "$LSPATCH_JAR" scripts/RunLspatch.java "$LSPATCH_JAR" "$PATCH_KEY" "$BASE_APK" \
             -m "$MODULE_APK" \
             -o "$WORK/lspatch-out" \
             -l 2 \
-            -k "$PATCH_KEY" 123456 key0 123456 \
             -f
 
           mapfile -t PATCHED < <(find "$WORK/lspatch-out" -maxdepth 1 -type f -name '*-lspatched.apk')
@@ -243,9 +244,9 @@ jobs:
             --v4-signing-enabled false \
             --alignment-preserved true \
             --ks "$PATCH_KEY" \
-            --ks-pass pass:123456 \
-            --ks-key-alias key0 \
-            --key-pass pass:123456 \
+            --ks-pass env:TEMPLATE_KS_PASS \
+            --ks-key-alias "$TEMPLATE_KEY_ALIAS" \
+            --key-pass env:TEMPLATE_KEY_PASS \
             --out "$SIGNED_BASE" \
             "$ALIGNED_BASE"
           mv "$SIGNED_BASE" "$WORK/bundle/base.apk"
@@ -256,9 +257,9 @@ jobs:
             "$APKSIGNER" sign \
               --v4-signing-enabled false \
               --ks "$PATCH_KEY" \
-              --ks-pass pass:123456 \
-              --ks-key-alias key0 \
-              --key-pass pass:123456 \
+              --ks-pass env:TEMPLATE_KS_PASS \
+              --ks-key-alias "$TEMPLATE_KEY_ALIAS" \
+              --key-pass env:TEMPLATE_KEY_PASS \
               --out "$WORK/bundle/$split_name" \
               "$WORK/xapk/$split_name"
             FINAL_ENTRIES+=("$split_name")
@@ -335,3 +336,7 @@ jobs:
           nonce: ${{ inputs.nonce }}
         env:
           GH_TOKEN: ${{ github.token }}
+
+      - name: Remove staged signing key
+        if: always()
+        run: rm -f "$RUNNER_TEMP/shared-android-signing.p12"

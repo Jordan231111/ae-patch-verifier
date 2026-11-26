@@ -8,8 +8,10 @@ size_t removal_mov(uintptr_t at, const item_removal_contracts::Word (&pattern)[N
 std::vector<uintptr_t> removal_direct_calls(const std::vector<MemoryRange> &r, const std::vector<MemoryRange> &x,
                                          uintptr_t function, size_t limit) {
     std::vector<uintptr_t> calls;
-    for (uintptr_t pc = function; function && pc < function + limit && range_contains(x, pc, 4); pc += 4) {
-        if (injection_function_start(r, x, pc) != function) break;
+    uintptr_t end=0;
+    if(!function || injection_function_start(r,x,function,&end)!=function)return calls;
+    end=function+std::min(limit,size_t(end-function));
+    for (uintptr_t pc = function; pc+4<=end; pc += 4) {
         uintptr_t target = 0;
         if (decode_branch_target(pc, true, &target)) push_unique(calls, target);
     }

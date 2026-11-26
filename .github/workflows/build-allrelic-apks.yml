@@ -69,6 +69,15 @@ jobs:
           wait "$MODULE_PID"
           wait "$PATCHER_PID"
           echo "WORK=$WORK" >> "$GITHUB_ENV"
+      - name: Load shared Android signing identity
+        env:
+          TEMPLATE_KS_BASE64: ${{ secrets.TEMPLATE_KS_BASE64 }}
+          TEMPLATE_KS_PASS: ${{ secrets.TEMPLATE_KS_PASS }}
+          TEMPLATE_KEY_ALIAS: ${{ secrets.TEMPLATE_KEY_ALIAS }}
+          TEMPLATE_KEY_PASS: ${{ secrets.TEMPLATE_KEY_PASS }}
+          TEMPLATE_CERT_SHA256: ${{ vars.TEMPLATE_CERT_SHA256 }}
+        run: python3 scripts/setup_shared_signing.py
+
       - name: Verify, patch, sign, and package the complete split set
         env:
           VERSION_CODE: ${{ inputs.versionCode }}
@@ -76,7 +85,7 @@ jobs:
           MODULE_SHA: ${{ inputs.moduleSha }}
           NONCE: ${{ inputs.nonce }}
           SOURCE_CERT: ${{ vars.ALLRELIC_SOURCE_CERT_SHA256 }}
-          MODULE_CERT: ${{ vars.ALLRELIC_MODULE_CERT_SHA256 }}
+          MODULE_CERT: ${{ vars.TEMPLATE_CERT_SHA256 }}
         run: |
           set -euo pipefail
           SDK_ROOT="${ANDROID_HOME:-/usr/local/lib/android/sdk}"
@@ -132,3 +141,7 @@ jobs:
           nonce: ${{ inputs.nonce }}
         env:
           GH_TOKEN: ${{ github.token }}
+
+      - name: Remove staged signing key
+        if: always()
+        run: rm -f "$RUNNER_TEMP/shared-android-signing.p12"

@@ -4,7 +4,7 @@
 // Native achievement continuations: ownership, eligibility, one signed reward,
 // and manager lifecycle. Addresses are decoded from unique FDE-owned call edges.
 namespace injection_cascade_contracts {
-enum class Role { none, eligible, complete, remove, reward, assign, manager, set_triggers, slot_page, slot_load, slot_store, destroy, clear, repository, currency_repo, text_page, text_add, currency_get };
+enum class Role { none, eligible, complete, remove, reward, assign, manager, set_triggers, slot_page, slot_load, slot_store, destroy, clear, repository, currency_repo, text_page, text_add, currency_get, consumer_low, consumer_high };
 struct Word { uint32_t value, mask; Role role; };
 inline constexpr Word callback[] = {
     {0xF9400814,0xFFFFFFFF,Role::none},
@@ -55,10 +55,10 @@ inline constexpr Word reward_state[] = {
     {0xAA0003F4,0xFFFFFFFF,Role::none},
 };
 inline constexpr Word reward_assign[] = {
-    {0x52800001,0xFFE0001F,Role::none},
+    {0x52800001,0xFFE0001F,Role::consumer_low},
     {0xD10003A3,0xFFC003FF,Role::none},
     {0xAA1403E0,0xFFFFFFFF,Role::none},
-    {0x72A00001,0xFFE0001F,Role::none},
+    {0x72A00001,0xFFE0001F,Role::consumer_high},
     {0xAA1503E2,0xFFFFFFFF,Role::none},
     {0x94000000,0xFC000000,Role::assign},
 };

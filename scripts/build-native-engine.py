@@ -15,16 +15,16 @@ production_paths = sorted(str(p.relative_to(root)) for directory, extensions in 
  ('third_party/shadowhook',{'.c','.S','.h','.java','.txt','.json','.pro'})]
  for p in (root/directory).rglob('*') if p.is_file() and p.suffix in extensions)
 production_paths += ['app/build.gradle.kts','app/src/main/AndroidManifest.xml','app/proguard-rules.pro',
-                     'tools/test_item_injection_queue.cpp','tools/lua_registration_model.inc','gradle/libs.versions.toml','gradle/wrapper/gradle-wrapper.properties']
+                     'tools/test_inventory_change_queue.cpp','tools/lua_registration_model.inc','gradle/libs.versions.toml','gradle/wrapper/gradle-wrapper.properties']
 input_hashes={name:hashlib.sha256((root/name).read_bytes()).hexdigest() for name in production_paths}
 dirty = bool(subprocess.check_output(['git','-C',str(root),'status','--porcelain','--untracked-files=normal'],text=True).strip())
 if dirty and not args.allow_dirty:
  raise SystemExit('Production inputs have uncommitted changes; commit them or explicitly use --allow-dirty.')
 s=source.read_text()
 (out/'item_catalog_signatures.h').write_bytes(header.read_bytes())
-copied_headers=['item_injection_contracts.h','item_injection_cascade_contracts.h','item_injection_queue.h','item_removal_contracts.h',
+copied_headers=['inventory_change_contracts.h','inventory_change_cascade_contracts.h','inventory_change_queue.h','item_removal_contracts.h',
  'item_pet_contracts.h','item_count_contracts.h','item_creation_contracts.h','mass_shop_contracts.h',
- 'director_speed_contracts.h','runtime_context_contracts.h','runtime_feature_signatures.h','elf_unwind_bounds.h',
+ 'director_speed_contracts.h','arm64_call_flow.h','native_scan.h','runtime_context_contracts.h','runtime_feature_signatures.h','elf_unwind_bounds.h',
  'item_fish_contracts.h','item_pet_creation_contracts.h','item_semantics_contracts.h']
 for name in copied_headers:
  (out/name).write_bytes((root/'app/src/main/cpp'/name).read_bytes())
@@ -35,10 +35,14 @@ pure_files={
  'director_speed.inc':(root/'app/src/main/cpp/director_speed.inc').read_text().split('void hooked_director_calculate_delta(')[0],
 }
 for name in ['item_pet_runtime.inc','item_creation_runtime.inc','mass_shop_resolver.inc',
- 'item_fish_resolver.inc','item_pet_creation_resolver.inc','item_semantics_resolver.inc','item_injection_cascade_resolver.inc']:
+ 'runtime_combat_resolver.inc','item_save_resolver.inc','item_fish_resolver.inc','item_pet_creation_resolver.inc','item_semantics_resolver.inc','inventory_change_cascade_resolver.inc']:
  pure_files[name]=(root/'app/src/main/cpp'/name).read_text()
+for name, boundary in [('dialogue_context.inc','int32_t dialogue_script_kind('),
+ ('dialogue_input.inc','bool dialogue_native_input_supported('),
+ ('dialogue_iteration.inc','void hooked_dialogue_actions(')]:
+ pure_files[name]=(root/'app/src/main/cpp'/name).read_text().split(boundary)[0]
 for name,text in pure_files.items():(out/name).write_text(text.rstrip()+'\n')
-injection = (root/'app/src/main/cpp/item_injection_runtime.inc').read_text()
+injection = (root/'app/src/main/cpp/inventory_change_runtime.inc').read_text()
 # Import the exact pure resolver, excluding hooks, live dispatch and inventory writes.
 layout = injection[:injection.index('std::mutex g_injection_mutex;')]
 resolver = injection[injection.index('// Function boundaries come'):injection.index('struct InjectionItem {')]
@@ -47,12 +51,14 @@ for forbidden in ['step_item_injection(', 'injection_amount(', 'hooked_injection
  if forbidden in resolver:
   raise SystemExit('Live game dispatch must not enter the static engine: '+forbidden)
 (out/'item_injection_resolver.h').write_text('// Generated verbatim from the production resolver.\n'+layout+resolver)
-s = s.replace('#include "item_injection_runtime.inc"', '#include "item_injection_resolver.h"')
+s = s.replace('#include "inventory_change_runtime.inc"', '#include "item_injection_resolver.h"')
 s = s.replace('#include "mass_shop_runtime.inc"','')
-queue = (root/'tools/test_item_injection_queue.cpp').read_text()
-queue = queue.replace('#include "../app/src/main/cpp/item_injection_queue.h"', '#include "item_injection_queue.h"')
+for name in ['achievement_runtime.inc','app_trace_poll.inc']:
+ s = s.replace('#include "'+name+'"','')
+queue = (root/'tools/test_inventory_change_queue.cpp').read_text()
+queue = queue.replace('#include "../app/src/main/cpp/inventory_change_queue.h"', '#include "inventory_change_queue.h"')
 queue = queue.replace('int main()', 'bool audit_injection_queue()').replace('assert(', 'AUDIT_REQUIRE(')
-queue = re.sub(r'std::cout << "Item Injection[^;]+;', 'return true;', queue)
+queue = re.sub(r'std::cout << "(?:Item Injection|Inventory change)[^;]+;', 'return true;', queue)
 (out/'item_injection_queue_test.h').write_text(
  '// Generated from the module queue tests; never invokes uploaded game code.\n'
  '#define AUDIT_REQUIRE(value) do { if (!(value)) return false; } while (0)\n'+queue+'\n#undef AUDIT_REQUIRE\n')
@@ -84,22 +90,26 @@ parts=['''#include <algorithm>
 #include <sys/types.h>
 #include "elf-abi.h"
 #include "elf_unwind_bounds.h"
-#include "item_injection_contracts.h"
+#include "arm64_call_flow.h"
+#include "native_scan.h"
+#include "inventory_change_contracts.h"
 #include "item_injection_queue_test.h"
 #include "'''+'item_catalog_signatures.h'+'''"
 #define ALOGI(...) do { printf(__VA_ARGS__); puts(""); } while(0)
 #define ALOGW(...) ALOGI(__VA_ARGS__)
-struct MemoryRange {uintptr_t start,end;bool executable,writable;};
+using MemoryRange=native_scan::Range;
 uintptr_t audit_base=0;size_t writes=0;std::vector<MemoryRange> audit_ranges,audit_readable;
 constexpr const char *kTargetLib="libapp.so";
 uintptr_t find_module_base(const char *){return audit_base;}
 uintptr_t decode_adrp_ldr_global(uintptr_t,uintptr_t);
+uint32_t combat_word(uintptr_t);
 std::unordered_map<std::string,uintptr_t> audit_symbols;
 void *resolve_app_symbol(const char *n){return (void*)audit_symbols[n];}
 std::vector<MemoryRange> app_exec_ranges(){return audit_ranges;}
 std::vector<MemoryRange> app_readable_ranges(){return audit_readable;}
-struct ScanSnapshot {bool read(uintptr_t,void*,size_t) const{return false;}};
+using ScanSnapshot=native_scan::Snapshot;
 thread_local ScanSnapshot *t_active_scan_snapshot=nullptr;
+ScanSnapshot *active_scan_snapshot(){return t_active_scan_snapshot;}
 std::mutex g_item_layout_mutex;std::atomic<bool> g_item_layout_ready{false};item_catalog::Layout g_item_layout{};
 std::atomic<bool> g_object_layouts_ready{false};item_catalog::ObjectLayouts g_object_layouts{};
 struct ItemNameRet {uint64_t w0,w1,w2;};
@@ -117,18 +127,19 @@ for m in re.finditer(r'^(?:static )?constexpr uint8_t (?:sig_|mask_)\w*\[\]\s*=\
 for l in s.splitlines():
  if re.match(r'constexpr .*\*?(?:kAchievementFireEventTypeName|kAchievementGameEventPrefix|kAchievementRepositoryNotFoundText|kAchievementRepositoryEndAssertText)\b',l):parts.append(l)
 for typ in ['DialogueNativeResolution','DialoguePageJumpCandidate']:parts.append(re.search(r'struct '+typ+r' \{.*?\n\};',s,re.S)[0])
-parts.append('template<size_t N> bool read_item_contract(uintptr_t, const item_catalog::Word (&)[N], uint32_t (&)[N]);\ntemplate<size_t N> std::vector<uintptr_t> find_item_contract(const std::vector<MemoryRange> &, const item_catalog::Word (&)[N]);\ntemplate<size_t N> uint32_t item_role_word(const uint32_t (&)[N], const item_catalog::Word (&)[N], item_catalog::Role);\ntemplate<size_t N> uintptr_t scoped_layout_contract(const std::vector<MemoryRange> &, uintptr_t, const item_catalog::Word (&)[N], uint32_t (&)[N]);\nuintptr_t find_function_start_before_ref(const std::vector<MemoryRange> &, uintptr_t);\nvoid *resolve_app_symbol(const char *);\n\n')
+parts.append('template<size_t N> bool read_item_contract(uintptr_t, const item_catalog::Word (&)[N], uint32_t (&)[N]);\ntemplate<class Word,size_t N> std::vector<uintptr_t> find_item_contract(const std::vector<MemoryRange> &, const Word (&)[N]);\ntemplate<size_t N> uint32_t item_role_word(const uint32_t (&)[N], const item_catalog::Word (&)[N], item_catalog::Role);\ntemplate<size_t N> uintptr_t scoped_layout_contract(const std::vector<MemoryRange> &, uintptr_t, const item_catalog::Word (&)[N], uint32_t (&)[N]);\nuintptr_t find_function_start_before_ref(const std::vector<MemoryRange> &, uintptr_t);\nvoid *resolve_app_symbol(const char *);\n\n')
 parts.append('template<size_t N> uintptr_t layout_call_target(uintptr_t,const item_catalog::Word (&)[N],item_catalog::Role);\n')
+parts.append('uintptr_t injection_function_start(const std::vector<MemoryRange> &, const std::vector<MemoryRange> &, uintptr_t, uintptr_t * = nullptr);\n')
 parts.append(s[s.index('uintptr_t resolve_pattern_hook_address('):s.index('void *install_resolved_function_hook(')])
 parts.append(fn('decode_adrp_ldr_global'))
-a=s.index('template<size_t N>\nbool read_item_contract');b=s.index('// One enumerate+resolve pass over the live item catalog',a);parts.append(s[a:b])
+a=s.index('template<size_t N>\nbool read_item_contract');b=s.index('#include "item_map_dump_runtime.inc"',a);parts.append(s[a:b])
 parts.append(s[s.index('template<size_t N>\nuintptr_t bridge_receiver_global'):s.index('uint64_t runtime_patch_signature(')])
 parts.append(fn('resolve_currency_token_site'))
 features=(root/'app/src/main/cpp/runtime_feature_hooks.inc').read_text()
 parts.append(features[:features.index('std::atomic<uint32_t> g_runtime_feature_ready')])
 context=(root/'app/src/main/cpp/runtime_context_hooks.inc').read_text()
-parts.append(context[:context.index('AdLayout g_ad_context;')])
-parts.append(context[context.index('struct TeamLayout {'):context.index('TeamLayout g_team_context;')])
+parts.append(context[:context.index('AdLayout g_ad_context;')].replace('uintptr_t * = nullptr','uintptr_t *'))
+parts.append('#include "runtime_combat_resolver.inc"\n')
 parts.append('#include "injection-audit.h"\n')
 parts.append('#include "lua_registration_model.inc"\n')
 parts.append('#include "resolver-audit.h"\n')

@@ -22,7 +22,7 @@ if [[ ! "$compiler_version" =~ [[:space:]]6\.0\.9(-git)?([[:space:]]|$) ]]; then
   echo "Emscripten 6.0.9 is required; found: $compiler_version" >&2
   exit 2
 fi
-em++ -std=c++20 -O3 -msimd128 -fno-exceptions -fno-rtti \
+em++ -std=c++20 -O3 -msimd128 -fexceptions -fno-rtti \
   "$native_dir/engine.cpp" \
   -sMEMORY64=2 -sALLOW_MEMORY_GROWTH=1 -sMAXIMUM_MEMORY=1073741824 \
   -sMODULARIZE=1 -sEXPORT_NAME=createAENative -sINVOKE_RUN=0 -sEXIT_RUNTIME=0 \

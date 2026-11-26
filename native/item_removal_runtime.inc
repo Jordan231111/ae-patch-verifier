@@ -1,4 +1,4 @@
-// Included after the injection resolver helpers, in the same translation unit.
+// Included after the inventory resolver helpers, in the same translation unit.
 #include "item_removal_contracts.h"
 #include "item_pet_contracts.h"
 
@@ -59,15 +59,7 @@ template<size_t N>
 std::vector<uintptr_t> removal_candidates(const std::vector<MemoryRange> &readable,
         const std::vector<MemoryRange> &exec, uintptr_t function, size_t limit,
         const item_removal_contracts::Word (&pattern)[N]) {
-    item_catalog::Word words[N]{};
-    for (size_t i = 0; i < N; ++i) words[i] = {pattern[i].value, pattern[i].mask, item_catalog::Role::none};
-    std::vector<MemoryRange> scope;
-    if (!function) scope = exec;
-    else for (const auto &r : exec) {
-        const uintptr_t lo = std::max(r.start, function), hi = std::min(r.end, function + limit);
-        if (hi > lo) scope.push_back({lo, hi, true, false});
-    }
-    auto hits = find_item_contract(scope, words);
+    auto hits=find_item_contract(native_scan::scope(exec,function,limit),pattern);
     if (function && limit == removal_code_size(pattern)) {
         // A leaf reached by a verified call edge need not own an unwind entry.
         // Here the entire contract starts at that exact entry and ends in B/RET.
@@ -90,8 +82,7 @@ uintptr_t removal_contract(const std::vector<MemoryRange> &readable, const std::
 }
 template<size_t N>
 uintptr_t removal_capture(uintptr_t at, const item_removal_contracts::Word (&pattern)[N], item_removal_contracts::Role role) {
-    if (at) for (size_t i = 0; i < N; ++i) if (pattern[i].role == role) return at + i * 4;
-    return 0;
+    return native_scan::capture(at,pattern,role);
 }
 template<size_t N>
 uintptr_t removal_call(uintptr_t at, const item_removal_contracts::Word (&pattern)[N], item_removal_contracts::Role role) {
@@ -243,7 +234,7 @@ void resolve_item_removals(const std::vector<MemoryRange> &readable, const std::
                            size_t amount_slot, size_t change_slot) {
     for (size_t i = 0; i < static_cast<size_t>(InstanceKind::Count); ++i) {
         g_instance_layouts[i] = resolve_instance_layout(readable, exec, static_cast<InstanceKind>(i), amount_slot, change_slot);
-        ALOGI("AE_INJECTION removal kind=%zu ready=%d", i, g_instance_layouts[i].ready);
+        ALOGI("AE_INVENTORY removal kind=%zu ready=%d", i, g_instance_layouts[i].ready);
     }
     auto &pet = g_instance_layouts[static_cast<size_t>(InstanceKind::Pet)];
     for (size_t i = 0; i < static_cast<size_t>(InstanceKind::Count); ++i)

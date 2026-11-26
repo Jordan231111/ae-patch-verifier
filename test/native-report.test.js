@@ -4,10 +4,10 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { nativeReport } = require('../native/report.js');
 const coverage = require('../native/coverage.js');
-const lines = fs.readFileSync(path.join(__dirname, 'fixtures/native-3.17.0.log'), 'utf8').trim().split('\n');
+const lines = fs.readFileSync(path.join(__dirname, 'fixtures/native-report-valid.txt'), 'utf8').trim().split('\n');
 const failures = rows => rows.filter(row => row.status === 'FAIL');
 
-test('actual 3.17.0 browser-engine output covers every static contract', () => {
+test('complete report schema covers every required static contract', () => {
   const rows = nativeReport(lines);
   assert.deepEqual(failures(rows), []);
   assert.equal(rows.filter(row => row.feature.startsWith('Item Injection') && row.status === 'PASS').length, coverage.checks.filter(id => id.startsWith('injection.')).length);

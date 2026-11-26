@@ -5,14 +5,15 @@ struct InjectionLayout {
     uintptr_t character_ready_slot = 0;
     uintptr_t currency_core = 0;
     uint32_t forbidden_currency = 0;
-    uintptr_t token_repository = 0, token_assign = 0, token_kind = 0;
+    uintptr_t token_repository = 0, token_assign = 0, shop_token_kind = 0;
+    uint32_t token_consumer = 0;
     uintptr_t token_repository_slot = 0;
     uintptr_t base_change = 0, ticket_writer = 0;
     uintptr_t base_set = 0, amount_floor = 0;
     size_t setter_slot = 0, core_slot = 0, state_slot = 0;
     uintptr_t resources_low = 0, cast_function = 0, item_rtti = 0, ticket_rtti = 0;
     uintptr_t master_getter = 0, type_getter = 0;
-    uintptr_t sync = 0, sync_manager = 0;
+    uintptr_t sync = 0, sync_manager = 0, sync_trigger = 0;
     uintptr_t other_resources = 0;
     uintptr_t unknown_factory = 0;
     size_t borrowed_id_field = 0;
@@ -23,15 +24,16 @@ struct InjectionLayout {
 };
 InjectionLayout g_injection_layout;
 std::atomic<bool> g_injection_ready{false};
+std::atomic<const char *> g_injection_contract_error{nullptr};
 // Function boundaries come from the ELF loader's unwind metadata, so locating an
 // assertion's owner does not depend on a particular compiler prologue or RVA.
 // These are standard ELF/DWARF format records, never game-object field layouts.
 uintptr_t injection_function_start(const std::vector<MemoryRange> &readable,
-                                   const std::vector<MemoryRange> &exec, uintptr_t pc) {
+                                   const std::vector<MemoryRange> &exec, uintptr_t pc, uintptr_t *function_end) {
     if(!range_contains(exec,pc,4)) return 0;
     const auto read_metadata=[&](uintptr_t address,void *value,size_t size) {
         if(!range_contains(readable,address,size)) return false;
-        if(t_active_scan_snapshot && t_active_scan_snapshot->read(address,value,size)) return true;
+        if(const auto *snapshot=active_scan_snapshot();snapshot && snapshot->read(address,value,size)) return true;
         return vm_read_partial(address,value,size)==static_cast<ssize_t>(size);
     };
     const uintptr_t base = find_module_base(kTargetLib);
@@ -67,8 +69,20 @@ uintptr_t injection_function_start(const std::vector<MemoryRange> &readable,
             if (start <= pc) { found = start; fde=address+static_cast<intptr_t>(entry.fde);lo = mid + 1; } else hi = mid;
         }
         uintptr_t end=0;
-        return found && elf_unwind::fde_contains(read_metadata,fde,found,pc,&end) &&
-               range_contains(exec,found,end-found) ? found : 0;
+        if (!found || !elf_unwind::fde_contains(read_metadata,fde,found,pc,&end) ||
+            !range_contains(exec,found,end-found)) return 0;
+        if (function_end) {
+            // A later table entry becomes the owner even if a malformed or
+            // overlapping FDE claims a longer interval. Match point lookups.
+            if(lo<header.count) {
+                Entry next{};
+                if(!read_metadata(table+lo*sizeof(Entry),&next,sizeof(next)))return 0;
+                end=std::min(end,address+static_cast<intptr_t>(next.function));
+            }
+            if(end<pc || end-pc<4)return 0;
+            *function_end=end;
+        }
+        return found;
     }
     return 0;
 }
@@ -115,22 +129,12 @@ uintptr_t injection_anchored_function(const std::vector<MemoryRange> &readable,
 template<size_t N>
 std::vector<uintptr_t> injection_contract_candidates(const std::vector<MemoryRange> &exec,
                              uintptr_t start, size_t length, const item_injection_contracts::Word (&pattern)[N]) {
-    item_catalog::Word converted[N]{};
-    for (size_t i = 0; i < N; ++i) converted[i] = {pattern[i].value, pattern[i].mask, item_catalog::Role::none};
-    std::vector<MemoryRange> scope;
-    if (start == 0) scope = exec;
-    else for (const auto &r : exec) {
-        const uintptr_t lo = std::max(r.start, start), hi = std::min(r.end, start + length);
-        if (hi > lo) scope.push_back({lo, hi, true, false});
-    }
-    return find_item_contract(scope, converted);
+    return find_item_contract(native_scan::scope(exec,start,length),pattern);
 }
 template<size_t N>
 uintptr_t injection_capture(uintptr_t site, const item_injection_contracts::Word (&pattern)[N],
                             item_injection_contracts::Role role) {
-    if (!site) return 0;
-    for (size_t i = 0; i < N; ++i) if (pattern[i].role == role) return site + i * sizeof(uint32_t);
-    return 0;
+    return native_scan::capture(site,pattern,role);
 }
 template<size_t N>
 uintptr_t injection_contract(const std::vector<MemoryRange> &exec, uintptr_t start, size_t length,
@@ -143,7 +147,30 @@ uintptr_t injection_contract(const std::vector<MemoryRange> &exec, uintptr_t sta
 #include "item_fish_resolver.inc"
 
 #include "item_semantics_resolver.inc"
-#include "item_injection_cascade_resolver.inc"
+#include "inventory_change_cascade_resolver.inc"
+#include "item_save_resolver.inc"
+
+uintptr_t resolve_injection_sync_trigger(const std::vector<MemoryRange> &readable,
+                                        const std::vector<MemoryRange> &exec,uintptr_t sync) {
+    using namespace item_injection_contracts;
+    // This is a protocol dispatch value, not a diagnostic label. Live transfer
+    // controls proved that an invented "ItemInjection" trigger was ACKed while
+    // its inventory rows were discarded. Use the verified native UI-save path.
+    const char trigger[]="UiClosed";
+    const auto strings=find_pattern(readable,reinterpret_cast<const uint8_t *>(trigger),sizeof(trigger));
+    std::vector<uintptr_t> matches;
+    for(auto site:injection_contract_candidates(exec,0,0,native_save_trigger)) {
+        uintptr_t callee=0,page=0;uint32_t reg=0;
+        const auto at=injection_capture(site,native_save_trigger,Role::trigger_page);
+        const auto receiver=read_u32(injection_capture(site,native_save_trigger,Role::receiver_save))&31U;
+        if(receiver<19 || receiver>28 || receiver!=((read_u32(injection_capture(site,native_save_trigger,Role::receiver_use))>>16U)&31U) ||
+           !decode_branch_target(injection_capture(site,native_save_trigger,Role::sync),true,&callee) || callee!=sync ||
+           !decode_adrp_page(read_u32(at),at,&page,&reg) || reg!=1) continue;
+        const auto text=page+((read_u32(injection_capture(site,native_save_trigger,Role::trigger_add))>>10U)&0xfffU);
+        if(std::find(strings.begin(),strings.end(),text)!=strings.end()) push_unique(matches,text);
+    }
+    return matches.size()==1 ? matches.front() : 0;
+}
 
 bool resolve_item_injection(const std::vector<MemoryRange> &readable,
                             const std::vector<MemoryRange> &exec,
@@ -160,12 +187,17 @@ bool resolve_item_injection(const std::vector<MemoryRange> &readable,
     const uintptr_t dispatch = injection_contract(exec, wrapper, 1024, lua_change_dispatch);
     const uintptr_t kind = purchase ? injection_contract(exec, purchase, 1024, shop_token_kind) : 0;
     InjectionLayout layout{};
+    layout.token_consumer=assign ? generic_token_consumer(read_u32(injection_capture(assign,lua_token_assign,Role::consumer))) : 0;
+    if(!layout.token_consumer) {
+        g_injection_contract_error.store("The generic item-token consumer contract could not be validated.");
+        return false;
+    }
     uintptr_t shop_repo = 0;
     if (!repo || !assign || !dispatch || !kind || !ticket_writer ||
         !decode_branch_target(repo, true, &layout.token_repository) ||
         !decode_branch_target(injection_capture(assign, lua_token_assign, Role::assign), true, &layout.token_assign) ||
         !decode_branch_target(kind, true, &shop_repo) || shop_repo != layout.token_repository ||
-        !decode_branch_target(injection_capture(kind, shop_token_kind, Role::kind), true, &layout.token_kind) ||
+        !decode_branch_target(injection_capture(kind, shop_token_kind, Role::kind), true, &layout.shop_token_kind) ||
         !decode_branch_target(ticket_writer + sizeof(sig_item_writer_pattern) - 4, true, &layout.base_change)) return false;
     bool shared_assign = false;
     for (uintptr_t pc = kind; pc < kind + 256 && range_contains(exec, pc, 4); pc += 4) {
@@ -253,7 +285,7 @@ bool resolve_item_injection(const std::vector<MemoryRange> &readable,
     layout.core_slot = item_catalog::unsigned_offset(read_u32(injection_capture(core, base_set_core, Role::core_slot)), 3);
     layout.state_slot = item_catalog::unsigned_offset(read_u32(injection_capture(state, base_set_state, Role::state_slot)), 3);
     if (!layout.setter_slot || !layout.core_slot || !layout.state_slot || !range_contains(exec, layout.amount_floor, 4)) return false;
-    const uintptr_t type = injection_contract(exec, layout.token_kind, 128, master_type);
+    const uintptr_t type = injection_contract(exec, layout.shop_token_kind, 128, master_type);
     if (!type || !decode_branch_target(injection_capture(type, master_type, Role::master_getter), true, &layout.master_getter) ||
         !decode_branch_target(injection_capture(type, master_type, Role::type_getter), true, &layout.type_getter)) return false;
     layout.sync = injection_anchored_function(readable, exec, "user_data_sync");
@@ -265,7 +297,12 @@ bool resolve_item_injection(const std::vector<MemoryRange> &readable,
         layout.sync_manager = getter;
     }
     if (!layout.sync_manager) return false;
-    for (uintptr_t function : {layout.token_repository, layout.token_assign, layout.token_kind,
+    layout.sync_trigger=resolve_injection_sync_trigger(readable,exec,layout.sync);
+    if(!layout.sync_trigger) {
+        g_injection_contract_error.store("The native inventory-save trigger contract could not be validated.");
+        return false;
+    }
+    for (uintptr_t function : {layout.token_repository, layout.token_assign, layout.shop_token_kind,
                                layout.base_change, layout.ticket_writer, layout.cast_function, layout.resources_low,
                                layout.master_getter, layout.type_getter, layout.sync, layout.sync_manager, layout.other_resources}) {
         if (!range_contains(exec, function, 4)) return false;
@@ -336,12 +373,15 @@ bool resolve_item_injection(const std::vector<MemoryRange> &readable,
     }
     g_injection_cascade=resolve_injection_cascade(readable,exec,layout);
     if(!g_injection_cascade.ready) return false;
+    g_item_save_bindings=resolve_item_save(readable,exec,layout.sync);
+    if(!g_item_save_bindings.ready()) return false;
     resolve_item_removals(readable, exec, g_object_layouts.amount_slot, layout.change_slot);
     g_injection_layout = layout;
     g_fish=resolve_fish(readable,exec);
     g_special_inventory=resolve_special_inventory(readable,exec,g_object_layouts.amount_slot,layout.core_slot);
     g_injection_ready.store(true, std::memory_order_release);
-    ALOGI("AE_INJECTION resolved changeSlot=%zu poolBegin=%zu equipment=%d lowWatermark=%zu amountMax=%d",
+    g_injection_contract_error.store(nullptr);
+    ALOGI("AE_INVENTORY resolved changeSlot=%zu poolBegin=%zu equipment=%d lowWatermark=%zu amountMax=%d",
           layout.change_slot, layout.pool_begin, layout.equipment_master != 0, layout.low_watermark, layout.amount_max);
     return true;
 }

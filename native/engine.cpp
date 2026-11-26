@@ -20,22 +20,26 @@
 #include <sys/types.h>
 #include "elf-abi.h"
 #include "elf_unwind_bounds.h"
-#include "item_injection_contracts.h"
+#include "arm64_call_flow.h"
+#include "native_scan.h"
+#include "inventory_change_contracts.h"
 #include "item_injection_queue_test.h"
 #include "item_catalog_signatures.h"
 #define ALOGI(...) do { printf(__VA_ARGS__); puts(""); } while(0)
 #define ALOGW(...) ALOGI(__VA_ARGS__)
-struct MemoryRange {uintptr_t start,end;bool executable,writable;};
+using MemoryRange=native_scan::Range;
 uintptr_t audit_base=0;size_t writes=0;std::vector<MemoryRange> audit_ranges,audit_readable;
 constexpr const char *kTargetLib="libapp.so";
 uintptr_t find_module_base(const char *){return audit_base;}
 uintptr_t decode_adrp_ldr_global(uintptr_t,uintptr_t);
+uint32_t combat_word(uintptr_t);
 std::unordered_map<std::string,uintptr_t> audit_symbols;
 void *resolve_app_symbol(const char *n){return (void*)audit_symbols[n];}
 std::vector<MemoryRange> app_exec_ranges(){return audit_ranges;}
 std::vector<MemoryRange> app_readable_ranges(){return audit_readable;}
-struct ScanSnapshot {bool read(uintptr_t,void*,size_t) const{return false;}};
+using ScanSnapshot=native_scan::Snapshot;
 thread_local ScanSnapshot *t_active_scan_snapshot=nullptr;
+ScanSnapshot *active_scan_snapshot(){return t_active_scan_snapshot;}
 std::mutex g_item_layout_mutex;std::atomic<bool> g_item_layout_ready{false};item_catalog::Layout g_item_layout{};
 std::atomic<bool> g_object_layouts_ready{false};item_catalog::ObjectLayouts g_object_layouts{};
 struct ItemNameRet {uint64_t w0,w1,w2;};
@@ -339,19 +343,19 @@ constexpr const char *kAchievementRepositoryNotFoundText = "not found achievemen
 constexpr const char *kAchievementRepositoryEndAssertText = "achievementIter != _achievementLabelToAchievementMap.end()";
 struct DialogueNativeResolution {
     uintptr_t page_jump_delay = 0;
-    uintptr_t talk_layer_run_auto_touch = 0;
-    uintptr_t still_talk_layer_run_auto_touch = 0;
     uintptr_t get_auto_feed_mode = 0;
     uintptr_t get_auto_feed_wait_time_letter = 0;
     uintptr_t get_auto_feed_wait_time_minimum = 0;
     uintptr_t action_timer_value = 0;
     uintptr_t talk_ui_process_wait = 0;
-    uintptr_t talk_layer_touch_handler = 0;
     uintptr_t rendering_checker = 0;
     uintptr_t page_jump_unlocked_offset = 0;
     uintptr_t talk_ui_state_talk_layer_offset = 0;
     uintptr_t talk_layer_main_window_offset = 0;
-    uintptr_t talk_main_window_rendering_flag_offset = 0;
+    uintptr_t talk_main_window_page_complete_offset = 0;
+    uintptr_t auto_feed_blocker = 0;
+    uintptr_t finish_text_render = 0;
+    size_t text_rendering = 0, text_total = 0, text_cursor = 0;
     uintptr_t talk_main_window_ready_offset = 0;
     uintptr_t talk_main_window_started_offset = 0;
     uintptr_t talk_main_window_aux_offset = 0;
@@ -361,7 +365,7 @@ struct DialoguePageJumpCandidate {
     uintptr_t unlocked_offset;
 };
 template<size_t N> bool read_item_contract(uintptr_t, const item_catalog::Word (&)[N], uint32_t (&)[N]);
-template<size_t N> std::vector<uintptr_t> find_item_contract(const std::vector<MemoryRange> &, const item_catalog::Word (&)[N]);
+template<class Word,size_t N> std::vector<uintptr_t> find_item_contract(const std::vector<MemoryRange> &, const Word (&)[N]);
 template<size_t N> uint32_t item_role_word(const uint32_t (&)[N], const item_catalog::Word (&)[N], item_catalog::Role);
 template<size_t N> uintptr_t scoped_layout_contract(const std::vector<MemoryRange> &, uintptr_t, const item_catalog::Word (&)[N], uint32_t (&)[N]);
 uintptr_t find_function_start_before_ref(const std::vector<MemoryRange> &, uintptr_t);
@@ -369,6 +373,8 @@ void *resolve_app_symbol(const char *);
 
 
 template<size_t N> uintptr_t layout_call_target(uintptr_t,const item_catalog::Word (&)[N],item_catalog::Role);
+
+uintptr_t injection_function_start(const std::vector<MemoryRange> &, const std::vector<MemoryRange> &, uintptr_t, uintptr_t * = nullptr);
 
 uintptr_t resolve_pattern_hook_address(const std::vector<MemoryRange> &ranges,
                                        const char *name,
@@ -426,7 +432,7 @@ bool decode_adrp_page(uint32_t instruction, uintptr_t pc, uintptr_t *page, uint3
     if (page == nullptr || reg == nullptr || (instruction & 0x9F000000U) != 0x90000000U) return false;
     uint64_t immlo = (instruction >> 29U) & 0x3U;
     uint64_t immhi = (instruction >> 5U) & 0x7FFFFU;
-    int64_t imm = sign_extend_u64((immhi << 2U) | immlo, 21) << 12;
+    int64_t imm = sign_extend_u64((immhi << 2U) | immlo, 21) * 4096;
     uintptr_t pc_page = pc & ~static_cast<uintptr_t>(0xFFF);
     *page = static_cast<uintptr_t>(static_cast<int64_t>(pc_page) + imm);
     *reg = instruction & 0x1FU;
@@ -488,7 +494,10 @@ std::vector<uintptr_t> find_pc_relative_refs(const std::vector<MemoryRange> &ran
     for (const MemoryRange &range: ranges) {
         uintptr_t pc = (range.start + 3U) & ~static_cast<uintptr_t>(3U);
         while (pc + 4 <= range.end) {
-            if (pc_relative_sequence_references(ranges, pc, target)) {
+            // Most instructions cannot materialize a PC-relative address.
+            // Keep the original live sequence validation for ADR/ADRP only.
+            if ((read_u32(pc)&0x1F000000U)==0x10000000U &&
+                pc_relative_sequence_references(ranges, pc, target)) {
                 push_unique(refs, pc);
             }
             pc += 4;
@@ -840,7 +849,7 @@ bool resolve_dialogue_talk_ui_process_wait(const std::vector<MemoryRange> &range
                     candidate.rendering_checker = rendering_checker;
                     candidate.talk_ui_state_talk_layer_offset = talk_layer_offset;
                     candidate.talk_layer_main_window_offset = main_window_offset;
-                    candidate.talk_main_window_rendering_flag_offset = rendering_flag_offset;
+                    candidate.talk_main_window_page_complete_offset = rendering_flag_offset;
                     candidates.push_back(candidate);
                 }
             }
@@ -857,8 +866,23 @@ bool resolve_dialogue_talk_ui_process_wait(const std::vector<MemoryRange> &range
     out->rendering_checker = candidates[0].rendering_checker;
     out->talk_ui_state_talk_layer_offset = candidates[0].talk_ui_state_talk_layer_offset;
     out->talk_layer_main_window_offset = candidates[0].talk_layer_main_window_offset;
-    out->talk_main_window_rendering_flag_offset =
-            candidates[0].talk_main_window_rendering_flag_offset;
+    out->talk_main_window_page_complete_offset =
+            candidates[0].talk_main_window_page_complete_offset;
+    uintptr_t blocker=0;
+    for (uintptr_t at=out->talk_ui_process_wait;at<out->talk_ui_process_wait+0x200;at+=4) {
+        if (!range_contains(ranges,at,20)) break;
+        uintptr_t mode=0,target=0,layer=0;
+        if (decode_branch_target(at,true,&mode) && mode==auto_feed_mode_addr &&
+            (read_u32(at+4)&0xFFF8001FU)==0x36000000U &&
+            decode_ldr_x_unsigned(read_u32(at+8),19,0,&layer) && layer==out->talk_ui_state_talk_layer_offset &&
+            decode_branch_target(at+12,true,&target) &&
+            (read_u32(at+16)&0xFFF8001FU)==0x37000000U && range_contains(ranges,target,16)) {
+            if (blocker && blocker!=target) return false;
+            blocker=target;
+        }
+    }
+    if (!blocker) return false;
+    out->auto_feed_blocker=blocker;
     return true;
 }
 
@@ -927,103 +951,16 @@ bool resolve_dialogue_page_jump_delay(const std::vector<MemoryRange> &ranges,
     return true;
 }
 
-bool dialogue_run_auto_touch_candidate(const std::vector<MemoryRange> &ranges, uintptr_t address) {
-    uintptr_t ignored = 0;
-    return dialogue_standard_prologue_matches(ranges, address) &&
-           !dialogue_function_has_strb_wzr_x0(ranges, address, &ignored) &&
-           dialogue_function_has_virtual_x19_call(ranges, address, 35);
-}
-
-bool resolve_dialogue_run_auto_touch_actions(const std::vector<MemoryRange> &ranges,
-                                             uintptr_t rendering_checker_addr,
-                                             DialogueNativeResolution *out) {
-    if (out == nullptr || rendering_checker_addr == 0) return false;
-    uintptr_t talk_addr = find_function_start_before_ref(ranges, rendering_checker_addr);
-    if (!dialogue_run_auto_touch_candidate(ranges, talk_addr)) {
-        ALOGW("AE_TRACE dialogue TalkLayer.runAutoTouch skipped checker=0x%" PRIxPTR
-              " candidate=0x%" PRIxPTR,
-              rendering_checker_addr,
-              talk_addr);
-        talk_addr = 0;
-    }
-
-    std::vector<uintptr_t> run_auto_candidates;
-    for (const MemoryRange &range: ranges) {
-        uintptr_t pc = (range.start + 3U) & ~static_cast<uintptr_t>(3U);
-        while (pc + 0x180 <= range.end) {
-            if (dialogue_run_auto_touch_candidate(ranges, pc)) {
-                push_unique(run_auto_candidates, pc);
-            }
-            pc += 4;
-        }
-    }
-
-    std::vector<uintptr_t> still_candidates;
-    for (uintptr_t candidate: run_auto_candidates) {
-        if (candidate != talk_addr) still_candidates.push_back(candidate);
-    }
-    if (talk_addr != 0) out->talk_layer_run_auto_touch = talk_addr;
-    if (still_candidates.size() == 1) {
-        out->still_talk_layer_run_auto_touch = still_candidates[0];
-    } else {
-        ALOGW("AE_TRACE dialogue StillTalkLayer.runAutoTouch skipped candidates=%zu totalRunAuto=%zu",
-              still_candidates.size(),
-              run_auto_candidates.size());
-    }
-    ALOGI("AE_TRACE dialogue runAutoTouch resolved talk=0x%" PRIxPTR
-          " still=0x%" PRIxPTR " totalCandidates=%zu",
-          out->talk_layer_run_auto_touch,
-          out->still_talk_layer_run_auto_touch,
-          run_auto_candidates.size());
-    return out->talk_layer_run_auto_touch != 0 || out->still_talk_layer_run_auto_touch != 0;
-}
-
-uintptr_t resolve_dialogue_touch_handler(const std::vector<MemoryRange> &ranges) {
-    std::vector<uintptr_t> hits;
-    for (const MemoryRange &range: ranges) {
-        uintptr_t pc = (range.start + 3U) & ~static_cast<uintptr_t>(3U);
-        while (pc + 0x80 <= range.end) {
-            uintptr_t state_offset = 0;
-            uintptr_t store_w_offset = 0;
-            uintptr_t store_x_offset = 0;
-            uintptr_t ignored = 0;
-            if (read_u32(pc) == 0xA9BF7BFDU &&
-                read_u32(pc + 4) == 0x910003FDU &&
-                decode_ldr_w_unsigned(read_u32(pc + 8), 0, 8, &state_offset) &&
-                decode_str_w_unsigned(read_u32(pc + 12), 0, 1, &store_w_offset) &&
-                store_w_offset == state_offset &&
-                decode_str_x_unsigned(read_u32(pc + 16), 0, 2, &store_x_offset) &&
-                store_x_offset == state_offset + sizeof(uintptr_t) &&
-                is_cmp_w_immediate(read_u32(pc + 20), 8, 0) &&
-                is_conditional_branch(read_u32(pc + 24)) &&
-                is_ret_instruction(read_u32(pc + 32)) &&
-                decode_ldr_x_unsigned(read_u32(pc + 36), 0, 8, &ignored) &&
-                ignored == 0 &&
-                decode_ldr_x_unsigned(read_u32(pc + 40), 8, 8, &ignored) &&
-                read_u32(pc + 44) == 0xD63F0100U) {
-                hits.push_back(pc);
-            }
-            pc += 4;
-        }
-    }
-
-    if (hits.size() != 1) {
-        ALOGW("AE_TRACE dialogue touch handler skipped candidates=%zu", hits.size());
-        return 0;
-    }
-    return hits[0];
-}
-
 void resolve_dialogue_window_flags(const std::vector<MemoryRange> &ranges, DialogueNativeResolution *resolved) {
     using namespace item_catalog;
-    if (resolved == nullptr || resolved->talk_main_window_rendering_flag_offset == 0 ||
+    if (resolved == nullptr || resolved->talk_main_window_page_complete_offset == 0 ||
         resolved->talk_layer_main_window_offset == 0) return;
     std::vector<uintptr_t> open_hits;
     for (uintptr_t hit: find_item_contract(ranges, window_open)) {
         uint32_t words[std::size(window_open)]{};
         if (read_item_contract(hit, window_open, words) &&
             unsigned_offset(item_role_word(words, window_open, Role::window_rendering), 0) ==
-                resolved->talk_main_window_rendering_flag_offset) open_hits.push_back(hit);
+                resolved->talk_main_window_page_complete_offset) open_hits.push_back(hit);
     }
     if (open_hits.size() != 1) return;
     uint32_t open_words[std::size(window_open)]{};
@@ -1056,6 +993,53 @@ void resolve_dialogue_window_flags(const std::vector<MemoryRange> &ranges, Dialo
     ALOGI("AE_TRACE dialogue window fields ready=%zu started=%zu aux=%zu (open/update/getter agree)", ready, started, aux);
 }
 
+void resolve_dialogue_text_finish(const std::vector<MemoryRange> &ranges,DialogueNativeResolution *out) {
+    using namespace item_catalog;
+    if (!out || !out->auto_feed_blocker || !out->talk_main_window_page_complete_offset) return;
+    uintptr_t member=0,active=0;
+    const auto blocker=out->auto_feed_blocker;
+    if (!range_contains(ranges,blocker,24) || !decode_ldr_x_unsigned(read_u32(blocker),0,8,&member) ||
+        member!=out->talk_layer_main_window_offset || !is_cbz_x_reg(read_u32(blocker+4),8) ||
+        !decode_ldr_b_unsigned(read_u32(blocker+8),8,8,&active) ||
+        read_u32(blocker+12)!=0x7100011F || read_u32(blocker+16)!=0x1A9F07E0 ||
+        read_u32(blocker+20)!=0xD65F03C0) return;
+    static constexpr Word finish[] = {
+        {0xB9400009,0xFFC003FF,Role::none},
+        {0x52800028,0xFFFFFFFF,Role::none},
+        {0x39000008,0xFFC003FF,Role::none},
+        {0xB9000009,0xFFC003FF,Role::none},
+        {0x14000000,0xFC000000,Role::none},
+    };
+    static constexpr Word render[] = {
+        {0xB9400008,0xFFC003FF,Role::none},
+        {0x7100051F,0xFFFFFFFF,Role::none},
+        {0x5400000B,0xFF00001F,Role::none},
+        {0xB9400008,0xFFC003FF,Role::none},
+        {0xAA0003F3,0xFFFFFFFF,Role::none},
+        {0x7100051F,0xFFFFFFFF,Role::none},
+        {0x54000001,0xFF00001F,Role::none},
+        {0x52800029,0xFFFFFFFF,Role::none},
+        {0x39000269,0xFFC003FF,Role::none},
+    };
+    uintptr_t found=0;size_t total=0,cursor=0;
+    for (const auto at:find_item_contract(ranges,finish)) {
+        const auto complete=unsigned_offset(read_u32(at+8),0);
+        const auto t=unsigned_offset(read_u32(at),2),c=unsigned_offset(read_u32(at+12),2);
+        uintptr_t renderer=0;
+        if (complete!=out->talk_main_window_page_complete_offset || !t || !c || t==c ||
+            std::max({t,c,active})>4096 || !decode_branch_target(at+16,false,&renderer)) continue;
+        uint32_t words[std::size(render)]{};
+        const auto check=scoped_layout_contract(ranges,renderer,render,words);
+        if (!check || unsigned_offset(words[0],2)!=t || unsigned_offset(words[3],2)!=c ||
+            unsigned_offset(words[8],0)!=complete) continue;
+        if (found) return; // ambiguous match: retain the engine's normal renderer
+        found=at;total=t;cursor=c;
+    }
+    if (found) {
+        out->finish_text_render=found;out->text_rendering=active;out->text_total=total;out->text_cursor=cursor;
+    }
+}
+
 DialogueNativeResolution resolve_dialogue_native_hooks(const std::vector<MemoryRange> &ranges) {
     DialogueNativeResolution resolved{};
     resolve_dialogue_auto_feed_getters(ranges, &resolved);
@@ -1067,30 +1051,9 @@ DialogueNativeResolution resolve_dialogue_native_hooks(const std::vector<MemoryR
                                               &resolved);
     }
     resolve_dialogue_page_jump_delay(ranges, resolved.talk_ui_process_wait, &resolved);
-    resolve_dialogue_run_auto_touch_actions(ranges, resolved.rendering_checker, &resolved);
-    resolved.talk_layer_touch_handler = resolve_dialogue_touch_handler(ranges);
     resolve_dialogue_window_flags(ranges, &resolved);
+    resolve_dialogue_text_finish(ranges,&resolved);
 
-    ALOGI("AE_TRACE dialogue native resolver page=0x%" PRIxPTR
-          " talkRun=0x%" PRIxPTR " stillRun=0x%" PRIxPTR
-          " autoMode=0x%" PRIxPTR " waitLetter=0x%" PRIxPTR
-          " waitMinimum=0x%" PRIxPTR " actionTimer=0x%" PRIxPTR
-          " processWait=0x%" PRIxPTR " touch=0x%" PRIxPTR
-          " offsets page=0x%" PRIxPTR " uiTalk=0x%" PRIxPTR
-          " mainWindow=0x%" PRIxPTR " renderingFlag=0x%" PRIxPTR,
-          resolved.page_jump_delay,
-          resolved.talk_layer_run_auto_touch,
-          resolved.still_talk_layer_run_auto_touch,
-          resolved.get_auto_feed_mode,
-          resolved.get_auto_feed_wait_time_letter,
-          resolved.get_auto_feed_wait_time_minimum,
-          resolved.action_timer_value,
-          resolved.talk_ui_process_wait,
-          resolved.talk_layer_touch_handler,
-          resolved.page_jump_unlocked_offset,
-          resolved.talk_ui_state_talk_layer_offset,
-          resolved.talk_layer_main_window_offset,
-          resolved.talk_main_window_rendering_flag_offset);
     return resolved;
 }
 
@@ -1354,10 +1317,15 @@ bool resolve_lua_registered_function(const std::vector<MemoryRange> &readable_ra
     return true;
 }
 
+#include "dialogue_context.inc"
 #include "item_injection_resolver.h"
+
 #include "mass_shop_resolver.inc"
 
+
 #include "director_speed.inc"
+#include "dialogue_input.inc"
+#include "dialogue_iteration.inc"
 
 uintptr_t resolve_named_integer_setter(const std::vector<MemoryRange> &readable,
                                         const std::vector<MemoryRange> &ranges, const char *key) {
@@ -1434,25 +1402,22 @@ bool read_item_contract(uintptr_t address, const item_catalog::Word (&pattern)[N
     return true;
 }
 
-template<size_t N>
-std::vector<uintptr_t> find_item_contract(const std::vector<MemoryRange> &ranges,
-                                         const item_catalog::Word (&pattern)[N]) {
-    std::vector<uintptr_t> hits;
-    for_each_snapshot_segment(ranges, [&](uintptr_t base, const uint8_t *bytes, size_t length) {
-        const size_t first = (4U - (base & 3U)) & 3U;
-        for (size_t off = first; off + N * sizeof(uint32_t) <= length; off += sizeof(uint32_t)) {
-            bool match = true;
-            for (size_t i = 0; i < N; ++i) {
-                uint32_t word = 0;
-                std::memcpy(&word, bytes + off + i * sizeof(word), sizeof(word));
-                if ((word & pattern[i].mask) != (pattern[i].value & pattern[i].mask)) {
-                    match = false;
-                    break;
-                }
-            }
-            if (match) hits.push_back(base + off);
+template<class Word,size_t N>
+std::vector<uintptr_t> find_item_contract(const std::vector<MemoryRange> &ranges,const Word (&pattern)[N]) {
+    auto *snapshot=active_scan_snapshot();
+    std::string key=snapshot ? snapshot->query_key(ranges,'w') : std::string{};
+    if(!key.empty()) {
+        for(const auto &word:pattern) {
+            native_scan::Snapshot::append(key,word.mask);
+            const uint32_t value=word.value&word.mask;native_scan::Snapshot::append(key,value);
         }
+        if(const auto *hits=snapshot->lookup(key))return *hits;
+    }
+    std::vector<uintptr_t> hits;
+    for_each_snapshot_segment(ranges,[&](uintptr_t base,const uint8_t *bytes,size_t length) {
+        native_scan::match_words(base,bytes,length,pattern,[&](uintptr_t address){hits.push_back(address);});
     });
+    if(!key.empty())snapshot->remember(std::move(key),hits);
     return hits;
 }
 
@@ -1881,12 +1846,19 @@ uintptr_t resolve_currency_token_site(const std::vector<MemoryRange> &ranges) {
 // Hook handles own their process-local instruction trampolines. Config changes
 // change proxy behavior, never rewrite executable code or restore saved offsets.
 // libapp remains loaded for this module's supported process lifetime.
+struct EncounterLayout {
+    uintptr_t judge=0, compare=0;
+    uint32_t threshold_reg=0, progress_reg=0;
+    bool valid=false;
+};
+EncounterLayout resolve_encounter_context(const std::vector<MemoryRange> &, const std::vector<MemoryRange> &);
 struct RuntimeFeatureTargets {
     uintptr_t mp_cost = 0, mp_delta = 0, mp_current = 0, mp_max = 0;
-    uintptr_t damage = 0, dungeon = 0, encounter = 0;
+    uintptr_t damage = 0, dungeon = 0;
+    EncounterLayout encounter;
     bool dungeon_two_args = false;
 };
-RuntimeFeatureTargets resolve_runtime_feature_targets(const std::vector<MemoryRange> &ranges) {
+RuntimeFeatureTargets resolve_runtime_feature_targets(const std::vector<MemoryRange> &readable, const std::vector<MemoryRange> &ranges) {
     using namespace runtime_feature_signatures;
     RuntimeFeatureTargets out;
     const auto unique = [&](const auto &pattern, const uint8_t *mask = nullptr) {
@@ -1917,14 +1889,14 @@ RuntimeFeatureTargets resolve_runtime_feature_targets(const std::vector<MemoryRa
         out.dungeon_two_args = !modern.empty();
         out.dungeon = out.dungeon_two_args ? modern.front() : old.front();
     }
-    out.encounter = unique(encounter_orig);
+    out.encounter = resolve_encounter_context(readable,ranges);
     return out;
 }
 
 
 #include "runtime_context_contracts.h"
 
-uintptr_t injection_function_start(const std::vector<MemoryRange> &, const std::vector<MemoryRange> &, uintptr_t);
+uintptr_t injection_function_start(const std::vector<MemoryRange> &, const std::vector<MemoryRange> &, uintptr_t, uintptr_t *);
 bool decode_adrp_page(uint32_t, uintptr_t, uintptr_t *, uint32_t *);
 bool decode_add_immediate(uint32_t, uint32_t, uintptr_t, uintptr_t *);
 uintptr_t unique_primary_vtable(const std::vector<MemoryRange> &, const std::vector<MemoryRange> &, const char *);
@@ -2026,21 +1998,7 @@ AdLayout resolve_ad_context(const std::vector<MemoryRange> &r, const std::vector
 }
 
 
-struct TeamLayout { uintptr_t call=0, helper=0; size_t kind_slot=0; bool valid=false; };
-TeamLayout resolve_team_context(const std::vector<MemoryRange> &x) {
-    TeamLayout out;
-    const auto tails=find_item_contract(x,item_catalog::team_branch_tail);
-    if(tails.size()!=1) return out;
-    uint32_t words[std::size(item_catalog::team_actor_type)]{};
-    if(!scoped_layout_contract(x,tails.front(),item_catalog::team_actor_type,words)) return out;
-    out.kind_slot=item_catalog::unsigned_offset(item_role_word(words,item_catalog::team_actor_type,item_catalog::Role::actor_type_slot),3);
-    out.call=tails.front()+sizeof(item_catalog::team_branch_tail)/sizeof(item_catalog::team_branch_tail[0])*4;
-    uint32_t body[std::size(runtime_context_contracts::player_hp_delta)]{};
-    if(!out.kind_slot || out.kind_slot>4096 || !decode_branch_target(out.call,true,&out.helper) ||
-       !range_contains(x,out.helper,sizeof(body)) || !read_item_contract(out.helper,runtime_context_contracts::player_hp_delta,body)) return {};
-    out.valid=true;
-    return out;
-}
+#include "runtime_combat_resolver.inc"
 
 #include "injection-audit.h"
 
@@ -2110,27 +2068,12 @@ report("lua.setMysteryItemAmount",lua_setMysteryItemAmount);
 uintptr_t lua_helixChangeItemAmount=0;bool lua_ok_helixChangeItemAmount=resolve_lua_registered_function(readable_ranges,ranges,"helixChangeItemAmount",true,&lua_helixChangeItemAmount);
 if(lua_ok_helixChangeItemAmount && !lua_helixChangeItemAmount) printf("OPTIONAL_ABSENT lua.helixChangeItemAmount\n");
 report("lua.helixChangeItemAmount",lua_helixChangeItemAmount);
-uintptr_t lua_setAutoFeedMode=0;bool lua_ok_setAutoFeedMode=resolve_lua_registered_function(readable_ranges,ranges,"setAutoFeedMode",true,&lua_setAutoFeedMode);
-if(lua_ok_setAutoFeedMode && !lua_setAutoFeedMode) printf("OPTIONAL_ABSENT lua.setAutoFeedMode\n");
-report("lua.setAutoFeedMode",lua_setAutoFeedMode);
 uintptr_t lua_getAutoFeedMode=0;bool lua_ok_getAutoFeedMode=resolve_lua_registered_function(readable_ranges,ranges,"getAutoFeedMode",true,&lua_getAutoFeedMode);
 if(lua_ok_getAutoFeedMode && !lua_getAutoFeedMode) printf("OPTIONAL_ABSENT lua.getAutoFeedMode\n");
 report("lua.getAutoFeedMode",lua_getAutoFeedMode);
-uintptr_t lua_setAutoFeedWaitTimeLetter=0;bool lua_ok_setAutoFeedWaitTimeLetter=resolve_lua_registered_function(readable_ranges,ranges,"setAutoFeedWaitTimeLetter",true,&lua_setAutoFeedWaitTimeLetter);
-if(lua_ok_setAutoFeedWaitTimeLetter && !lua_setAutoFeedWaitTimeLetter) printf("OPTIONAL_ABSENT lua.setAutoFeedWaitTimeLetter\n");
-report("lua.setAutoFeedWaitTimeLetter",lua_setAutoFeedWaitTimeLetter);
-uintptr_t lua_setAutoFeedWaitTimeMinimum=0;bool lua_ok_setAutoFeedWaitTimeMinimum=resolve_lua_registered_function(readable_ranges,ranges,"setAutoFeedWaitTimeMinimum",true,&lua_setAutoFeedWaitTimeMinimum);
-if(lua_ok_setAutoFeedWaitTimeMinimum && !lua_setAutoFeedWaitTimeMinimum) printf("OPTIONAL_ABSENT lua.setAutoFeedWaitTimeMinimum\n");
-report("lua.setAutoFeedWaitTimeMinimum",lua_setAutoFeedWaitTimeMinimum);
 uintptr_t lua_getShowTalkSkipButtonTime=0;bool lua_ok_getShowTalkSkipButtonTime=resolve_lua_registered_function(readable_ranges,ranges,"getShowTalkSkipButtonTime",true,&lua_getShowTalkSkipButtonTime);
 if(lua_ok_getShowTalkSkipButtonTime && !lua_getShowTalkSkipButtonTime) printf("OPTIONAL_ABSENT lua.getShowTalkSkipButtonTime\n");
 report("lua.getShowTalkSkipButtonTime",lua_getShowTalkSkipButtonTime);
-uintptr_t lua_resetPlaySpeedAndAutoText=0;bool lua_ok_resetPlaySpeedAndAutoText=resolve_lua_registered_function(readable_ranges,ranges,"resetPlaySpeedAndAutoText",true,&lua_resetPlaySpeedAndAutoText);
-if(lua_ok_resetPlaySpeedAndAutoText && !lua_resetPlaySpeedAndAutoText) printf("OPTIONAL_ABSENT lua.resetPlaySpeedAndAutoText\n");
-report("lua.resetPlaySpeedAndAutoText",lua_resetPlaySpeedAndAutoText);
-uintptr_t lua_isTalking=0;bool lua_ok_isTalking=resolve_lua_registered_function(readable_ranges,ranges,"isTalking",true,&lua_isTalking);
-if(lua_ok_isTalking && !lua_isTalking) printf("OPTIONAL_ABSENT lua.isTalking\n");
-report("lua.isTalking",lua_isTalking);
 uintptr_t lua_changeItemAmount=0;bool lua_ok_changeItemAmount=resolve_lua_registered_function(readable_ranges,ranges,"changeItemAmount",false,&lua_changeItemAmount);
 report("lua.changeItemAmount",lua_changeItemAmount);
 uintptr_t add_pc_exp_addr=resolve_add_pc_exp(readable_ranges,ranges);report("battle.addPCExp.patch",add_pc_exp_addr);
@@ -2145,16 +2088,15 @@ g_item_layout=il;g_item_layout_ready.store(item_ok);
 bool injection_ok=audit_item_injection(readable_ranges,ranges,token_shop_purchase_addr,item_writer_addr);
 auto dg=resolve_dialogue_native_hooks(ranges);report("dialogue.renderChecker",dg.rendering_checker);
 report("dialogue.native.page_jump_delay",dg.page_jump_delay);
-report("dialogue.native.talk_layer_run_auto_touch",dg.talk_layer_run_auto_touch);
-report("dialogue.native.still_talk_layer_run_auto_touch",dg.still_talk_layer_run_auto_touch);
 report("dialogue.native.get_auto_feed_mode",dg.get_auto_feed_mode);
 report("dialogue.native.get_auto_feed_wait_time_letter",dg.get_auto_feed_wait_time_letter);
 report("dialogue.native.get_auto_feed_wait_time_minimum",dg.get_auto_feed_wait_time_minimum);
 report("dialogue.native.action_timer_value",dg.action_timer_value);
 report("dialogue.native.talk_ui_process_wait",dg.talk_ui_process_wait);
-report("dialogue.native.talk_layer_touch_handler",dg.talk_layer_touch_handler);
 report("dialogue.native.rendering_checker",dg.rendering_checker);
-printf("CHECK dialogue.layout_fields %d page_jump_unlocked_offset=%zu talk_ui_state_talk_layer_offset=%zu talk_layer_main_window_offset=%zu talk_main_window_rendering_flag_offset=%zu talk_main_window_ready_offset=%zu talk_main_window_started_offset=%zu talk_main_window_aux_offset=%zu\n",dg.page_jump_unlocked_offset!=0 && dg.talk_ui_state_talk_layer_offset!=0 && dg.talk_layer_main_window_offset!=0 && dg.talk_main_window_rendering_flag_offset!=0 && dg.talk_main_window_ready_offset!=0 && dg.talk_main_window_started_offset!=0 && dg.talk_main_window_aux_offset!=0,static_cast<size_t>(dg.page_jump_unlocked_offset),static_cast<size_t>(dg.talk_ui_state_talk_layer_offset),static_cast<size_t>(dg.talk_layer_main_window_offset),static_cast<size_t>(dg.talk_main_window_rendering_flag_offset),static_cast<size_t>(dg.talk_main_window_ready_offset),static_cast<size_t>(dg.talk_main_window_started_offset),static_cast<size_t>(dg.talk_main_window_aux_offset));
+report("dialogue.native.auto_feed_blocker",dg.auto_feed_blocker);
+report("dialogue.native.finish_text_render",dg.finish_text_render);
+printf("CHECK dialogue.layout_fields %d page_jump_unlocked_offset=%zu talk_ui_state_talk_layer_offset=%zu talk_layer_main_window_offset=%zu talk_main_window_page_complete_offset=%zu talk_main_window_ready_offset=%zu talk_main_window_started_offset=%zu talk_main_window_aux_offset=%zu\n",dg.page_jump_unlocked_offset!=0 && dg.talk_ui_state_talk_layer_offset!=0 && dg.talk_layer_main_window_offset!=0 && dg.talk_main_window_page_complete_offset!=0 && dg.talk_main_window_ready_offset!=0 && dg.talk_main_window_started_offset!=0 && dg.talk_main_window_aux_offset!=0,static_cast<size_t>(dg.page_jump_unlocked_offset),static_cast<size_t>(dg.talk_ui_state_talk_layer_offset),static_cast<size_t>(dg.talk_layer_main_window_offset),static_cast<size_t>(dg.talk_main_window_page_complete_offset),static_cast<size_t>(dg.talk_main_window_ready_offset),static_cast<size_t>(dg.talk_main_window_started_offset),static_cast<size_t>(dg.talk_main_window_aux_offset));
 bool bindings_ok=audit_runtime_bindings(readable_ranges,ranges,appraisal_exchange_shop_purchase_addr);
 bool models_ok=audit_resolver_models(readable_ranges,ranges);
 bool unchanged=memcmp(before.data(),mem,raw.size())==0;

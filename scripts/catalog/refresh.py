@@ -13,9 +13,11 @@ import subprocess
 import sys
 import tempfile
 import time
+import urllib.request
 
 from bundle import certificate, digest, verify_bundle
 from publish import bundle_name, delivery_dir, ready_file
+from ae_inputs import verify_bundle_inputs
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -70,6 +72,15 @@ def private_file(args, env, dest, expected):
         raise ValueError("Private build input checksum mismatch")
 
 
+def download_companion(destination):
+    selected = INPUTS["aeLogin"]["companion"]
+    with urllib.request.urlopen(selected["url"], timeout=100) as response, destination.open("wb") as stream:
+        shutil.copyfileobj(response, stream)
+    if digest(destination) != selected["sha256"]:
+        raise ValueError("The companion differs from the selected recipe")
+    return ["--google-companion", destination]
+
+
 def verified_originals(package, target, root, source_signer):
     folder = download_original(package, target, root)
     manifest = json.loads((folder / "manifest.json").read_bytes())
@@ -97,11 +108,20 @@ def build_private(target, variant, root, output):
     module = root / "module.apk"
     tools = root / "tools"
     tools.mkdir()
-    packager = INPUTS["packager"]
+    packager = spec["packager"]
+    selected_recipe = [INPUTS["anotherEdenPatcher"]["sha256"],
+                       INPUTS["sharedSigning"]["certificateSha256"], packager["commit"]]
+    companion_args = []
+    if target["app"] == "epicconquest":
+        selected_recipe.append(INPUTS["aeLogin"]["companion"]["sha256"])
+    selected_recipe = "/".join(selected_recipe)
+    if target.get("recipe") != selected_recipe:
+        raise ValueError("The requested private recipe changed before this build started")
     with ThreadPoolExecutor(max_workers=4) as pool:
         originals = pool.submit(verified_originals, package, target, root, spec["sourceSigner"])
-        prebuilt = pool.submit(private_file, ["release", "download", "workshop-input-" + spec["moduleSha256"][:20],
-                              "-R", spec["repository"], "-p", "module.apk", "-O", "-"], env, module, spec["moduleSha256"])
+        prebuilt = pool.submit(private_file, ["release", "download", spec["moduleTag"],
+                              "-R", spec["repository"], "-p", spec["moduleAsset"], "-O", "-"], env, module, spec["moduleSha256"])
+        companion = pool.submit(download_companion, root / "companion.apk") if target["app"] == "epicconquest" else None
         downloads = []
         for name, fingerprint in packager["files"].items():
             route = f'repos/{packager["repository"]}/contents/tools/{name}?ref={packager["commit"]}'
@@ -109,25 +129,33 @@ def build_private(target, variant, root, output):
                                          env, tools / name, fingerprint))
         for download in downloads:
             download.result()
-        # The pinned packager reuses the checked JAR from this directory.
+        # Both producer tools verify and reuse this exact offline patcher.
+        patcher = INPUTS["anotherEdenPatcher"]
+        if digest(ROOT / patcher["file"]) != patcher["sha256"]:
+            raise ValueError("The checkout patcher differs from the selected recipe")
+        patcher_dir = root / "artifacts/lspatch"
+        patcher_dir.mkdir(parents=True)
+        shutil.copyfile(ROOT / patcher["file"], patcher_dir / Path(patcher["file"]).name)
         helper = tools / "download-lspatch.sh"
         helper.chmod(0o700)
         subprocess.run([helper], env=child_env(), stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, check=True, timeout=100)
         prebuilt.result()
         apks = originals.result()
+        if companion:
+            companion_args = companion.result()
     prepared = time.monotonic()
     print(f"Original app and checked private inputs ready in {prepared - started:.2f}s.", flush=True)
-    key = root / "signing.jks"
-    key.write_bytes(base64.b64decode("".join(os.environ["HOST_KEYSTORE"].split()), validate=True))
-    key.chmod(0o600)
-    signing = {**child_env(), "TEMPLATE_KS_PATH": str(key), "TEMPLATE_KS_PASS": "android",
-               "TEMPLATE_KEY_ALIAS": "androiddebugkey", "TEMPLATE_KEY_PASS": "android",
-               "TEMPLATE_CERT_SHA256": variant["signer"]}
+    signing = {**child_env(), **{name: os.environ[name] for name in (
+        "TEMPLATE_KS_PATH", "TEMPLATE_KS_PASS", "TEMPLATE_KEY_ALIAS", "TEMPLATE_KEY_PASS", "TEMPLATE_CERT_SHA256")}}
+    if signing["TEMPLATE_CERT_SHA256"] != INPUTS["sharedSigning"]["certificateSha256"]:
+        raise ValueError("Configured signer differs from the selected shared identity")
     # This is the existing pinned private packager. Only its final APK set may be published.
-    subprocess.run([sys.executable, tools / "package-lspatch.py", "--module", module, "--output", output, "--fast-archive", *apks],
+    archive_args = ["--fast-archive"] if packager["fastArchive"] else []
+    subprocess.run([sys.executable, tools / "package-lspatch.py", "--module", module, "--output", output, *archive_args, *companion_args, *apks],
                    check=True, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, env=signing, timeout=480)
     print(f"Signed bundle produced in {time.monotonic() - prepared:.2f}s.", flush=True)
-    return {"moduleDigest": spec["moduleSha256"], "moduleVersion": spec["moduleVersion"]}
+    return {"moduleDigest": spec["moduleSha256"], "moduleVersion": spec["moduleVersion"],
+            "recipe": selected_recipe}
 
 
 def prepare(target, existing):
@@ -139,7 +167,7 @@ def prepare(target, existing):
     if current.get("requestKey") == target["key"] and not os.getenv("VERIFY_ONLY") == "true":
         print("This release is already available.")
         return
-    if current["sha256"] != target["previous"]:
+    if current.get("sha256") != target["previous"]:
         raise ValueError("The requested release has already changed")
     with tempfile.TemporaryDirectory() as temp:
         root = Path(temp)
@@ -147,13 +175,19 @@ def prepare(target, existing):
             if target["module"] != os.environ["MODULE_SHA"] or app["id"] in INPUTS:
                 raise ValueError("The build does not match the requested module identity")
             output = Path(os.environ["OUT"])
-            metadata = {"moduleSha": target["module"]}
+            metadata = {"moduleSha": target["module"], "recipe": target["recipe"]}
+            if app["id"] == "anothereden":
+                input_receipt = json.loads(Path(os.environ["AE_INPUT_RECEIPT"]).read_bytes())
+                verify_bundle_inputs(output, input_receipt, target, INPUTS)
+                metadata.update(moduleDigest=input_receipt["moduleSha256"], recipe=input_receipt["recipe"],
+                                companionDigest=input_receipt["companionSha256"], loaderBuild=input_receipt["loaderBuild"])
         else:
             if target["module"] != INPUTS[app["id"]]["moduleSha256"]:
                 raise ValueError("The requested private input has changed")
             output = root / "bundle.apks"
             metadata = build_private(target, variant, root, output)
-        verify_args = (output, variant["packageName"], target["version"], variant["signer"], target["code"])
+        verify_args = (output, variant["packageName"], target["version"],
+                       INPUTS["sharedSigning"]["certificateSha256"], target["code"])
         started = time.monotonic()
         receipt = verify_bundle(*verify_args)
         print(f"Finished file and Android signatures verified in {time.monotonic() - started:.2f}s.", flush=True)

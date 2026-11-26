@@ -1,4 +1,5 @@
 const crypto = require("crypto");
+const { recipe } = require("../_shared/recipes.js");
 const {
   config,
   normalizeModuleSource,
@@ -88,6 +89,8 @@ async function dispatchGithubBuild({ region, moduleVariant, moduleSource }) {
         region,
         variant: moduleVariant,
         moduleSource,
+        moduleDigest: moduleCommit.assetDigest || "",
+        expectedRecipe: recipe("anothereden"),
         moduleSha: moduleCommit.sha,
         moduleRef: moduleCommit.ref,
         packageName: game.packageName,

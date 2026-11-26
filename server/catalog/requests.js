@@ -6,6 +6,7 @@ const { mergeReady } = require("./index");
 const { transferRecord, cachedRedirect, transferRedirect } = require("./transfer");
 const catalog = require("../../catalog.json");
 const inputs = require("../../scripts/catalog/inputs.json");
+const { recipe } = require("../../api/_shared/recipes");
 
 const branch = "workshop-ready";
 const pending = new Map();
@@ -50,14 +51,18 @@ async function sourceFor(app, v) {
 
 async function moduleFor(cfg, app, v) {
   if (inputs[app.id]) {
-    return { sha: inputs[app.id].moduleSha256, recipe: inputs.packager.commit + "/" + inputs.packager.zipmergeSha256 };
+    return { sha: inputs[app.id].moduleSha256, recipe: recipe(app.id) };
   }
   const moduleConfig = app.id === "onceworld" ? onceworldModuleConfig(cfg)
     : app.id === "allrelic" ? allrelicModuleConfig(cfg) : cfg;
   const asset = app.id === "onceworld" ? "app-lsposed-release.apk" : `app-${v.flavor || "release"}.apk`;
   const module = await resolveModuleCommit(moduleConfig, "main", { requireAsset: asset });
   if (!module.prebuilt) throw new Error("The selected module build is not ready");
-  return module;
+  if (app.id === "anothereden") {
+    if (!/^[a-f0-9]{64}$/.test(module.assetDigest || "")) throw new Error("The selected module release has no verified artifact digest");
+    return { ...module, recipe: recipe(app.id) };
+  }
+  return { ...module, recipe: recipe(app.id) };
 }
 
 function identity(v, source, module) {
@@ -68,6 +73,7 @@ function identity(v, source, module) {
     source.updatedAt || null, module.sha
   ];
   if (module.recipe) fields.push(module.recipe);
+  if (module.assetDigest) fields.push(module.assetDigest);
   if (source.source === "google-play") fields.push(inputs.playClientLock);
   return crypto.createHash("sha256").update(JSON.stringify(fields)).digest("hex");
 }
@@ -90,6 +96,7 @@ function workflowInputs(app, v, candidate, module, nonce) {
     moduleRef: module.ref, moduleAsset: "app-lsposed-release.apk", expectedVersionName: version,
     metadataSource: source, versionName: source === "apkpure" ? version : "unknown", versionCode };
   return { ...common, region: v.region, variant: v.flavor, moduleSource: "main", moduleRef: module.ref,
+    moduleDigest: module.assetDigest || "", expectedRecipe: module.recipe || "",
     packageName: v.packageName, architecture: "arm64-v8a", runtimeTarget: "phone-arm64", sourceKind: source,
     expectedVersionCode: versionCode, expectedVersionName: version, playLocale: v.region === "japan" ? "ja-JP" : "en-US" };
 }
@@ -191,7 +198,9 @@ async function start(cfg, app, v) {
     }
   }
   const candidate = { app: app.id, variant: v.id, version: source.versionName, code: source.versionCode || null,
-    source: source.source, module: module.sha, previous: current.sha256, key };
+    source: source.source, module: module.sha, previous: records[v.id]?.sha256 || current.sha256 || null, key,
+    ...(module.recipe && { recipe: module.recipe }),
+    ...(module.assetDigest && { moduleDigest: module.assetDigest }) };
   try {
     const run = await githubJson(cfg, "POST", `${base}/actions/workflows/${workflow(cfg, app)}/dispatches`, {
       ref: cfg.githubRef, inputs: workflowInputs(app, v, candidate, module, nonce), return_run_details: true
