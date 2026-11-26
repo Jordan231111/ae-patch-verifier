@@ -155,7 +155,7 @@ async function resolveModuleCommit(cfg, moduleSource, options = {}) {
   // belongs to module CI, outside the user's APKS build.
   const [commits, shas] = await Promise.all([
     githubJson(cfg, "GET", `/repos/${cfg.moduleOwner}/${cfg.moduleRepo}/commits?sha=${encodeURIComponent(ref)}&per_page=30`),
-    options.preferPrebuilt === false ? null : publishedModuleShas(cfg, options.requireAsset).catch(() => new Set())
+    options.preferPrebuilt === false ? null : publishedModuleShas(cfg, options.requireAsset).catch(() => new Map())
   ]);
   const head = Array.isArray(commits) ? commits[0] : null;
   if (!head || typeof head.sha !== "string" || head.sha.length < 7) {

@@ -18,6 +18,7 @@ concurrency:
   cancel-in-progress: false
 env:
   RELEVEL_MODULE_REPO: Jordan231111/ReLevel
+  TEMPLATE_CERT_SHA256: ${{ vars.TEMPLATE_CERT_SHA256 }}
 jobs:
   inspect:
     runs-on: ubuntu-latest
@@ -188,7 +189,7 @@ jobs:
         run: docker rm -f relevel-android 2>/dev/null || true
   assemble:
     needs: [inspect, capture]
-    if: always() && needs.inspect.outputs.changed == 'true' && (needs.capture.result == 'success' || needs.inspect.outputs.recovered_tag != '')
+    if: always() && needs.inspect.result == 'success' && needs.inspect.outputs.changed == 'true' && (needs.capture.result == 'success' || needs.inspect.outputs.recovered_tag != '')
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
