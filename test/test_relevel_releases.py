@@ -47,7 +47,7 @@ class ReleaseStateTests(unittest.TestCase):
     def ready(self):
         return {'schema':1,'packageName':releases.PACKAGE,'state':'ready','observed':self.observed,
                 'ready':{**self.observed,'validated':True,'cacheKey':self.key,'sizeBytes':10,'releaseAssetId':3,
-                         'recoveredTag':'relevel-inputs-'+'c'*64}}
+                         'certificateSha256': releases.CERT, 'recoveredTag':'relevel-inputs-'+'c'*64}}
 
     def test_unchanged_inputs_only_refresh_metadata(self):
         output, state = self.inspect(self.ready())
@@ -62,6 +62,7 @@ class ReleaseStateTests(unittest.TestCase):
         self.assertEqual(output['changed'], 'true')
         self.assertEqual(state['state'], 'preparing')
         self.assertNotEqual(state['attemptKey'], old['ready']['cacheKey'])
+        self.assertEqual(output['recovered_tag'], '')
 
     def test_module_changes_reuse_recovered_inputs_but_hide_old_bundle(self):
         old = self.ready()

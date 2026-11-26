@@ -139,7 +139,8 @@ def inspect(args):
         previous.pop('retryAt', None)
     write_index(previous)
     recovered = ''
-    if old.get('versionCode') == current['versionCode'] and old.get('versionName') == current['versionName']:
+    if (old.get('certificateSha256') == CERT and old.get('versionCode') == current['versionCode']
+            and old.get('versionName') == current['versionName']):
         tag = old.get('recoveredTag', '')
         if re.fullmatch(r'relevel-inputs-[a-f0-9]{64}', tag):
             cache = api(f'repos/{repository()}/releases/tags/{tag}', missing=True)
@@ -199,7 +200,8 @@ def publish(args):
         raise RuntimeError('This run no longer owns the ready index')
     recovered_tag = plan.get('recoveredTag', '')
     if args.recovered:
-        recovered_tag = 'relevel-inputs-' + digest({'source': metadata['sourceSha256'], 'recoverySchema': RECOVERY_SCHEMA})
+        recovered_tag = 'relevel-inputs-' + digest({'source': metadata['sourceSha256'],
+            'recoverySchema': RECOVERY_SCHEMA, 'certificateSha256': CERT})
         cached = api(f'repos/{repository()}/releases/tags/{recovered_tag}', missing=True)
         if not cached or not any(a['name'] == 'recovered.tar' and a['state'] == 'uploaded' for a in cached['assets']):
             release_asset(recovered_tag, args.recovered, description='Verified recovered inputs for ReLevel ' + metadata['versionName'])
