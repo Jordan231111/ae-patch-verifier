@@ -73,13 +73,14 @@
     "versionCode": 509
   },
   "onceworld-arm64-release": {
-    "downloadUrl": "https://github.com/Jordan231111/ae-patch-verifier/releases/download/catalog-onceworld-arm64-release-057e4b6dc9d52a507150/onceworld-arm64-release-3.0.6.apks",
-    "moduleSha": "fea158679b45254cbe282507cc1405ce3139a964",
-    "requestKey": "e299454399f4b0abb73117067b33ddf859ed49821f7fe8a9fb030b890ebd2025",
-    "sha256": "057e4b6dc9d52a5071506dc10ce16d7e2ad9298f6f5eb84e9a0e2ff442545598",
-    "signer": "c081890cf2a1adf13e56d7b50a4f3d8edb35b7c46d6ccc732dd997b7e433be1d",
-    "sizeBytes": 291380494,
-    "updatedAt": "2026-11-19T23:57:03Z",
+    "downloadUrl": "https://github.com/Jordan231111/ae-patch-verifier/releases/download/catalog-onceworld-arm64-release-d21211e19e7ac8c739d3/onceworld-arm64-release-3.0.6.apks",
+    "moduleSha": "81f24f1c4e2746f352b795b0a3740fadac928908",
+    "recipe": "d238fdc414d121b7fa454d8b4ccf420df3a8c97d563761861ff92bd9c5da2165/5486b776291d98b9bc5a70586b9af89afce8674fd462889238c0ebd99786a1c1",
+    "requestKey": "4fa79e38c92c65805356110a0a9e3f3e6689d82e31c4311559e53b89fcf744f3",
+    "sha256": "d21211e19e7ac8c739d38b4bb21bf600c67dcf400a4fd62c0461055d0c70861b",
+    "signer": "5486b776291d98b9bc5a70586b9af89afce8674fd462889238c0ebd99786a1c1",
+    "sizeBytes": 291388702,
+    "updatedAt": "2026-11-26T05:32:31Z",
     "version": "3.0.6",
     "versionCode": 156
   },
