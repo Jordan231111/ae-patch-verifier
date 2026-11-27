@@ -13,7 +13,7 @@
   const dateFormat = new Intl.DateTimeFormat(undefined, { dateStyle: "medium" });
   const tiles = {
     allrelic: ["AR", 1], anothereden: ["AE", 2], epicconquest: ["EC", 3],
-    onceworld: ["OW", 4], relevel: ["RL", 5], rustaxion: ["RA", 6]
+    onceworld: ["OW", 4], relevel: ["RL", 5], rustaxion: ["RA", 6], daphne: ["WD", 0]
   };
   const pendingStates = new Set(["preparing", "queued", "pending", "running", "in_progress", "building"]);
   const maxBuildWait = 12 * 60 * 1000;

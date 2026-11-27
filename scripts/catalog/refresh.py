@@ -103,6 +103,8 @@ def verified_originals(package, target, root, source_signer):
 def build_private(target, variant, root, output):
     started = time.monotonic()
     spec = INPUTS[target["app"]]
+    if spec.get("source") and target["source"] != spec["source"]:
+        raise ValueError("The requested store does not match the pinned source")
     package = variant["packageName"]
     env = {**child_env(), "GH_TOKEN": os.environ["MODULE_READ_TOKEN"]}
     module = root / "module.apk"

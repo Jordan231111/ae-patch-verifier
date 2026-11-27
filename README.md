@@ -8,6 +8,7 @@ A request resolves the current publisher release and completed module build. An 
 
 - Another Eden Global uses Google Play. Japan explicitly uses the ARM64 APKPure variant. Release and debug module editions are separate assets.
 - Epic Conquest 2 and Rust Axion use the modules and producer packaging tools pinned in `scripts/catalog/inputs.json`. Each producer has its own reviewed contract.
+- Wizardry Variants Daphne uses the signed ARM64 APKPure release and the pinned Daphne LSPosed module. The bundle stores the verified APKs directly to shorten packaging.
 - OnceWorld tries Google Play first, with an exact-version, original-signer-checked APKPure fallback. AllRelic uses APKPure.
 - ReLevel uses its separate 15-minute background preparation flow.
 

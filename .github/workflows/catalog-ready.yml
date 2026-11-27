@@ -55,6 +55,7 @@ jobs:
           fi
           echo "$ANDROID_HOME/build-tools/37.0.0" >> "$GITHUB_PATH"
       - name: Prepare store delivery client
+        if: fromJSON(inputs.candidate).source == 'google-play'
         run: bash scripts/install-play-client.sh
       - name: Load shared Android signing identity
         env:

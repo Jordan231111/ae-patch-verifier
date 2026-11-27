@@ -2,6 +2,26 @@
   "packager": {
     "zipmergeSha256": "1b11365293bf98d107f85f8a725636c203d08b6e7b93a4268492758ef18217f2"
   },
+  "daphne": {
+    "repository": "Jordan231111/Wizardry-Variants-Daphne",
+    "moduleVersion": "3.0.2",
+    "moduleSha256": "6f1172380751996591499b75a723c254124cd14fb3792b7681370200548ae00a",
+    "source": "apkpure",
+    "sourceSigner": "dcbc2d97088c05aa96138b5911f183f3e924d0cf6168ddf9ce24db6c88c781b9",
+    "packager": {
+      "repository": "Jordan231111/Wizardry-Variants-Daphne",
+      "commit": "d2fd29b5909fcbb212ce3607ad482ab49d83d1c4",
+      "files": {
+        "package-lspatch.py": "60bd19e2ebeeba9c9aed4fb9e45d6e3c509bae840e2e723f0376a92831c238b4",
+        "download-lspatch.sh": "57a9062b5adb114e03068aff58f1fc1b2cfc233ca44fd7474589b1f0b195b550",
+        "RunLspatch.java": "069d4b389aa011247a8ceef7b6ad2c781b457dcd218070f1188420fbe6969214",
+        "shared_signing.py": "652b80ba6b026c7348b494767bb021b6baadacbcdac7b7ccf47d3cd096564cd1"
+      },
+      "fastArchive": true
+    },
+    "moduleTag": "module-0ab3ccc2456981cc98a8e5b5a48b572830b9141f",
+    "moduleAsset": "app-lsposed-release.apk"
+  },
   "rustaxion": {
     "repository": "Jordan231111/rustAxionModule",
     "moduleVersion": "0.6.2",

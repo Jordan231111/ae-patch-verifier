@@ -37,7 +37,7 @@ async function readFile(cfg, path) {
 }
 
 async function sourceFor(app, v) {
-  if (app.id === "allrelic" || v.region === "japan") {
+  if (app.id === "allrelic" || v.region === "japan" || inputs[app.id]?.source === "apkpure") {
     const source = await resolveLatestXapk(v.packageName);
     return { ...source, source: "apkpure" };
   }
@@ -167,7 +167,7 @@ async function start(cfg, app, v) {
   let claim = await readFile(cfg, path);
   const joined = await joinRequest(cfg, app, v, key, claim.data);
   if (joined) return joined;
-  if (source.source === "apkpure" && !inputs[app.id]) {
+  if (source.source === "apkpure" && (!inputs[app.id] || inputs[app.id].source === "apkpure")) {
     await resolveXapkVariant(v.packageName, source.versionCode, "arm64-v8a", source.versionName);
   }
   const time = Date.now();

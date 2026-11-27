@@ -119,6 +119,23 @@
       "workshopUrl": "/workshop?app=anothereden"
     },
     {
+      "id": "daphne",
+      "name": "Wizardry Variants Daphne",
+      "variants": [
+        {
+          "id": "daphne-arm64-release",
+          "architecture": "arm64-v8a",
+          "label": "Android",
+          "packageName": "jp.co.drecom.wizardry.daphne",
+          "version": "2.3.0",
+          "versionCode": 23446,
+          "sizeBytes": 318009149,
+          "signer": "5486b776291d98b9bc5a70586b9af89afce8674fd462889238c0ebd99786a1c1",
+          "moduleVersion": "3.0.2"
+        }
+      ]
+    },
+    {
       "id": "epicconquest",
       "name": "Epic Conquest 2",
       "variants": [
