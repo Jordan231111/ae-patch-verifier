@@ -29,14 +29,14 @@
     "sourceSigner": "94e57893b8dea2d5f1df56aa886e1c4e31c0a1ddae4ba6839b56aeb69669c9cf",
     "packager": {
       "repository": "Jordan231111/rustAxionModule",
-      "commit": "1c3378d402a728decf293318779da637a48d9eeb",
+      "commit": "06f88e5b07901c12f1538587e9d9e795b5208bf8",
       "files": {
-        "package-lspatch.py": "dca78c305ffc487c8d5efa1ca819c8c61fb5735ed3f3c6a45a9dacf72a4ed5b8",
+        "package-lspatch.py": "46eddefc6b74c5efc8858757ab2a4d0c42459267b2792ba0d0893341fc030c8e",
         "download-lspatch.sh": "57a9062b5adb114e03068aff58f1fc1b2cfc233ca44fd7474589b1f0b195b550",
         "RunLspatch.java": "069d4b389aa011247a8ceef7b6ad2c781b457dcd218070f1188420fbe6969214",
         "shared_signing.py": "652b80ba6b026c7348b494767bb021b6baadacbcdac7b7ccf47d3cd096564cd1"
       },
-      "fastArchive": false
+      "fastArchive": true
     },
     "moduleTag": "workshop-input-1bdb757a77c2fa9fbfda",
     "moduleAsset": "module.apk"
