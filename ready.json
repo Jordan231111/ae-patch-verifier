@@ -72,15 +72,15 @@
     "versionCode": 1016
   },
   "daphne-arm64-release": {
-    "downloadUrl": "https://github.com/Jordan231111/ae-patch-verifier/releases/download/catalog-daphne-arm64-release-dec7a40330f0678c7f7c/daphne-arm64-release-2.3.0.apks",
+    "downloadUrl": "https://github.com/Jordan231111/ae-patch-verifier/releases/download/catalog-daphne-arm64-release-8cf2565561a42efa7320/daphne-arm64-release-2.3.0.apks",
     "moduleDigest": "6f1172380751996591499b75a723c254124cd14fb3792b7681370200548ae00a",
     "moduleVersion": "3.0.2",
-    "recipe": "d238fdc414d121b7fa454d8b4ccf420df3a8c97d563761861ff92bd9c5da2165/5486b776291d98b9bc5a70586b9af89afce8674fd462889238c0ebd99786a1c1/d2fd29b5909fcbb212ce3607ad482ab49d83d1c4",
-    "requestKey": "bad77f31d4a00e77ba4384fa7178718f96a4a5ba0adc648798b995a603ecbcd3",
-    "sha256": "dec7a40330f0678c7f7c62c2a0a5550d95f43598cf3acc6b56175b2fc99b8491",
+    "recipe": "d238fdc414d121b7fa454d8b4ccf420df3a8c97d563761861ff92bd9c5da2165/5486b776291d98b9bc5a70586b9af89afce8674fd462889238c0ebd99786a1c1/74ab6d7ac0c793314ebba06fb2fb6f37337d8c43",
+    "requestKey": "471542822ec7795df473d8d52768137540c92b303a6c276e4ca65f7086e706d5",
+    "sha256": "8cf2565561a42efa7320dca3294d5c2a5df3bceb7647d78cd22e06c9397876c8",
     "signer": "5486b776291d98b9bc5a70586b9af89afce8674fd462889238c0ebd99786a1c1",
     "sizeBytes": 318009149,
-    "updatedAt": "2026-11-27T04:09:54Z",
+    "updatedAt": "2026-11-27T04:28:56Z",
     "version": "2.3.0",
     "versionCode": 23446
   },
