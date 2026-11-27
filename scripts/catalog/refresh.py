@@ -4,6 +4,7 @@ import argparse
 from concurrent.futures import ThreadPoolExecutor
 import base64
 import errno
+from itertools import repeat
 import json
 import os
 from pathlib import Path
@@ -56,12 +57,15 @@ def download_original(package, target, root):
             return folder
         except (OSError, subprocess.SubprocessError):
             print("Play could not deliver this release. Checking the equivalent signed ARM64 mirror.")
-    mirror = mirror_version(package)
-    if mirror["versionName"] != target["version"] or (target["code"] and str(target["code"]) != str(mirror["versionCode"])):
-        raise ValueError("The mirror does not have the selected release")
+    version, code = target["version"], target["code"]
+    if target["source"] != "apkpure" or not code:
+        mirror = mirror_version(package)
+        if mirror["versionName"] != version or (code and str(code) != str(mirror["versionCode"])):
+            raise ValueError("The mirror does not have the selected release")
+        code = mirror["versionCode"]
     folder = root / "mirror"
     subprocess.run(["bash", ROOT / "scripts/download-apkpure-xapk.sh", package, "arm64-v8a",
-                    str(mirror["versionCode"]), target["version"], folder], check=True, timeout=360, env=child_env())
+                    str(code), version, folder], check=True, timeout=360, env=child_env())
     return folder
 
 
@@ -93,10 +97,10 @@ def verified_originals(package, target, root, source_signer):
         name = split["file"]
         if not re.fullmatch(r"[\w.-]+\.apk", name, re.ASCII) or not (folder / name).is_file():
             raise ValueError("Invalid source APK filename")
-        apk = folder / name
-        if certificate(apk, 28) != source_signer:
+        apks.append(folder / name)
+    with ThreadPoolExecutor(max_workers=4) as workers:
+        if any(cert != source_signer for cert in workers.map(certificate, apks, repeat(28))):
             raise ValueError("Source app signer changed")
-        apks.append(apk)
     return apks
 
 

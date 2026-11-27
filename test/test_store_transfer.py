@@ -9,6 +9,10 @@ import types
 import unittest
 from unittest.mock import patch
 
+SCRIPTS = Path(__file__).resolve().parents[1] / "scripts/catalog"
+sys.path.insert(0, str(SCRIPTS))
+import refresh
+
 
 def load_downloader():
     spec = importlib.util.spec_from_file_location("store_delivery", Path(__file__).resolve().parents[1] / "scripts/download-play-apks.py")
@@ -20,6 +24,24 @@ def load_downloader():
 
 
 class StoreTransferTests(unittest.TestCase):
+    def test_exact_apkpure_request_downloads_the_selected_code_without_another_latest_lookup(self):
+        root = Path("fresh")
+        selected = {"source": "apkpure", "version": "2.3.0", "code": "23446"}
+        with patch.object(refresh, "mirror_version") as lookup, patch.object(refresh.subprocess, "run") as run:
+            self.assertEqual(refresh.download_original("game.example", selected, root), root / "mirror")
+            lookup.assert_not_called()
+            self.assertEqual(run.call_args.args[0][2:],
+                             ["game.example", "arm64-v8a", "23446", "2.3.0", root / "mirror"])
+
+    def test_play_fallback_requires_a_matching_mirror_version_before_downloading(self):
+        selected = {"source": "google-play", "version": "2.3.0", "code": None}
+        with patch.object(refresh, "play", side_effect=OSError), \
+             patch.object(refresh, "mirror_version", return_value={"versionName": "2.4.0", "versionCode": "23447"}), \
+             patch.object(refresh.subprocess, "run") as run:
+            with self.assertRaisesRegex(ValueError, "does not have the selected release"):
+                refresh.download_original("game.example", selected, Path("fresh"))
+            run.assert_not_called()
+
     def test_slow_source_resumes_only_unfinished_files_and_checks_play_hashes(self):
         downloader = load_downloader()
         body = b"original signed split"

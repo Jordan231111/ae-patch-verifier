@@ -10,9 +10,9 @@
     "sourceSigner": "dcbc2d97088c05aa96138b5911f183f3e924d0cf6168ddf9ce24db6c88c781b9",
     "packager": {
       "repository": "Jordan231111/Wizardry-Variants-Daphne",
-      "commit": "d2fd29b5909fcbb212ce3607ad482ab49d83d1c4",
+      "commit": "74ab6d7ac0c793314ebba06fb2fb6f37337d8c43",
       "files": {
-        "package-lspatch.py": "60bd19e2ebeeba9c9aed4fb9e45d6e3c509bae840e2e723f0376a92831c238b4",
+        "package-lspatch.py": "bcb743dcb2803efa54bb75670c5246fe450dc10170080d9e686f00a7e5c52145",
         "download-lspatch.sh": "57a9062b5adb114e03068aff58f1fc1b2cfc233ca44fd7474589b1f0b195b550",
         "RunLspatch.java": "069d4b389aa011247a8ceef7b6ad2c781b457dcd218070f1188420fbe6969214",
         "shared_signing.py": "652b80ba6b026c7348b494767bb021b6baadacbcdac7b7ccf47d3cd096564cd1"
@@ -29,9 +29,9 @@
     "sourceSigner": "94e57893b8dea2d5f1df56aa886e1c4e31c0a1ddae4ba6839b56aeb69669c9cf",
     "packager": {
       "repository": "Jordan231111/rustAxionModule",
-      "commit": "67de707c4e36eaf5eda27d5996d9ae5a44151a40",
+      "commit": "1c3378d402a728decf293318779da637a48d9eeb",
       "files": {
-        "package-lspatch.py": "9d717e3d6e75736d6bde9cb22f2b4eb87dc5d9aaf8b31531086e2b6738f5359c",
+        "package-lspatch.py": "dca78c305ffc487c8d5efa1ca819c8c61fb5735ed3f3c6a45a9dacf72a4ed5b8",
         "download-lspatch.sh": "57a9062b5adb114e03068aff58f1fc1b2cfc233ca44fd7474589b1f0b195b550",
         "RunLspatch.java": "069d4b389aa011247a8ceef7b6ad2c781b457dcd218070f1188420fbe6969214",
         "shared_signing.py": "652b80ba6b026c7348b494767bb021b6baadacbcdac7b7ccf47d3cd096564cd1"

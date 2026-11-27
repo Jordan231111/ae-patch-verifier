@@ -16,7 +16,7 @@ All hosts use **LSPatch 1.2 build 487**, checked against its published SHA-256. 
 
 The workflow verifies the complete publisher split set, selected module, signing identity and finished APK set. Source Stamp certificates are distributor attestations, not APK signers. Google identity metadata derives from the verified original and selected MicroG-RE companion. The reviewed host helper must match the module's explicit preparation contract; an APK cannot authorize arbitrary embedded build code. Unsupported contracts fail before publication.
 
-After verification, a raw Actions artifact starts delivery while the job archives the same bytes as a permanent GitHub Release. The client checks the artifact's run, name, size, expiry and digest before using a signed storage URL. The server redirects downloads without buffering or recompressing them. If temporary delivery is unavailable, polling continues to the permanent release.
+After verification, a raw Actions artifact can start delivery while the job archives the same bytes as a permanent GitHub Release. The transfer receipt and permanent release publish concurrently so that retries on the temporary receipt do not delay the permanent file. The client checks the artifact's run, name, size, expiry and digest before using a signed storage URL. The server redirects downloads without buffering or recompressing them. If temporary delivery is unavailable, polling continues to the permanent release.
 
 The `workshop-ready` branch contains current receipts and request claims. `/api/catalog` merges valid receipts with supported edition metadata. Retired signing identities cannot be served as current downloads. `catalog.json` may omit a download until the edition has a valid production receipt.
 

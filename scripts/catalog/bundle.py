@@ -1,6 +1,8 @@
 """Read Android package identities and signatures without opening module code."""
 
+from concurrent.futures import ThreadPoolExecutor
 import hashlib
+from itertools import repeat
 import os
 from pathlib import Path
 import re
@@ -62,13 +64,19 @@ def verify_bundle(path, package, expected_version=None, expected_cert=None, expe
         if "" not in entries or "config.arm64_v8a" not in entries:
             raise ValueError("An ARM64 base and matching signed splits are required")
         base, version, code, minimum = entries[""]
-        signer = certificate(base, minimum)
-        if not version or (expected_cert and signer != expected_cert):
-            raise ValueError("Missing app version or signing identity changed")
-        for split, (apk, split_version, split_code, _) in entries.items():
-            if split and (split_version not in ("", version) or split_code != code or certificate(apk, minimum) != signer):
-                raise ValueError("Split does not match the signed base APK")
+        if not version:
+            raise ValueError("Missing app version")
+        splits = [entry for split, entry in entries.items() if split]
+        if any(split_version not in ("", version) or split_code != code for _, split_version, split_code, _ in splits):
+            raise ValueError("Split does not match the signed base APK")
         if (expected_version and version != expected_version) or (expected_code and code != int(expected_code)):
             raise ValueError(f"Expected {expected_version} ({expected_code}), received {version} ({code})")
+        with ThreadPoolExecutor(max_workers=4) as workers:
+            signers = workers.map(certificate, [base, *(split[0] for split in splits)], repeat(minimum))
+            signer = next(signers)
+            if expected_cert and signer != expected_cert:
+                raise ValueError("Signing identity changed")
+            if any(cert != signer for cert in signers):
+                raise ValueError("Split does not match the signed base APK")
     return dict(version=version, versionCode=code, signer=signer, sha256=digest(path),
                 sizeBytes=path.stat().st_size)

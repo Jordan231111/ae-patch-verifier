@@ -19,15 +19,10 @@ runs:
         archive: false
         if-no-files-found: error
         retention-days: 1
-    - name: Confirm the transfer receipt
-      if: steps.transfer.outcome == 'success'
-      continue-on-error: true
+    - name: Publish the verified download
       shell: bash
       env:
-        WORKSHOP_ARTIFACT_ID: ${{ steps.transfer.outputs.artifact-id }}
+        WORKSHOP_ARTIFACT_ID: ${{ steps.transfer.outcome == 'success' && steps.transfer.outputs.artifact-id || '' }}
         WORKSHOP_ARTIFACT_DIGEST: ${{ steps.transfer.outputs.artifact-digest }}
         WORKSHOP_NONCE: ${{ inputs.nonce }}
-      run: python3 scripts/catalog/publish.py announce
-    - name: Save the permanent release
-      shell: bash
-      run: python3 scripts/catalog/publish.py archive
+      run: python3 scripts/catalog/publish.py

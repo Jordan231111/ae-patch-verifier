@@ -3,6 +3,7 @@ import hashlib
 import json
 from base64 import b64decode
 from pathlib import Path
+from threading import Event
 import unittest
 from unittest.mock import patch
 
@@ -52,3 +53,38 @@ class RawTransferTests(unittest.TestCase):
                 self.assertEqual(saved["time"], 17)
                 self.assertEqual(saved["transfer"]["artifactId"], 21)
                 self.assertEqual(saved["transfer"]["sha256"], self.digest)
+
+    def test_permanent_release_can_finish_while_the_temporary_receipt_is_blocked(self):
+        announcing = Event()
+        published = Event()
+        receipt = {**self.record, "downloadUrl": "https://example.test/release"}
+
+        def slow_announcement(*_):
+            announcing.set()
+            if not published.wait(2):
+                raise TimeoutError("Permanent release waited for the temporary receipt")
+            raise ValueError("Simulated temporary receipt failure")
+
+        def ready(*_):
+            self.assertTrue(announcing.wait(2))
+            published.set()
+
+        with patch.dict(publish.os.environ, {"WORKSHOP_ARTIFACT_ID": "21", "RUNNER_TEMP": "/unused"}), \
+             patch.object(publish, "announce", side_effect=slow_announcement), \
+             patch.object(publish, "stage_asset", return_value=("release", "asset")), \
+             patch.object(publish, "publish_verified", return_value=receipt), \
+             patch.object(publish, "update_ready", side_effect=ready) as update, \
+             patch("builtins.print") as warning:
+            publish.deliver(self.variant, self.record, "old-digest")
+            update.assert_called_once_with(self.variant, receipt, "old-digest")
+            self.assertIn("(ValueError)", warning.call_args.args[0])
+
+    def test_permanent_release_is_saved_when_the_raw_upload_fails(self):
+        with patch.dict(publish.os.environ, {"WORKSHOP_ARTIFACT_ID": "", "RUNNER_TEMP": "/unused"}), \
+             patch.object(publish, "announce") as announce, \
+             patch.object(publish, "stage_asset", return_value=("release", "asset")), \
+             patch.object(publish, "publish_verified", return_value=self.record), \
+             patch.object(publish, "update_ready") as update:
+            publish.deliver(self.variant, self.record, "old-digest")
+            announce.assert_not_called()
+            update.assert_called_once_with(self.variant, self.record, "old-digest")

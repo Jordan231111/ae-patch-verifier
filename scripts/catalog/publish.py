@@ -1,7 +1,7 @@
 """Publish verified, immutable APKS assets and atomically advance release metadata."""
 
-import argparse
 import base64
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
 import json
 import os
@@ -163,16 +163,21 @@ def update_ready(key, record, previous_digest):
             time.sleep(1 + attempt)
 
 
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser()
-    parser.add_argument("operation", choices=["announce", "archive"])
-    args = parser.parse_args()
-    payload = json.loads((delivery_dir() / "receipt.json").read_bytes())
-    key, record = payload["variant"], payload["record"]
-    if args.operation == "announce":
-        announce(key, record)
-    else:
+def deliver(key, record, previous_digest):
+    with ThreadPoolExecutor(max_workers=1) as worker:
+        transfer = worker.submit(announce, key, record) if os.getenv("WORKSHOP_ARTIFACT_ID") else None
         path = delivery_dir() / bundle_name(key, record["version"])
         release, asset = stage_asset(key, record["version"], path, record["sha256"])
         published = publish_verified(release, asset, record)
-        update_ready(key, published, payload["previous"])
+        update_ready(key, published, previous_digest)
+        if transfer:
+            try:
+                transfer.result()
+            except Exception as error:
+                print(f"::warning::Temporary download receipt could not be published ({type(error).__name__}).",
+                      flush=True)
+
+
+if __name__ == "__main__":
+    payload = json.loads((delivery_dir() / "receipt.json").read_bytes())
+    deliver(payload["variant"], payload["record"], payload["previous"])
